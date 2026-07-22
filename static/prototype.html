@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>harness-monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-root: #080b0e;
+    --bg-surface: #11161c;
+    --bg-card: #161b23;
+    --bg-hover: #1c2330;
+    --border: #1e2733;
+    --border-active: #2a3648;
+    --text-primary: #e2e8f0;
+    --text-secondary: #8899b4;
+    --text-muted: #5a6d82;
+    --green: #00e676;
+    --green-dim: #00c853;
+    --amber: #ffab00;
+    --amber-dim: #ff8f00;
+    --red: #ff5252;
+    --red-dim: #ff1744;
+    --cyan: #00bcd4;
+    --cyan-dim: #0097a7;
+    --blue: #448aff;
+    --purple: #b388ff;
+    --radius-sm: 6px;
+    --radius: 8px;
+    --radius-lg: 10px;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.02);
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+    --font-sans: 'DM Sans', -apple-system, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #05070a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: var(--font-sans);
+  }
+
+  /* ── Main Panel ── */
+  .panel {
+    width: 380px;
+    height: 520px;
+    background: var(--bg-root);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.03),
+      0 8px 32px rgba(0,0,0,0.6),
+      0 0 60px rgba(0,230,118,0.03);
+    position: relative;
+  }
+
+  /* Scanline overlay */
+  .panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(0deg,
+      transparent, transparent 2px,
+      rgba(0,0,0,0.015) 2px, rgba(0,0,0,0.015) 4px);
+    pointer-events: none;
+    z-index: 100;
+    border-radius: var(--radius-lg);
+  }
+
+  /* ── Header ── */
+  .header {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+    position: relative;
+    z-index: 1;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green), 0 0 16px rgba(0,230,118,0.4);
+    animation: dotPulse 2s ease-in-out infinite;
+  }
+  .header-dot.warn {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber), 0 0 16px rgba(255,171,0,0.4);
+    animation: dotPulseWarn 1s ease-in-out infinite;
+  }
+
+  @keyframes dotPulse {
+    0%, 100% { box-shadow: 0 0 8px var(--green), 0 0 16px rgba(0,230,118,0.4); }
+    50% { box-shadow: 0 0 12px var(--green), 0 0 24px rgba(0,230,118,0.6); }
+  }
+  @keyframes dotPulseWarn {
+    0%, 100% { box-shadow: 0 0 8px var(--amber), 0 0 16px rgba(255,171,0,0.4); }
+    50% { box-shadow: 0 0 14px var(--amber), 0 0 28px rgba(255,171,0,0.6); }
+  }
+
+  .header-title {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+  }
+  .header-version {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-icon {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+    position: relative;
+    z-index: 1;
+  }
+  .btn-icon:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-active);
+    color: var(--text-primary);
+  }
+  .btn-icon.pin { font-size: 13px; }
+  .btn-icon.pin.active {
+    color: var(--cyan);
+    border-color: rgba(0,188,212,0.3);
+    background: rgba(0,188,212,0.08);
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+    position: relative;
+    z-index: 1;
+  }
+  .tab {
+    flex: 1;
+    padding: 8px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-align: center;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active {
+    color: var(--green);
+    border-bottom-color: var(--green);
+    background: rgba(0,230,118,0.03);
+  }
+  .tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px; height: 16px;
+    padding: 0 5px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 8px;
+    background: var(--amber);
+    color: #000;
+  }
+  .tab-badge.pending {
+    animation: badgeBlink 1.5s ease-in-out infinite;
+  }
+  @keyframes badgeBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* ── Content ── */
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
+    z-index: 1;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .content::-webkit-scrollbar { width: 4px; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+  .content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .tab-content { display: none; padding: 10px 12px; }
+  .tab-content.active { display: block; }
+
+  /* ── API Cards ── */
+  .provider-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    box-shadow: var(--shadow-card);
+    transition: border-color 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .provider-card:hover { border-color: var(--border-active); }
+
+  .provider-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .provider-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .provider-icon {
+    width: 28px; height: 28px;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+  }
+  .provider-icon.ds { background: rgba(68,138,255,0.15); color: var(--blue); }
+  .provider-icon.zp { background: rgba(179,136,255,0.15); color: var(--purple); }
+
+  .provider-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .provider-model {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 1px;
+  }
+
+  .provider-balance {
+    text-align: right;
+  }
+  .provider-balance-val {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .provider-balance-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .provider-stats {
+    display: flex;
+    gap: 16px;
+    margin: 8px 0;
+  }
+  .provider-stat {
+    display: flex;
+    flex-direction: column;
+  }
+  .provider-stat-val {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+  .provider-stat-lbl {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  /* Progress bar */
+  .progress-wrap { margin-top: 4px; }
+  .progress-info {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .progress-bar {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.06);
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.6s ease;
+    position: relative;
+  }
+  .progress-fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+      transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+    animation: shimmer 2s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0%, 100% { transform: translateX(-100%); }
+    50% { transform: translateX(100%); }
+  }
+  .progress-fill.good { background: linear-gradient(90deg, #00c853, var(--green)); }
+  .progress-fill.warn { background: linear-gradient(90deg, var(--amber-dim), var(--amber)); }
+  .progress-fill.danger { background: linear-gradient(90deg, #d50000, var(--red)); }
+
+  /* ── Chart ── */
+  .chart-section {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .chart-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .chart-legend {
+    display: flex;
+    gap: 12px;
+  }
+  .chart-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--text-muted);
+  }
+  .chart-legend-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+  .chart-legend-dot.a { background: var(--blue); }
+  .chart-legend-dot.b { background: var(--purple); }
+
+  canvas { display: block; width: 100%; height: 100px; }
+
+  /* ── Session Cards ── */
+  .session-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    box-shadow: var(--shadow-card);
+    transition: border-color 0.2s;
+    position: relative;
+  }
+  .session-card:hover { border-color: var(--border-active); }
+  .session-card.has-approval {
+    border-color: rgba(255,171,0,0.35);
+    box-shadow: 0 0 0 1px rgba(255,171,0,0.1), var(--shadow-card);
+  }
+
+  .session-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .session-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .session-status {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .session-status.busy {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+  }
+  .session-status.idle {
+    background: var(--text-muted);
+    box-shadow: none;
+  }
+
+  .session-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .session-harness {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 3px;
+    margin-left: 4px;
+  }
+
+  .session-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+  .session-meta span {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .session-meta .api-label {
+    color: var(--cyan);
+  }
+
+  .session-cwd {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .session-gauges {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .session-gauge {
+    flex: 1;
+  }
+  .session-gauge-label {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+  }
+  .session-gauge-bar {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.06);
+    overflow: hidden;
+  }
+  .session-gauge-fill { height: 100%; border-radius: 2px; }
+  .session-gauge-fill.ctx { background: var(--cyan); }
+  .session-gauge-fill.mem { background: var(--purple); }
+
+  .session-task {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-task:empty::after { content: '⏳ 等待用户输入'; color: var(--text-muted); font-style: italic; }
+
+  /* ── Approval Block ── */
+  .approval-block {
+    margin-top: 8px;
+    padding: 10px;
+    background: rgba(255,171,0,0.06);
+    border: 1px solid rgba(255,171,0,0.2);
+    border-radius: var(--radius-sm);
+    position: relative;
+  }
+  .approval-block::before {
+    content: '⚡ 待审批';
+    position: absolute;
+    top: -8px;
+    left: 10px;
+    font-family: var(--font-mono);
+    font-size: 8px;
+    font-weight: 700;
+    color: var(--amber);
+    background: var(--bg-card);
+    padding: 0 6px;
+    letter-spacing: 0.3px;
+  }
+
+  .approval-command {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: #ffe082;
+    padding: 6px 8px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 4px;
+    margin-bottom: 6px;
+    word-break: break-all;
+    line-height: 1.4;
+  }
+  .approval-warning {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--amber);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .btn-approve, .btn-deny {
+    flex: 1;
+    padding: 6px 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    border: 1px solid;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: all 0.15s;
+  }
+  .btn-approve {
+    background: rgba(0,230,118,0.1);
+    color: var(--green);
+    border-color: rgba(0,230,118,0.3);
+  }
+  .btn-approve:hover {
+    background: rgba(0,230,118,0.2);
+    border-color: var(--green);
+    box-shadow: 0 0 12px rgba(0,230,118,0.15);
+  }
+  .btn-deny {
+    background: rgba(255,82,82,0.08);
+    color: var(--red);
+    border-color: rgba(255,82,82,0.2);
+  }
+  .btn-deny:hover {
+    background: rgba(255,82,82,0.15);
+    border-color: var(--red);
+    box-shadow: 0 0 12px rgba(255,82,82,0.1);
+  }
+  .btn-copy {
+    width: 28px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .btn-copy:hover { color: var(--text-primary); border-color: var(--border-active); }
+
+  /* ── Session Actions ── */
+  .session-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .btn-session {
+    flex: 1;
+    padding: 5px 8px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+    letter-spacing: 0.2px;
+  }
+  .btn-session:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-active);
+    color: var(--text-primary);
+  }
+  .btn-session.terminate:hover {
+    border-color: rgba(255,82,82,0.3);
+    color: var(--red);
+    background: rgba(255,82,82,0.06);
+  }
+
+  /* ── Approval History ── */
+  .history-section {
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .history-toggle {
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: color 0.15s;
+  }
+  .history-toggle:hover { color: var(--text-secondary); }
+  .history-arrow {
+    font-size: 8px;
+    transition: transform 0.2s;
+  }
+  .history-arrow.open { transform: rotate(180deg); }
+
+  .history-list {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  .history-list.open { max-height: 200px; }
+
+  .history-item {
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .history-icon { font-size: 10px; flex-shrink: 0; }
+  .history-icon.ok { color: var(--green); }
+  .history-icon.no { color: var(--red); }
+  .history-cmd {
+    flex: 1;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-time { color: var(--text-muted); flex-shrink: 0; }
+  .history-session { color: var(--text-muted); flex-shrink: 0; }
+
+  /* ── Empty State ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+  }
+  .empty-state .icon { font-size: 32px; margin-bottom: 8px; opacity: 0.5; }
+  .empty-state p { font-family: var(--font-mono); font-size: 10px; }
+
+  /* ── Footer ── */
+  .footer {
+    padding: 6px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    position: relative;
+    z-index: 1;
+  }
+  .footer-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-right: 4px;
+    display: inline-block;
+  }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-brand">
+      <div class="header-dot warn" id="statusDot"></div>
+      <div>
+        <div class="header-title">harness-monitor</div>
+        <div class="header-version">v0.1.0 · 127.0.0.1:18456</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-icon refresh" title="刷新" onclick="refreshData()">↻</button>
+      <button class="btn-icon settings" title="设置">⚙</button>
+      <button class="btn-icon pin" id="pinBtn" title="钉住面板" onclick="togglePin()">📌</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('usage', this)">💰 用量</button>
+    <button class="tab" onclick="switchTab('sessions', this)">
+      📡 Sessions
+      <span class="tab-badge pending">1</span>
+    </button>
+  </div>
+
+  <!-- Content -->
+  <div class="content" id="content">
+    <!-- Tab 1: API Usage -->
+    <div class="tab-content active" id="tab-usage">
+      <!-- DeepSeek v4-pro -->
+      <div class="provider-card">
+        <div class="provider-card-header">
+          <div class="provider-name">
+            <div class="provider-icon ds">DS</div>
+            <div>
+              <div class="provider-label">DeepSeek</div>
+              <div class="provider-model">v4-pro</div>
+            </div>
+          </div>
+          <div class="provider-balance">
+            <div class="provider-balance-val">¥342.18</div>
+            <div class="provider-balance-label">剩余余额</div>
+          </div>
+        </div>
+        <div class="provider-stats">
+          <div class="provider-stat">
+            <div class="provider-stat-val">1.85M</div>
+            <div class="provider-stat-lbl">今日 token</div>
+          </div>
+          <div class="provider-stat">
+            <div class="provider-stat-val">¥157.82</div>
+            <div class="provider-stat-lbl">本月已用</div>
+          </div>
+          <div class="provider-stat">
+            <div class="provider-stat-val">¥2.41</div>
+            <div class="provider-stat-lbl">均价/M</div>
+          </div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-info">
+            <span>本月预算 ¥500.00</span><span>68.4%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill warn" style="width: 68%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DeepSeek v4-flash -->
+      <div class="provider-card">
+        <div class="provider-card-header">
+          <div class="provider-name">
+            <div class="provider-icon ds">DS</div>
+            <div>
+              <div class="provider-label">DeepSeek</div>
+              <div class="provider-model">v4-flash</div>
+            </div>
+          </div>
+          <div class="provider-balance">
+            <div class="provider-balance-val">$8.50</div>
+            <div class="provider-balance-label">剩余余额</div>
+          </div>
+        </div>
+        <div class="provider-stats">
+          <div class="provider-stat">
+            <div class="provider-stat-val">620K</div>
+            <div class="provider-stat-lbl">今日 token</div>
+          </div>
+          <div class="provider-stat">
+            <div class="provider-stat-val">$3.15</div>
+            <div class="provider-stat-lbl">本月已用</div>
+          </div>
+          <div class="provider-stat">
+            <div class="provider-stat-val">$0.14</div>
+            <div class="provider-stat-lbl">均价/M</div>
+          </div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-info">
+            <span>充值总额 $20.00</span><span>42.5%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill good" style="width: 42%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 智谱 GLM-4 -->
+      <div class="provider-card">
+        <div class="provider-card-header">
+          <div class="provider-name">
+            <div class="provider-icon zp">智</div>
+            <div>
+              <div class="provider-label">智谱 AI</div>
+              <div class="provider-model">GLM-4-Plus</div>
+            </div>
+          </div>
+          <div class="provider-balance">
+            <div class="provider-balance-val" style="color: var(--red)">¥12.30</div>
+            <div class="provider-balance-label">剩余余额</div>
+          </div>
+        </div>
+        <div class="provider-stats">
+          <div class="provider-stat">
+            <div class="provider-stat-val">890K</div>
+            <div class="provider-stat-lbl">今日 token</div>
+          </div>
+          <div class="provider-stat">
+            <div class="provider-stat-val">¥87.70</div>
+            <div class="provider-stat-lbl">本月已用</div>
+          </div>
+          <div class="provider-stat">
+            <div class="provider-stat-val">¥5.12</div>
+            <div class="provider-stat-lbl">均价/M</div>
+          </div>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-info">
+            <span>本月预算 ¥100.00</span><span style="color: var(--red)">87.7%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill danger" style="width: 88%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 30-Day Chart -->
+      <div class="chart-section">
+        <div class="chart-header">
+          <span class="chart-title">📊 近 30 天 token 消耗趋势</span>
+          <div class="chart-legend">
+            <div class="chart-legend-item">
+              <span class="chart-legend-dot a"></span> v4-pro
+            </div>
+            <div class="chart-legend-item">
+              <span class="chart-legend-dot b"></span> GLM-4
+            </div>
+          </div>
+        </div>
+        <canvas id="usageChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Tab 2: Sessions -->
+    <div class="tab-content" id="tab-sessions">
+      <!-- Session: cury-51 (busy, with approval) -->
+      <div class="session-card has-approval">
+        <div class="session-top">
+          <div class="session-left">
+            <div class="session-status busy"></div>
+            <span class="session-name">cury-51</span>
+            <span class="session-harness">claude-code</span>
+          </div>
+          <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted)">12m 33s</span>
+        </div>
+        <div class="session-meta">
+          <span>🔗 <span class="api-label">DeepSeek v4-pro</span></span>
+          <span>🧠 68%</span>
+          <span>📟 342 MB</span>
+        </div>
+        <div class="session-cwd">📁 /home/cury/project</div>
+        <div class="session-task">修复认证逻辑，重构 middleware 层</div>
+        <div class="session-gauges">
+          <div class="session-gauge">
+            <div class="session-gauge-label"><span>上下文</span><span>68%</span></div>
+            <div class="session-gauge-bar">
+              <div class="session-gauge-fill ctx" style="width: 68%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Approval embedded -->
+        <div class="approval-block">
+          <div class="approval-command">$ sudo systemctl restart nginx</div>
+          <div class="approval-warning">⚠ 涉及 sudo + 系统服务重启</div>
+          <div class="approval-actions">
+            <button class="btn-approve" onclick="handleApprove('cury-51', true)">✅ 批准</button>
+            <button class="btn-deny" onclick="handleApprove('cury-51', false)">❌ 拒绝</button>
+            <button class="btn-copy" title="复制命令">📋</button>
+          </div>
+        </div>
+
+        <div class="session-actions">
+          <button class="btn-session">↗ 跳转终端</button>
+          <button class="btn-session terminate">⏹ 终止</button>
+        </div>
+      </div>
+
+      <!-- Session: cury-52 (idle) -->
+      <div class="session-card">
+        <div class="session-top">
+          <div class="session-left">
+            <div class="session-status idle"></div>
+            <span class="session-name">cury-52</span>
+            <span class="session-harness">claude-code</span>
+          </div>
+          <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted)">5m 02s</span>
+        </div>
+        <div class="session-meta">
+          <span>🔗 <span class="api-label">DeepSeek v4-flash</span></span>
+          <span>🧠 12%</span>
+          <span>📟 118 MB</span>
+        </div>
+        <div class="session-cwd">📁 /home/cury/work</div>
+        <div class="session-task"></div>
+        <div class="session-gauges">
+          <div class="session-gauge">
+            <div class="session-gauge-label"><span>上下文</span><span>12%</span></div>
+            <div class="session-gauge-bar">
+              <div class="session-gauge-fill ctx" style="width: 12%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="session-actions">
+          <button class="btn-session">↗ 跳转终端</button>
+          <button class="btn-session terminate">⏹ 终止</button>
+        </div>
+      </div>
+
+      <!-- Session: codex-1 (running) -->
+      <div class="session-card">
+        <div class="session-top">
+          <div class="session-left">
+            <div class="session-status busy"></div>
+            <span class="session-name">codex-1</span>
+            <span class="session-harness">codex</span>
+          </div>
+          <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted)">3m 18s</span>
+        </div>
+        <div class="session-meta">
+          <span>🔗 <span class="api-label">智谱 GLM-4-Plus</span></span>
+          <span>🧠 45%</span>
+          <span>📟 256 MB</span>
+        </div>
+        <div class="session-cwd">📁 /home/cury/work</div>
+        <div class="session-task">重构数据库查询层</div>
+        <div class="session-gauges">
+          <div class="session-gauge">
+            <div class="session-gauge-label"><span>上下文</span><span>45%</span></div>
+            <div class="session-gauge-bar">
+              <div class="session-gauge-fill ctx" style="width: 45%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="session-actions">
+          <button class="btn-session">↗ 跳转终端</button>
+          <button class="btn-session terminate">⏹ 终止</button>
+        </div>
+      </div>
+
+      <!-- Approval History -->
+      <div class="history-section">
+        <button class="history-toggle" onclick="toggleHistory()">
+          ✅ 审批历史 <span style="color: var(--text-muted)">· 最近 20 条</span>
+          <span class="history-arrow" id="historyArrow">▼</span>
+        </button>
+        <div class="history-list" id="historyList">
+          <div class="history-item">
+            <span class="history-icon ok">✓</span>
+            <span class="history-cmd">npm run build</span>
+            <span class="history-session">cury-51</span>
+            <span class="history-time">3m 前</span>
+          </div>
+          <div class="history-item">
+            <span class="history-icon no">✗</span>
+            <span class="history-cmd">rm -rf /tmp/cache</span>
+            <span class="history-session">cury-52</span>
+            <span class="history-time">5m 前</span>
+          </div>
+          <div class="history-item">
+            <span class="history-icon ok">✓</span>
+            <span class="history-cmd">pip install --upgrade torch</span>
+            <span class="history-session">codex-1</span>
+            <span class="history-time">8m 前</span>
+          </div>
+          <div class="history-item">
+            <span class="history-icon ok">✓</span>
+            <span class="history-cmd">docker compose up -d</span>
+            <span class="history-session">cury-51</span>
+            <span class="history-time">15m 前</span>
+          </div>
+          <div class="history-item">
+            <span class="history-icon ok">✓</span>
+            <span class="history-cmd">git push origin main</span>
+            <span class="history-session">cury-52</span>
+            <span class="history-time">22m 前</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span><span class="footer-dot"></span>HTTP :18456</span>
+    <span>3 sessions</span>
+    <span>更新于 16:06</span>
+  </div>
+</div>
+
+<script>
+  // Tab switching
+  function switchTab(name, el) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'usage') { drawChart(); }
+  }
+
+  // Pin toggle
+  function togglePin() {
+    const btn = document.getElementById('pinBtn');
+    btn.classList.toggle('active');
+  }
+
+  // History toggle
+  function toggleHistory() {
+    const list = document.getElementById('historyList');
+    const arrow = document.getElementById('historyArrow');
+    list.classList.toggle('open');
+    arrow.classList.toggle('open');
+  }
+
+  // Approval handler
+  function handleApprove(session, allowed) {
+    const cards = document.querySelectorAll('.session-card');
+    cards.forEach(card => {
+      const block = card.querySelector('.approval-block');
+      if (block && allowed) {
+        block.style.opacity = '0.5';
+        block.style.transition = 'opacity 0.3s';
+        setTimeout(() => {
+          block.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--green);text-align:center;padding:8px">✅ 已批准 — 命令正在执行...</div>';
+          block.style.opacity = '1';
+        }, 300);
+        setTimeout(() => { block.remove(); }, 2500);
+      } else if (block && !allowed) {
+        block.style.opacity = '0.5';
+        setTimeout(() => {
+          block.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--red);text-align:center;padding:8px">❌ 已拒绝</div>';
+          block.style.opacity = '1';
+        }, 300);
+        setTimeout(() => { block.remove(); }, 2000);
+      }
+    });
+
+    if (!allowed) {
+      // Update badge
+      const badge = document.querySelector('.tab-badge.pending');
+      if (badge) badge.remove();
+    }
+  }
+
+  // Refresh simulation
+  function refreshData() {
+    const dot = document.getElementById('statusDot');
+    dot.classList.add('warn');
+    setTimeout(() => dot.classList.remove('warn'), 800);
+  }
+
+  // ── Chart Drawing ──
+  function drawChart() {
+    const canvas = document.getElementById('usageChart');
+    if (!canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const w = rect.width - 24;
+    const h = 100;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+
+    // Mock data: 30 days
+    const days = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(d.getDate() + '/' + (d.getMonth()+1));
+    }
+
+    const proData = [
+      1.2,1.5,0.8,2.1,1.7,0.9,2.4,1.3,1.6,2.0,
+      0.7,2.8,1.9,1.1,2.5,1.4,0.6,2.2,1.8,2.3,
+      1.0,2.7,1.5,0.9,2.1,1.3,2.0,1.6,2.4,1.85
+    ];
+    const glmData = [
+      0.3,0.6,0.4,0.2,0.7,0.5,0.8,0.9,0.3,0.6,
+      0.4,0.1,0.5,0.8,0.7,0.9,0.6,0.4,0.3,0.7,
+      0.5,0.8,0.6,0.4,0.9,0.7,0.5,0.8,0.6,0.89
+    ];
+
+    const pad = { top: 10, right: 12, bottom: 22, left: 38 };
+    const pw = w - pad.left - pad.right;
+    const ph = h - pad.top - pad.bottom;
+
+    const allData = [...proData, ...glmData];
+    const maxVal = Math.max(...allData);
+    const yMax = Math.ceil(maxVal * 1.2);
+
+    function x(i) { return pad.left + (i / (proData.length - 1)) * pw; }
+    function y(v) { return pad.top + ph - (v / yMax) * ph; }
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const gy = pad.top + (ph / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, gy);
+      ctx.lineTo(w - pad.right, gy);
+      ctx.stroke();
+
+      // Y labels
+      const val = (yMax * (4 - i) / 4).toFixed(1);
+      ctx.fillStyle = '#5a6d82';
+      ctx.font = '8px "JetBrains Mono"';
+      ctx.textAlign = 'right';
+      ctx.fillText(val + 'M', pad.left - 6, gy + 3);
+    }
+
+    // X labels
+    ctx.fillStyle = '#5a6d82';
+    ctx.textAlign = 'center';
+    [0, 9, 19, 29].forEach(i => {
+      ctx.fillText(days[i], x(i), h - 4);
+    });
+
+    // Draw GLM line
+    ctx.strokeStyle = '#b388ff';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 2]);
+    ctx.beginPath();
+    ctx.moveTo(x(0), y(glmData[0]));
+    for (let i = 1; i < glmData.length; i++) {
+      ctx.lineTo(x(i), y(glmData[i]));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw Pro line
+    const grad = ctx.createLinearGradient(0, pad.top, 0, h - pad.bottom);
+    grad.addColorStop(0, 'rgba(68,138,255,0.15)');
+    grad.addColorStop(1, 'rgba(68,138,255,0.0)');
+
+    ctx.strokeStyle = '#448aff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x(0), y(proData[0]));
+    for (let i = 1; i < proData.length; i++) {
+      ctx.lineTo(x(i), y(proData[i]));
+    }
+    ctx.stroke();
+
+    // Area fill
+    ctx.lineTo(x(29), h - pad.bottom);
+    ctx.lineTo(x(0), h - pad.bottom);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Dots on pro line
+    [0, 9, 19, 29].forEach(i => {
+      ctx.beginPath();
+      ctx.arc(x(i), y(proData[i]), 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#448aff';
+      ctx.fill();
+      ctx.strokeStyle = '#080b0e';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+
+  // Initial draw
+  drawChart();
+  window.addEventListener('resize', drawChart);
+</script>
+
+</body>
+</html>

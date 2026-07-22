@@ -1,0 +1,22 @@
+server:
+  host: "127.0.0.1"
+  port: 18456
+
+providers:
+  deepseek:
+    balance_url: "https://api.deepseek.com/user/balance"
+    check_interval_min: 60
+  zhipu:
+    balance_url: "https://open.bigmodel.cn/api/biz/subscription/list"
+    check_interval_min: 30
+
+harnesses:
+  claude-code:
+    sessions_glob: "~/.claude/sessions/*.json"
+    settings_path: "~/.claude/settings.json"
+  codex:
+    sessions_path: "~/.codex/sessions/"
+
+notifications:
+  balance_warn_threshold: 0.15
+  approve_timeout_sec: 60
