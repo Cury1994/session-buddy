@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harness Monitor - Desktop Widget</title>
+  <style>
+    :root {
+      /* 悬浮窗透明主题变量 */
+      --widget-bg: rgba(245, 245, 250, 0.45);
+      --widget-border: rgba(255, 255, 255, 0.4);
+      --card-bg: rgba(255, 255, 255, 0.55);
+      --card-border: rgba(255, 255, 255, 0.6);
+      
+      --accent-blue: #007aff;
+      --accent-cyan: #32ade6;
+      --danger-red: #ff3b30;
+      --warning-yellow: #ffcc00;
+      --success-green: #34c759;
+      --text-main: rgba(0, 0, 0, 0.85);
+      --text-muted: rgba(0, 0, 0, 0.55);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      /* 模拟一张漂亮的 macOS 风格壁纸，用来展示毛玻璃透明效果 */
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%), radial-gradient(circle at 80% 20%, #fbc2eb 0%, #a6c1ee 100%);
+      background-blend-mode: multiply;
+      display: flex;
+      justify-content: flex-end; /* 模拟挂在屏幕右侧 */
+      align-items: center;
+      height: 100vh;
+      padding: 20px 40px;
+      overflow: hidden;
+    }
+
+    /* Electron 专属兼容样式标注 */
+    .electron-drag-region { -webkit-app-region: drag; }
+    .electron-no-drag { -webkit-app-region: no-drag; }
+    .electron-no-select { -webkit-user-select: none; user-select: none; }
+
+    /* 隐藏滚动条让挂件更清爽 */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.6); }
+      70% { transform: scale(1); box-shadow: 0 0 0 4px rgba(52, 199, 89, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 199, 89, 0); }
+    }
+    .status-pulse { animation: pulse 2s infinite; }
+
+    /* 悬浮窗主容器 */
+    .widget-window {
+      width: 340px;
+      height: 80vh;
+      max-height: 650px;
+      background-color: var(--widget-bg);
+      backdrop-filter: blur(25px) saturate(180%);
+      -webkit-backdrop-filter: blur(25px) saturate(180%);
+      border: 1px solid var(--widget-border);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* 顶部拖拽栏 */
+    .widget-header {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 6px;
+    }
+    .light {
+      width: 10px; height: 10px; border-radius: 50%;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1);
+    }
+
+    .widget-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pin-icon {
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .pin-icon:hover { color: var(--text-main); }
+
+    /* 分段控制器 (替代原侧边栏) */
+    .segmented-control {
+      display: flex;
+      background: rgba(0, 0, 0, 0.06);
+      border-radius: 8px;
+      margin: 12px 16px;
+      padding: 2px;
+    }
+
+    .segment {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-main);
+      padding: 4px 0;
+      border-radius: 6px;
+      cursor: default;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .segment.active {
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .segment-badge {
+      position: absolute;
+      top: -2px;
+      right: 4px;
+      background: var(--danger-red);
+      color: white;
+      font-size: 9px;
+      padding: 1px 4px;
+      border-radius: 8px;
+      font-weight: bold;
+    }
+
+    /* 内容滚动区 */
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 16px 16px 16px;
+    }
+
+    .view-section { display: none; }
+    .view-section.active { display: block; animation: fadeIn 0.2s ease-in-out; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 卡片通用样式 */
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    }
+
+    /* 按钮样式 */
+    .btn {
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(0,0,0,0.1);
+      background-color: rgba(255,255,255,0.7);
+      color: var(--text-main);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.1s;
+    }
+    .btn:hover { background-color: rgba(255,255,255,1); }
+    
+    .btn-primary {
+      border: none;
+      background-color: var(--accent-blue);
+      color: #ffffff;
+    }
+    .btn-primary:hover { background-color: #0062cc; }
+
+    /* 徽章与小标签 */
+    .mini-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+    
+    .tool-badge {
+      background-color: rgba(0, 122, 255, 0.1);
+      color: var(--accent-blue);
+      border: 1px solid rgba(0, 122, 255, 0.2);
+    }
+
+    /* 模拟顶部系统菜单栏与托盘菜单样式 */
+    .mock-menubar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      padding: 0 16px;
+      z-index: 1000;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.05);
+    }
+
+    .tray-icon {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      height: 100%;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-main);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.15s;
+      position: relative;
+    }
+    .tray-icon:hover { background: rgba(0, 0, 0, 0.1); }
+    
+    .tray-badge {
+      background: var(--danger-red);
+      color: white;
+      font-size: 9px;
+      font-weight: bold;
+      padding: 0 5px;
+      border-radius: 8px;
+      height: 14px;
+      line-height: 14px;
+    }
+
+    .context-menu {
+      position: absolute;
+      top: 32px;
+      right: 12px;
+      width: 230px;
+      background: rgba(245, 245, 250, 0.85);
+      backdrop-filter: blur(30px) saturate(200%);
+      -webkit-backdrop-filter: blur(30px) saturate(200%);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 0 0 0.5px rgba(0,0,0,0.1);
+      padding: 5px;
+      z-index: 1001;
+      display: none; /* 默认隐藏 */
+      flex-direction: column;
+      animation: menuFadeIn 0.15s ease-out;
+    }
+
+    .context-menu.show { display: flex; }
+
+    @keyframes menuFadeIn {
+      from { opacity: 0; transform: translateY(-5px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .menu-item {
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--text-main);
+      cursor: default;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .menu-item:hover {
+      background: var(--accent-blue);
+      color: white;
+    }
+    .menu-item.danger:hover {
+      background: var(--danger-red);
+      color: white;
+    }
+    .menu-item .shortcut {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+    .menu-item:hover .shortcut { color: rgba(255,255,255,0.8); }
+
+    .menu-divider {
+      height: 1px;
+      background: rgba(0,0,0,0.08);
+      margin: 4px 0;
+    }
+    .menu-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 4px 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 模拟系统顶部菜单栏与托盘 -->
+  <div class="mock-menubar electron-no-drag">
+    <div class="tray-icon" onclick="toggleMenu(event)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <span class="tray-badge">1</span>
+    </div>
+  </div>
+
+  <!-- 托盘下拉右键菜单 -->
+  <div id="tray-menu" class="context-menu electron-no-select">
+    <div class="menu-label">Harness Monitor</div>
+    <div class="menu-item" onclick="closeMenu()">
+      <span>Show Dashboard</span>
+      <span class="shortcut">⌘O</span>
+    </div>
+    <div class="menu-item" onclick="closeMenu()">
+      <span>Hide Dashboard</span>
+      <span class="shortcut">⌘H</span>
+    </div>
+    <div class="menu-divider"></div>
+    <div class="menu-label">Active Agents</div>
+    <div class="menu-item" onclick="closeMenu()" style="gap: 8px; justify-content: flex-start;">
+      <div class="status-pulse" style="width: 6px; height: 6px; border-radius: 50%; background-color: var(--success-green);"></div>
+      <span style="font-weight: 500;">Claude Code</span>
+      <span style="color: var(--text-muted); font-size: 11px; margin-left: auto;">monitor-dev</span>
+    </div>
+    <div class="menu-item" onclick="closeMenu()" style="gap: 8px; justify-content: flex-start;">
+      <div style="width: 6px; height: 6px; border-radius: 50%; background-color: var(--warning-yellow);"></div>
+      <span style="font-weight: 500;">OpenClaw</span>
+      <span style="color: var(--text-muted); font-size: 11px; margin-left: auto;">api-gateway</span>
+    </div>
+    <div class="menu-divider"></div>
+    <div class="menu-item" onclick="closeMenu()">
+      <span>Preferences...</span>
+      <span class="shortcut">⌘,</span>
+    </div>
+    <div class="menu-divider"></div>
+    <div class="menu-item danger" onclick="closeMenu()">
+      <span>Quit Harness Monitor</span>
+      <span class="shortcut">⌘Q</span>
+    </div>
+  </div>
+
+  <!-- 桌面悬浮窗本体 -->
+  <div class="widget-window electron-no-select">
+    
+    <!-- 顶部拖拽区 -->
+    <div class="widget-header electron-drag-region">
+      <div class="window-controls electron-no-drag">
+        <div class="light" style="background-color: var(--danger-red);"></div>
+        <div class="light" style="background-color: var(--warning-yellow);"></div>
+        <div class="light" style="background-color: var(--success-green);"></div>
+      </div>
+      
+      <div class="widget-title">
+        <svg width="14" height="14" viewBox="0 0 384 512" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+        Harness Monitor
+      </div>
+
+      <div class="pin-icon electron-no-drag" title="Keep on top">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11V5.5C16 4.67157 15.3284 4 14.5 4H9.5C8.67157 4 8 4.67157 8 5.5V11L6 14V16H11V21H13V16H18V14L16 11Z"/></svg>
+      </div>
+    </div>
+
+    <!-- 导航切换 -->
+    <div class="segmented-control electron-no-drag">
+      <div class="segment active" onclick="switchTab('sessions', this)">
+        Sessions
+        <span class="segment-badge">1</span>
+      </div>
+      <div class="segment" onclick="switchTab('usage', this)">API Usage</div>
+      <div class="segment" onclick="switchTab('settings', this)">
+        <svg style="vertical-align: -2px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </div>
+    </div>
+
+    <!-- 动态内容区 -->
+    <div class="content-area">
+      
+      <div id="view-sessions" class="view-section active">
+        
+        <!-- Session Card 1 (需要审批的紧急状态) -->
+        <div class="card" style="padding: 0; overflow: hidden; border-color: rgba(255, 59, 48, 0.4); box-shadow: 0 4px 12px rgba(255, 59, 48, 0.1);">
+          <div style="padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <div class="status-pulse" style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--success-green);"></div>
+                <span style="font-weight: 600; font-size: 13px;">monitor-dev</span>
+              </div>
+              <button class="btn electron-no-drag" style="padding: 2px 6px;" title="Open Terminal">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              </button>
+            </div>
+
+            <!-- 紧凑的标签行 -->
+            <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+              <span class="mini-badge" style="background: rgba(212, 163, 115, 0.15); color: #b07d46; border: 1px solid rgba(212, 163, 115, 0.3);">Claude Code</span>
+              <span class="mini-badge tool-badge" style="background: rgba(0,0,0,0.05); color: var(--text-main); border: 1px solid rgba(0,0,0,0.1);">Model: Claude-3.5</span>
+            </div>
+
+            <!-- Context 进度 -->
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-muted);">
+              <span>Ctx: 68%</span>
+              <div style="flex: 1; height: 3px; background-color: rgba(0,0,0,0.06); border-radius: 2px; overflow: hidden;">
+                <div style="width: 68%; height: 100%; background-color: var(--accent-cyan);"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 审批区块 -->
+          <div style="background-color: rgba(255, 59, 48, 0.08); border-top: 1px solid rgba(255, 59, 48, 0.15); padding: 12px;">
+            <div style="display: flex; align-items: center; gap: 4px; color: var(--danger-red); font-size: 11px; font-weight: 600; margin-bottom: 6px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Wait Approval (45s)
+            </div>
+            <div style="background-color: rgba(0,0,0,0.8); color: #fff; padding: 8px; border-radius: 6px; font-family: monospace; font-size: 11px; margin-bottom: 10px; white-space: nowrap; overflow-x: auto;">
+              <span style="color: #ff6b6b;">sudo</span> rm -rf ./build/*
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn electron-no-drag" style="flex: 1; color: var(--text-main);">Reject</button>
+              <button class="btn btn-primary electron-no-drag" style="flex: 1;">Approve</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session Card 2 (正常运行状态) -->
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--warning-yellow);"></div>
+              <span style="font-weight: 600; font-size: 13px;">api-gateway</span>
+            </div>
+            <button class="btn electron-no-drag" style="padding: 2px 6px;" title="Open Terminal">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+            <span class="mini-badge" style="background: rgba(0, 122, 255, 0.1); color: var(--accent-blue); border: 1px solid rgba(0, 122, 255, 0.2);">OpenClaw</span>
+            <span class="mini-badge tool-badge" style="background: rgba(0,0,0,0.05); color: var(--text-main); border: 1px solid rgba(0,0,0,0.1);">Model: DeepSeek-V3</span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-muted);">
+            <span>Ctx: 12%</span>
+            <div style="flex: 1; height: 3px; background-color: rgba(0,0,0,0.06); border-radius: 2px; overflow: hidden;">
+              <div style="width: 12%; height: 100%; background-color: var(--accent-cyan);"></div>
+            </div>
+            <span style="margin-left: auto;">Mem: 85M</span>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="view-usage" class="view-section">
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 12px; font-weight: 500;">Current API Balance</span>
+            <span class="mini-badge" style="background: rgba(52, 199, 89, 0.15); color: #28a745;">Live</span>
+          </div>
+          <div style="font-size: 28px; font-weight: 700; color: var(--text-main);">
+            <span style="font-size: 16px; vertical-align: top;">¥</span>14.25
+          </div>
+        </div>
+
+        <div class="card" style="display: flex; justify-content: space-between; padding: 16px 12px;">
+          <div style="text-align: center;">
+            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">Today's Tokens</div>
+            <div style="font-size: 13px; font-weight: 600;">1.2M</div>
+          </div>
+          <div style="width: 1px; background: rgba(0,0,0,0.05);"></div>
+          <div style="text-align: center;">
+            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">Monthly Spent</div>
+            <div style="font-size: 13px; font-weight: 600;">¥85.50</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">Token Trend</div>
+          <div style="height: 60px; width: 100%; position: relative; opacity: 0.8;">
+            <svg viewBox="0 0 100 40" preserveAspectRatio="none" style="width: 100%; height: 100%;">
+              <polyline points="0,35 10,30 20,32 30,25 40,28 50,15 60,18 70,10 80,5 90,8 100,2" fill="none" stroke="var(--accent-blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <polygon points="0,40 0,35 10,30 20,32 30,25 40,28 50,15 60,18 70,10 80,5 90,8 100,2 100,40" fill="rgba(0, 122, 255, 0.1)"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-settings" class="view-section">
+        <div class="card">
+          <div style="font-size: 12px; font-weight: 600; margin-bottom: 12px; color: var(--text-main);">General</div>
+          
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 12px;">
+            <span>Start at Login</span>
+            <input type="checkbox" checked class="electron-no-drag" />
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 12px;">
+            <span>Always on Top</span>
+            <input type="checkbox" checked class="electron-no-drag" />
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+            <span>Desktop Notifications</span>
+            <input type="checkbox" checked class="electron-no-drag" />
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 12px; font-weight: 600; margin-bottom: 12px; color: var(--text-main);">Limits & Alerts</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+            <span>Balance Warning (¥)</span>
+            <input type="number" value="15" style="width: 50px; padding: 2px 4px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.5);" class="electron-no-drag" />
+          </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+          <button class="btn electron-no-drag" style="color: var(--danger-red); width: 100%; justify-content: center;">Quit Harness Monitor</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 交互脚本 -->
+  <script>
+    function switchTab(tabId, element) {
+      // 1. 移除所有视图和标签的 active 状态
+      document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.segment').forEach(el => el.classList.remove('active'));
+      
+      // 2. 激活选中的标签和对应的视图
+      element.classList.add('active');
+      document.getElementById('view-' + tabId).classList.add('active');
+    }
+
+    // 托盘菜单逻辑
+    function toggleMenu(event) {
+      event.stopPropagation();
+      const menu = document.getElementById('tray-menu');
+      menu.classList.toggle('show');
+    }
+
+    function closeMenu() {
+      document.getElementById('tray-menu').classList.remove('show');
+    }
+
+    // 点击页面空白处关闭菜单
+    window.addEventListener('click', function(e) {
+      const menu = document.getElementById('tray-menu');
+      if (menu.classList.contains('show') && !menu.contains(e.target)) {
+        closeMenu();
+      }
+    });
+  </script>
+</body>
+</html>
