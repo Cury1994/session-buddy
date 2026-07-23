@@ -1,0 +1,15 @@
+# electron-builder 打包配置（M1 占位，M15「打包 + 开机自启」完善）
+appId: com.cury.harness-monitor
+productName: harness-monitor
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+  - config.yaml
+  - resources/**/*
+linux:
+  target:
+    - deb
+    - AppImage
+  category: Utility

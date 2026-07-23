@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+ * DESIGN §2.2 — 配色方案（CSS 变量，务必与 DESIGN 保持一致）
+ * ============================================================ */
+:root {
+  /* 悬浮窗透明主题（widget 毛玻璃基底，原型 harness_monitor.html） */
+  --widget-bg: rgba(245, 245, 250, 0.45);
+  --widget-border: rgba(255, 255, 255, 0.4);
+  --card-bg: rgba(255, 255, 255, 0.55);
+  --card-border: rgba(255, 255, 255, 0.6);
+
+  /* 语义色 */
+  --accent-blue: #007aff;
+  --accent-cyan: #32ade6;
+  --danger-red: #ff3b30;
+  --warning-yellow: #ffcc00;
+  --success-green: #34c759;
+
+  /* 文字 */
+  --text-main: rgba(0, 0, 0, 0.85);
+  --text-muted: rgba(0, 0, 0, 0.55);
+
+  /* 托盘下拉菜单 */
+  --menu-bg: rgba(245, 245, 250, 0.85);
+  --menu-border: rgba(255, 255, 255, 0.5);
+  --menu-hover: #007aff;
+  --menu-danger-hover: #ff3b30;
+  --menu-text-hover: #ffffff;
+  --menu-divider: rgba(0, 0, 0, 0.08);
+  --menu-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+}
+
+/* ============================================================
+ * 基础排版（DESIGN §2.3）
+ * ============================================================ */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue',
+      sans-serif;
+    color: var(--text-main);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+}
+
+/* ============================================================
+ * DESIGN §2.6 — 浅色毛玻璃悬浮窗体
+ * ============================================================ */
+@layer components {
+  .widget-shell {
+    background: var(--widget-bg);
+    border: 1px solid var(--widget-border);
+    backdrop-filter: blur(25px) saturate(180%);
+    -webkit-backdrop-filter: blur(25px) saturate(180%);
+  }
+
+  /* DESIGN §2.10 — X11 无合成器时 backdrop-filter 不生效，
+   * 通过检测回退到不透明近似色（窗体 #f5f5fa、卡片 #ffffff）。
+   * M4/M10 会按 XDG_SESSION_TYPE / 渲染检测切换 .no-compositor 类。 */
+  .no-compositor .widget-shell {
+    background: #f5f5fa;
+  }
+  .no-compositor .bg-card-bg {
+    background: #ffffff;
+  }
+}
+
+/* ============================================================
+ * DESIGN §2.8 — 隐藏式细滚动条
+ * ============================================================ */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}

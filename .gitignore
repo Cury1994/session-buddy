@@ -1,4 +1,23 @@
+# Python (旧版实现，保留)
 __pycache__/
 .venv/
 *.pyc
 *.pyo
+
+# Node / Electron
+node_modules/
+out/
+dist/
+*.tsbuildinfo
+.npmrc
+
+# electron-builder 产物
+*.deb
+*.AppImage
+*.snap
+*.rpm
+
+# 日志与环境
+*.log
+.env
+.env.*

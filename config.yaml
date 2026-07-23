@@ -5,18 +5,24 @@ server:
 providers:
   deepseek:
     balance_url: "https://api.deepseek.com/user/balance"
-    check_interval_min: 60
-  zhipu:
-    balance_url: "https://open.bigmodel.cn/api/biz/subscription/list"
-    check_interval_min: 30
+    check_interval_min: 1
+    balance_warn_threshold: 0.15
 
 harnesses:
   claude-code:
     sessions_glob: "~/.claude/sessions/*.json"
     settings_path: "~/.claude/settings.json"
-  codex:
-    sessions_path: "~/.codex/sessions/"
+    refresh_interval_sec: 3
+    config_dirs:                      # 额外的 Claude config 目录（多 profile，见 DESIGN §6.8.1）
+      - "~/.claude"                   # 默认始终包含
 
 notifications:
-  balance_warn_threshold: 0.15
+  enabled: true
   approve_timeout_sec: 60
+
+window:                               # 尺寸以设计资料为准，见 DESIGN §2.9
+  width: 340
+  height: 650
+
+autostart:
+  enabled: false

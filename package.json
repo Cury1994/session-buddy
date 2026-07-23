@@ -1,0 +1,43 @@
+{
+  "name": "harness-monitor",
+  "version": "1.0.0",
+  "description": "Electron desktop tray widget monitoring DeepSeek balance and Claude Code sessions",
+  "main": "./out/main/index.js",
+  "private": true,
+  "author": "cury",
+  "license": "ISC",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && npm run typecheck",
+    "build:only": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "dist": "electron-vite build && electron-builder",
+    "dist:linux": "electron-vite build && electron-builder --linux"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.5.4",
+    "better-sqlite3": "^11.10.0",
+    "electron": "^32.3.3",
+    "electron-vite": "^2.3.0",
+    "express": "^4.22.2",
+    "postcss": "^8.5.22",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^2.15.4",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.7.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron-builder": "^25.1.8"
+  }
+}
