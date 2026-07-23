@@ -51,6 +51,19 @@
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
   }
+
+  /* DESIGN §2.8 — 隐藏式细滚动条（自定义 CSS 入 @layer base，TASKS §18.5） */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+  }
 }
 
 /* ============================================================
@@ -73,19 +86,4 @@
   .no-compositor .bg-card-bg {
     background: #ffffff;
   }
-}
-
-/* ============================================================
- * DESIGN §2.8 — 隐藏式细滚动条
- * ============================================================ */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
 }
