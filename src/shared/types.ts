@@ -17,7 +17,7 @@ export interface ServerConfig {
 export interface DeepSeekProviderConfig {
   balance_url: string
   check_interval_min: number // 默认 1（分钟）
-  balance_warn_threshold: number // 默认 0.15
+  balance_warn_threshold: number // 默认 10（CNY 绝对金额，v2.3 由比例 0.15 改绝对值）
 }
 
 export interface ProvidersConfig {
@@ -45,10 +45,6 @@ export interface WindowConfig {
   height: number
 }
 
-export interface AutostartConfig {
-  enabled: boolean
-}
-
 /**
  * 应用配置顶层结构（DESIGN §6.1，字段名严格对齐 config.yaml schema §8.1）。
  */
@@ -58,7 +54,15 @@ export interface AppConfig {
   harnesses: HarnessesConfig
   notifications: NotificationsConfig
   window: WindowConfig
-  autostart: AutostartConfig
+}
+
+// ─── API 余额（DESIGN §6.7 / §6.12） ───
+
+/** deepseek.ts 解析后的内部余额模型（§5.1 / §6.7） */
+export interface BalanceInfo {
+  provider: string // "deepseek"
+  balance: number // total_balance parseFloat
+  currency: string // "CNY"
 }
 
 // ─── API 用量 / 审批历史（DESIGN §6.12，db INTEGER/REAL → TS 映射） ───
@@ -69,10 +73,13 @@ export interface UsageRecord {
   model: string
   balance: number
   balanceCurrency: string
-  todayTokens: number
-  monthUsed: number
-  totalBudget: number
-  timestamp: string // ISO 8601（db datetime('now')）
+  timestamp: string // 本地时间 "YYYY-MM-DD HH:MM:SS"（db datetime('now','localtime')），渲染端按字面展示
+}
+
+/** get30DayBalance 聚合行（§6.2）→ TrendSparkline */
+export interface BalanceDailySnapshot {
+  day: string // "YYYY-MM-DD"（本地日期）
+  balance: number // 当日最后一次快照余额
 }
 
 /** approval_history 表行（§6.2）→ ApprovalHistory 渲染；allowed INTEGER → boolean */
@@ -84,5 +91,5 @@ export interface ApprovalRecord {
   cwd: string | null
   tool: string
   allowed: boolean
-  timestamp: string // ISO 8601
+  timestamp: string // 本地时间（同 UsageRecord.timestamp 约定）
 }

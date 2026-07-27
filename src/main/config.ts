@@ -40,7 +40,7 @@ const DEFAULT_CONFIG: AppConfig = {
     deepseek: {
       balance_url: 'https://api.deepseek.com/user/balance',
       check_interval_min: 1,
-      balance_warn_threshold: 0.15
+      balance_warn_threshold: 10
     }
   },
   harnesses: {
@@ -52,8 +52,7 @@ const DEFAULT_CONFIG: AppConfig = {
     }
   },
   notifications: { enabled: true, approve_timeout_sec: 60 },
-  window: { width: 340, height: 650 },
-  autostart: { enabled: false }
+  window: { width: 340, height: 650 }
 }
 
 // ─── 工具 ───

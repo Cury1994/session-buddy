@@ -6,15 +6,15 @@ providers:
   deepseek:
     balance_url: "https://api.deepseek.com/user/balance"
     check_interval_min: 1
-    balance_warn_threshold: 0.15
+    balance_warn_threshold: 10            # ¥ 绝对金额（v2.3：原比例 0.15 改绝对值，API 不返回总预算）
 
 harnesses:
   claude-code:
     sessions_glob: "~/.claude/sessions/*.json"
     settings_path: "~/.claude/settings.json"
     refresh_interval_sec: 3
-    config_dirs:                      # 额外的 Claude config 目录（多 profile，见 DESIGN §6.8.1）
-      - "~/.claude"                   # 默认始终包含
+    config_dirs:                      # Claude config 目录（v2.3 仅扫此列表，无自动发现）
+      - "~/.claude"
 
 notifications:
   enabled: true
@@ -23,6 +23,3 @@ notifications:
 window:                               # 尺寸以设计资料为准，见 DESIGN §2.9
   width: 340
   height: 650
-
-autostart:
-  enabled: false

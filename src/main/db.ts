@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import Database from 'better-sqlite3'
 
-import type { ApprovalRecord, UsageRecord } from '../shared/types'
+import type { ApprovalRecord, BalanceDailySnapshot, UsageRecord } from '../shared/types'
 
 /**
  * M3 — 数据库封装（DESIGN §6.2）
@@ -25,10 +25,7 @@ CREATE TABLE IF NOT EXISTS api_usage (
     model            TEXT    NOT NULL DEFAULT 'all',
     balance          REAL    NOT NULL DEFAULT 0,
     balance_currency TEXT    NOT NULL DEFAULT 'CNY',
-    today_tokens     INTEGER NOT NULL DEFAULT 0,
-    month_used       REAL    NOT NULL DEFAULT 0,
-    total_budget     REAL    NOT NULL DEFAULT 0,
-    timestamp        TEXT    NOT NULL DEFAULT (datetime('now'))
+    timestamp        TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_usage_provider_time ON api_usage(provider, model, timestamp);
 
@@ -40,21 +37,24 @@ CREATE TABLE IF NOT EXISTS approval_history (
     cwd          TEXT,
     tool         TEXT    DEFAULT 'Bash',
     allowed      INTEGER NOT NULL DEFAULT 0,
-    timestamp    TEXT    NOT NULL DEFAULT (datetime('now'))
+    timestamp    TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_approval_time ON approval_history(timestamp DESC);
 `
 
 const INSERT_USAGE =
-  'INSERT INTO api_usage (provider, model, balance, balance_currency, today_tokens, month_used, total_budget) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  'INSERT INTO api_usage (provider, model, balance, balance_currency) VALUES (?, ?, ?, ?)'
 
 // 每个 (provider, model) 取最新一行：用 WHERE id IN (SELECT MAX(id) ... GROUP BY)，
 // 规避 SQLite `SELECT *, MAX(id) ... GROUP BY` 的裸列语义不可靠问题。
 const SELECT_LATEST_USAGE =
   'SELECT * FROM api_usage WHERE id IN (SELECT MAX(id) FROM api_usage GROUP BY provider, model) ORDER BY provider, model'
 
-const SELECT_30DAY_USAGE =
-  "SELECT DATE(timestamp) AS day, SUM(today_tokens) AS tokens FROM api_usage WHERE provider = ? AND model = ? AND timestamp >= date('now', '-30 days') GROUP BY day ORDER BY day"
+// 近 30 天每日余额快照：每天取 MAX(id)（当日最后一次快照）那行的 balance，按 day 升序。
+// 沿用 getLatestUsage 的 MAX(id) 分组风格（WHERE id IN 子查询），规避裸列聚合语义问题。
+// 时间戳为本地时间（datetime('now','localtime')），窗口比较同样用 localtime 基准，避免时区错位。
+const SELECT_30DAY_BALANCE =
+  "SELECT DATE(timestamp) AS day, balance FROM api_usage WHERE id IN (SELECT MAX(id) FROM api_usage WHERE provider = ? AND model = ? AND timestamp >= date('now','localtime','-30 days') GROUP BY DATE(timestamp)) ORDER BY day"
 
 // tool 列省略，由 schema DEFAULT 'Bash' 填充
 const INSERT_APPROVAL =
@@ -71,9 +71,6 @@ interface RawUsageRow {
   model: string
   balance: number
   balance_currency: string
-  today_tokens: number
-  month_used: number
-  total_budget: number
   timestamp: string
 }
 
@@ -90,13 +87,7 @@ interface RawApprovalRow {
 
 interface RawDayRow {
   day: string
-  tokens: number | null
-}
-
-/** get30DayUsage 的按天聚合结果（§6.2 get30DayUsage；M11 TrendSparkline 消费） */
-export interface UsageDailyAggregate {
-  day: string
-  tokens: number
+  balance: number
 }
 
 function toUsageRecord(row: RawUsageRow): UsageRecord {
@@ -105,9 +96,6 @@ function toUsageRecord(row: RawUsageRow): UsageRecord {
     model: row.model,
     balance: row.balance,
     balanceCurrency: row.balance_currency,
-    todayTokens: row.today_tokens,
-    monthUsed: row.month_used,
-    totalBudget: row.total_budget,
     timestamp: row.timestamp
   }
 }
@@ -150,7 +138,7 @@ export class AppDatabase {
   // 惰性缓存的 prepared statements：首次使用时 prepare 后复用，避免 M6/M8 秒级轮询重复编译 SQL。
   private sInsertUsage: Database.Statement<unknown[]> | null = null
   private sLatestUsage: Database.Statement<unknown[], RawUsageRow> | null = null
-  private s30DayUsage: Database.Statement<unknown[], RawDayRow> | null = null
+  private s30DayBalance: Database.Statement<unknown[], RawDayRow> | null = null
   private sInsertApproval: Database.Statement<unknown[]> | null = null
   private sRecentApprovals: Database.Statement<unknown[], RawApprovalRow> | null = null
 
@@ -171,18 +159,10 @@ export class AppDatabase {
     this.db.exec(SCHEMA_SQL)
   }
 
-  recordUsage(
-    provider: string,
-    model: string,
-    balance: number,
-    currency: string,
-    todayTokens: number,
-    monthUsed: number,
-    totalBudget: number
-  ): void {
+  recordUsage(provider: string, model: string, balance: number, currency: string): void {
     try {
       const stmt = (this.sInsertUsage ??= this.db.prepare<unknown[]>(INSERT_USAGE))
-      stmt.run(provider, model, balance, currency, todayTokens, monthUsed, totalBudget)
+      stmt.run(provider, model, balance, currency)
     } catch (err) {
       console.warn(`[db] recordUsage 失败: ${(err as Error).message}`)
     }
@@ -200,14 +180,14 @@ export class AppDatabase {
     }
   }
 
-  get30DayUsage(provider: string, model: string): UsageDailyAggregate[] {
+  get30DayBalance(provider: string, model: string): BalanceDailySnapshot[] {
     try {
-      const stmt = (this.s30DayUsage ??= this.db.prepare<unknown[], RawDayRow>(
-        SELECT_30DAY_USAGE
+      const stmt = (this.s30DayBalance ??= this.db.prepare<unknown[], RawDayRow>(
+        SELECT_30DAY_BALANCE
       ))
-      return stmt.all(provider, model).map((row) => ({ day: row.day, tokens: row.tokens ?? 0 }))
+      return stmt.all(provider, model).map((row) => ({ day: row.day, balance: row.balance }))
     } catch (err) {
-      console.warn(`[db] get30DayUsage 失败: ${(err as Error).message}`)
+      console.warn(`[db] get30DayBalance 失败: ${(err as Error).message}`)
       return []
     }
   }
