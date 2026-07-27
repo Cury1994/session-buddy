@@ -7,8 +7,12 @@ export default defineConfig({
     build: {
       outDir: 'out/main',
       rollupOptions: {
+        // 多入口：index 为 Electron 主进程入口；config 作为独立入口产出
+        // out/main/config.js，便于裸 node `require('./out/main/config')` 验收/复用。
+        // config.ts 仅 import type 自 shared，无运行时共享代码，不与 index 产生共享 chunk。
         input: {
-          index: resolve(__dirname, 'src/main/index.ts')
+          index: resolve(__dirname, 'src/main/index.ts'),
+          config: resolve(__dirname, 'src/main/config.ts')
         }
       }
     },

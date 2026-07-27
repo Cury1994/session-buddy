@@ -1,0 +1,190 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { parse as yamlParse, stringify as yamlStringify } from 'yaml'
+
+import type { AppConfig } from '../shared/types'
+
+/**
+ * M2 — 配置管理（DESIGN §6.1 / §8.1 / §8.2）
+ *
+ * 注意：本模块**不 import electron 的 `app`**，因为验收用裸 node 直接
+ * `require('./out/main/config')` 运行，import electron 会让裸 node 崩溃。
+ * 内置 config.yaml 的路径用 `__dirname` 相对推导：
+ *   - 开发 / electron-vite build 产物：out/main/config.js → 上两级即项目根
+ *   - 打包后资源路径（process.resourcesPath 等）是 M15 的事，届时再适配
+ */
+
+/** 递归深拷贝 / 部分覆盖用的工具类型：数组整体保留，对象逐层可选 */
+export type DeepPartial<T> = T extends unknown[]
+  ? T
+  : T extends object
+    ? { [K in keyof T]?: DeepPartial<T[K]> }
+    : T
+
+// ─── 路径 ───
+
+const USER_DIR_PRIMARY = join(homedir(), '.config', 'harness-monitor')
+const USER_FILE_PRIMARY = join(USER_DIR_PRIMARY, 'config.yaml')
+const USER_FILE_COMPAT = join(homedir(), '.config', 'claude-monitor', 'config.yaml')
+
+// out/main/config.js → 上两级 = 项目根（dev 与 electron-vite build 产物均成立）
+const BUILTIN_CONFIG_PATH = join(__dirname, '..', '..', 'config.yaml')
+
+// ─── 兜底默认值（DESIGN §8.1；当内置 config.yaml 不可读时使用） ───
+
+const DEFAULT_CONFIG: AppConfig = {
+  server: { host: '127.0.0.1', port: 18456 },
+  providers: {
+    deepseek: {
+      balance_url: 'https://api.deepseek.com/user/balance',
+      check_interval_min: 1,
+      balance_warn_threshold: 0.15
+    }
+  },
+  harnesses: {
+    'claude-code': {
+      sessions_glob: '~/.claude/sessions/*.json',
+      settings_path: '~/.claude/settings.json',
+      refresh_interval_sec: 3,
+      config_dirs: ['~/.claude']
+    }
+  },
+  notifications: { enabled: true, approve_timeout_sec: 60 },
+  window: { width: 340, height: 650 },
+  autostart: { enabled: false }
+}
+
+// ─── 工具 ───
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * 递归深合并：纯对象逐层合并，**数组整体替换**（不做元素级合并），
+ * 标量直接覆盖。返回值与入参完全解耦（structuredClone 拷贝），不 mutate 入参。
+ */
+export function deepMerge(
+  base: Record<string, unknown>,
+  overrides: Record<string, unknown>
+): Record<string, unknown> {
+  const result = structuredClone(base)
+  if (!isPlainObject(overrides)) return result
+  if (!isPlainObject(result)) return structuredClone(overrides)
+
+  for (const [key, overValue] of Object.entries(overrides)) {
+    const baseValue = result[key]
+    if (isPlainObject(overValue) && isPlainObject(baseValue)) {
+      result[key] = deepMerge(baseValue, overValue)
+    } else {
+      result[key] = structuredClone(overValue)
+    }
+  }
+  return result
+}
+
+/**
+ * 读取并解析单个 YAML 配置文件。
+ * - 文件不存在（ENOENT）→ 静默返回 undefined（非错误，正常缺省）
+ * - 其它读取错误 / YAML 解析错误 / 顶层非对象 → console.warn + 返回 undefined
+ *   （不抛给调用方，符合 TASKS §18.4 降级原则）
+ */
+function readYamlFile(filePath: string): Record<string, unknown> | undefined {
+  let text: string
+  try {
+    text = readFileSync(filePath, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    console.warn(`[config] 读取失败 ${filePath}: ${(err as Error).message}`)
+    return undefined
+  }
+
+  let parsed: unknown
+  try {
+    parsed = yamlParse(text)
+  } catch (err) {
+    console.warn(`[config] YAML 解析失败 ${filePath}: ${(err as Error).message}`)
+    return undefined
+  }
+
+  if (parsed === null) return undefined // 空文件视为无覆盖
+  if (!isPlainObject(parsed)) {
+    console.warn(`[config] 顶层非对象，已忽略 ${filePath}`)
+    return undefined
+  }
+  return parsed
+}
+
+/** 解析 `--config <path>` / `--config=<path>`（DESIGN §6.1 优先级 1，预留实装） */
+function resolveCliConfigPath(argv: readonly string[] = process.argv): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    if (arg === undefined) continue
+    if (arg === '--config') {
+      const next = argv[i + 1]
+      return next && next.length > 0 ? next : undefined
+    }
+    if (arg.startsWith('--config=')) {
+      const value = arg.slice('--config='.length)
+      return value.length > 0 ? value : undefined
+    }
+  }
+  return undefined
+}
+
+/**
+ * 加载并合并配置（DESIGN §6.1 / §8.2）。
+ *
+ * 合并顺序（低 → 高优先级）：内置默认 → claude-monitor(兼容) → harness-monitor → --config。
+ *
+ * 注：DESIGN §8.2 的伪代码 user_paths 循环顺序与 §6.1 优先级表存在出入
+ * （§8.2 循环会让 claude-monitor 覆盖 harness-monitor）。此处遵循 §6.1 优先级表
+ * 与 TASKS §3 的明确要求：harness-monitor 优先级高于向后兼容的 claude-monitor。
+ */
+export function loadConfig(): AppConfig {
+  let cfg: Record<string, unknown> = deepMerge(
+    {},
+    DEFAULT_CONFIG as unknown as Record<string, unknown>
+  )
+
+  const builtin = readYamlFile(BUILTIN_CONFIG_PATH)
+  if (builtin) cfg = deepMerge(cfg, builtin)
+
+  const compat = readYamlFile(USER_FILE_COMPAT)
+  if (compat) cfg = deepMerge(cfg, compat)
+
+  const primary = readYamlFile(USER_FILE_PRIMARY)
+  if (primary) cfg = deepMerge(cfg, primary)
+
+  const cliPath = resolveCliConfigPath()
+  if (cliPath) {
+    const cli = readYamlFile(cliPath)
+    if (cli) cfg = deepMerge(cfg, cli)
+  }
+
+  return cfg as unknown as AppConfig
+}
+
+/**
+ * 保存用户配置：把 partial 深合并进现有用户文件（保留其它已覆盖 key），
+ * 写回 `~/.config/harness-monitor/config.yaml`（目录不存在则创建）。
+ * 仅写入用户显式覆盖的 key，不把默认值烘焙进用户文件（DESIGN §8.2）。
+ * 写入失败仅 warn 降级，不抛出（TASKS §18.4）；返回保存后的完整生效配置。
+ */
+export function saveConfig(partial: DeepPartial<AppConfig>): AppConfig {
+  const existing = readYamlFile(USER_FILE_PRIMARY) ?? {}
+  const mergedUser = deepMerge(
+    existing,
+    partial as unknown as Record<string, unknown>
+  )
+
+  try {
+    mkdirSync(USER_DIR_PRIMARY, { recursive: true })
+    writeFileSync(USER_FILE_PRIMARY, yamlStringify(mergedUser), 'utf8')
+  } catch (err) {
+    console.warn(`[config] 写入失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`)
+  }
+
+  return loadConfig()
+}
