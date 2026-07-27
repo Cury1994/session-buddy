@@ -1,10 +1,17 @@
 # harness-monitor — 设计文档
 
-> 版本 v3.1 | 2026-07-23 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
+> 版本 v3.2 | 2026-07-27 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
+>
+> **v3.2 变更**（蓝图裁剪，用户逐项确认）：
+> ① 用量视图删统计卡（今日 token / 本月用量 / 千 token 均价 — DeepSeek API 不返回，原为假数据）与余额进度条（API 不返回总预算，无分母），趋势线改画 30 天**余额**走势、原生 SVG 实现（删 Recharts 依赖）；
+> ② 告警阈值改 ¥ 绝对金额（默认 10），`api_usage` 表删 `today_tokens` / `month_used` / `total_budget` 三列；
+> ③ 删「想象的规模」：端口冲突改"提示退出"（删 port+1..+10 重试与 server.port 文件协议，approve.sh 用固定端口）；终端跳转只留 kgx → gnome-terminal → xterm（删 cmux/tmux 适配器链）；Session 发现只扫默认 `~/.claude/`（删多 profile 五路发现）；busy/idle 改进程存活判定（删 CPU 阈值 / 进程树遍历）；
+> ④ 时间戳统一本地时间（`datetime('now','localtime')`），无时区决策点；
+> ⑤ §11 abtop 对照压缩为参考说明（删未实现功能清单与示例代码）；打包 / 开机自启 / 审批超时配置移入 REQUIREMENTS §5 延后项。
 >
 > **v3.1 变更**：① 按 `docs/REVIEW.md` 完成 13 项整改（共享类型 §6.12 / approve.sh §6.13 / DeepSeek 响应 §6.7 / Linux 适配 §2.10 等）；② UI 基准原型统一为 **`harness_monitor.html`（340px 悬浮挂件，无侧边栏，分段导航）**，§2/§4 已全面对齐，`AppPrototype.jsx` 弃用；③ 窗口尺寸以设计资料为准（340×650，见 §2.9）。
 >
-> **参考项目**: [abtop](https://github.com/graykode/abtop) — Rust TUI AI agent monitor，Claude Code session 发现 / 进程信息采集 / 终端跳转 / 多 profile 发现的核心实现模式已验证，本章后端模块设计直接复用其已验证方案。细节见 §11 参考实现对照。
+> **参考项目**: [abtop](https://github.com/graykode/abtop) — Rust TUI AI agent monitor，Claude Code session 发现 / 进程信息采集的核心实现模式已验证，§6.8 设计参考其已验证方案（v3.2 裁剪后仅保留核心扫描模式，见 §11 参考实现说明）。
 
 ---
 
@@ -56,11 +63,11 @@
 | 前端框架 | React | ^19.x | 生态成熟、组件化 |
 | 类型系统 | TypeScript | ^5.x | 全栈类型安全 |
 | CSS | Tailwind CSS | ^3.x | utility-first，配合自定义 CSS 变量 |
-| 图表 | Recharts | ^2.x | React 原生、声明式 API |
+| 图表 | 原生 SVG | — | 30 点余额 sparkline，无需引入图表库（M1 已装的 recharts 在 M8 前移除） |
 | HTTP 服务 | Express | ^4.x | 路由参数提取、JSON 中间件 |
 | SQLite | better-sqlite3 | ^11.x | 同步 API、Node.js 原生绑定 |
 | 配置解析 | yaml | ^2.x | 与旧版 config.yaml 兼容 |
-| 打包 | electron-builder | ^25.x | .deb / AppImage |
+| 打包 | electron-builder | ^25.x | .deb / AppImage（移入延后项 D1，本轮不实现） |
 
 ### 1.3 审批机制选型：阻塞 HTTP + Promise
 
@@ -200,7 +207,7 @@
 | Electron `Tray` 在 GNOME(Wayland) 默认不显示 | 托盘图标消失 | 文档注明需安装 `gnome-shell-extension-appindicator`（Ubuntu 24.04 可 `apt install gnome-shell-extension-appindicator`）；应用启动时检测托盘是否可用，不可用则回退到普通任务栏窗口 + 桌面通知 |
 | 红绿灯按钮在 Linux 无原生对应 | Close/Minimize/Maximize 语义缺失 | 完全自绘（`TrafficLights.tsx`），Close → `win.hide()`（不 quit）、Minimize → `win.minimize()`、Maximize → `win.isMaximized()` toggle；`frame:false` 下自行处理 `-webkit-app-region: drag` 拖拽区 |
 | `~/.claude/sessions/*.json` 路径 | Linux 下路径正确 | 已确认：Claude Code 在 Linux 使用 `~/.claude/`（等价 `$HOME/.claude`），与 macOS 一致；多 profile 发现见 §6.8.1 |
-| 终端跳转 | macOS 的 iTerm2 不存在 | 使用 Linux 终端链：cmux → tmux → kgx → gnome-terminal → xterm（见 §6.8.4） |
+| 终端跳转 | macOS 的 iTerm2 不存在 | 使用 Linux 终端链：kgx → gnome-terminal → xterm（见 §6.8.4） |
 | 开机自启 | 无 LaunchAgent | 写 `~/.config/autostart/harness-monitor.desktop`（FR-6.6），而非 macOS 的 Login Items |
 
 ---
@@ -322,12 +329,13 @@ harness-monitor/
 <UsageView>
 ├── <Card> (余额卡)
 │   ├── "Current API Balance" + "Live" 绿色徽章
-│   └── 余额大数字 ¥14.25 (28px, ¥ 符号 16px)
-├── <Card> (统计卡, 竖线分隔左右)
-│   ├── Today's Tokens
-│   └── Monthly Spent
+│   ├── 余额大数字 ¥14.25 (28px, ¥ 符号 16px)
+│   └── 低余额警示文字 (balance < 阈值时显示红色小字 "低于告警线 ¥10"，无进度条)
 └── <Card> (趋势卡)
-    └── <TrendSparkline /> (60px 迷你面积折线, 30 天, hover 显示数值)
+    └── <TrendSparkline /> (60px 原生 SVG 面积折线, 30 天**余额**走势, hover 显示数值)
+
+// v3.2 裁剪：统计卡（Today's Tokens / Monthly Spent）已删除——
+// DeepSeek API 不返回 token 消耗，这些数据只能是 0 或估算假值
 
 <SettingsView>
 ├── <Card> General
@@ -345,11 +353,9 @@ harness-monitor/
 |------|---------|---------|
 | FR-2.5 运行时长 Uptime | 卡片未画 | 作为第二行微文字补充，或并入 Mem 行右侧 |
 | FR-2.8 Stop 按钮 | 卡片未画 | 不占卡片版面，放卡片 hover 浮层/右键菜单 |
-| FR-1.2 千 token 均价 | 未画 | 并入统计卡第三列（需放宽竖线布局）或与产品确认后取舍 |
-| FR-1.3 趋势图例/网格/坐标轴 | 仅 sparkline | widget 宽度限制，用 sparkline + hover Tooltip，不画完整坐标系 |
-| FR-1.4 余额进度条（绿/黄/红） | 未画 | 余额卡底部补 3px 进度条，颜色随阈值切换 |
+| FR-1.3 趋势图 | 仅 sparkline | widget 宽度限制，用 sparkline + hover Tooltip，不画完整坐标系；数据为 30 天余额快照 |
+| FR-1.4 低余额提示 | 未画 | 余额卡底部红色小字警示（不画进度条，API 无总预算分母）；主要告警走 tray 红点 + 桌面通知 |
 | FR-3.7 审批历史 | 未画 | SessionsView 底部可折叠块 |
-| FR-5.4 审批超时设置 | 未画 | Limits & Alerts 卡片追加一行 |
 
 ---
 
@@ -362,15 +368,15 @@ services.ts (定时器触发，默认每 1 分钟)
   → deepseek.checkBalance()
     → fetch("https://api.deepseek.com/user/balance",
             {headers: {Authorization: "Bearer $KEY"}})
-    → 解析 JSON → BalanceInfo
-  → db.recordUsage(balanceInfo)
+    → 解析 JSON → BalanceInfo {provider, balance, currency}
+  → db.recordUsage(provider, model, balance, currency)
   → win.webContents.send("usage:updated", db.getLatestUsage())
 
 renderer:
   preload.onUsageUpdated → useUsageData hook
     → UsageView:
-        余额卡片 {balance, todayTokens, monthUsed, avgPrice}
-        TrendSparkline {dailyUsage[] → <AreaChart mini>}
+        余额卡片 {balance, currency}（低于阈值显示警示文字）
+        TrendSparkline {dailyBalance[] → 原生 SVG area path}
 ```
 
 ### 5.2 Session 扫描
@@ -466,7 +472,7 @@ interface AppConfig {
     deepseek: {
       balance_url: string
       check_interval_min: number          // 默认 1（分钟）
-      balance_warn_threshold: number      // 默认 0.15
+      balance_warn_threshold: number      // 默认 10（CNY 绝对金额，v3.2 由比例改绝对值）
     }
   }
   harnesses: {
@@ -474,15 +480,14 @@ interface AppConfig {
       sessions_glob: string
       settings_path: string
       refresh_interval_sec: number        // 默认 3
-      config_dirs: string[]               // Claude config 目录（多 profile，默认 ["~/.claude"]，见 §6.8.1）
+      config_dirs: string[]               // Claude config 目录（默认 ["~/.claude"]；v3.2 仅扫此列表，不做自动发现）
     }
   }
   notifications: {
     enabled: boolean
-    approve_timeout_sec: number           // 默认 60
+    approve_timeout_sec: number           // 默认 60（v1 不在 UI 暴露，见 REQUIREMENTS §5 延后项）
   }
   window: { width: number; height: number }
-  autostart: { enabled: boolean }
 }
 ```
 
@@ -499,10 +504,7 @@ CREATE TABLE api_usage (
     model            TEXT    NOT NULL DEFAULT 'all',
     balance          REAL    NOT NULL DEFAULT 0,
     balance_currency TEXT    NOT NULL DEFAULT 'CNY',
-    today_tokens     INTEGER NOT NULL DEFAULT 0,
-    month_used       REAL    NOT NULL DEFAULT 0,
-    total_budget     REAL    NOT NULL DEFAULT 0,
-    timestamp        TEXT    NOT NULL DEFAULT (datetime('now'))
+    timestamp        TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX idx_usage_provider_time ON api_usage(provider, model, timestamp);
 
@@ -514,20 +516,22 @@ CREATE TABLE approval_history (
     cwd          TEXT,
     tool         TEXT    DEFAULT 'Bash',
     allowed      INTEGER NOT NULL DEFAULT 0,
-    timestamp    TEXT    NOT NULL DEFAULT (datetime('now'))
+    timestamp    TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX idx_approval_time ON approval_history(timestamp DESC);
 ```
+
+> v3.2 裁剪：`api_usage` 删除 `today_tokens` / `month_used` / `total_budget` 三列——DeepSeek API 不返回 token 消耗，这三列只能存 0 或估算假值。时间戳统一 `datetime('now','localtime')` 本地时间（单机工具，无跨时区需求；渲染端按字面本地时间展示，不做 Date 时区转换）。
 
 **DAO 方法**：
 
 | 方法 | SQL | 用途 |
 |------|-----|------|
-| `recordUsage(provider, model, balance, currency, tokens, used, budget)` | INSERT | 余额快照入库 |
+| `recordUsage(provider, model, balance, currency)` | INSERT | 余额快照入库 |
 | `getLatestUsage()` | SELECT MAX(id) GROUP BY provider, model | 用量 View 展示 |
-| `get30DayUsage(provider, model)` | SELECT DATE(timestamp) as day, SUM(today_tokens) as tokens GROUP BY day | 趋势图数据 |
+| `get30DayBalance(provider, model)` | 每日取 MAX(id) 那条快照的 balance + DATE(timestamp) as day | 余额趋势图数据 |
 | `recordApproval(harness, session, cmd, cwd, allowed)` | INSERT | 审批历史入库 |
-| `getRecentApprovals(limit=20)` | SELECT ORDER BY timestamp DESC LIMIT ? | 历史列表 |
+| `getRecentApprovals(limit=20)` | SELECT ORDER BY timestamp DESC, id DESC LIMIT ? | 历史列表 |
 
 ### 6.3 tray.ts — 系统托盘
 
@@ -537,7 +541,7 @@ CREATE INDEX idx_approval_time ON approval_history(timestamp DESC);
 
 | 优先级 | 颜色 | 条件 |
 |--------|------|------|
-| 0 (最高) | 红 `#ff5252` | 余额 < totalBudget × warn_threshold |
+| 0 (最高) | 红 `#ff5252` | 余额 < warn_threshold（¥ 绝对金额，默认 10） |
 | 1 | 橙 `#ffab00` | approvalQueue.size > 0 |
 | 2 (默认) | 绿 `#00e676` | 一切正常 |
 | 特殊 | 灰 `#5a6d82` | HTTP server 未启动 / 致命错误 |
@@ -593,22 +597,19 @@ BrowserWindow 配置:
 | POST | `/approve` | `handleApprove` | **阻塞式**审批 |
 | POST | `/approve/:id/respond` | `handleRespond` | 解析指定审批 |
 
-**端口冲突处理（REVIEW #7）**：`config.server.port` 硬编码 `18456` 可能被占用（如旧版 Python 进程未退出），`server.listen()` 会抛 `EADDRINUSE` 导致主进程 crash。处理策略：
+**端口冲突处理（v3.2 简化）**：`config.server.port` 默认 `18456`。单机单用户工具，端口被占几乎必然是旧版进程（Python 版或本应用）未退出：
 
 ```
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    // 1. 探测是否为"自己的旧实例"：GET http://127.0.0.1:{port}/health
-    //    若返回 {"status":"ok"} → 说明已有 harness-monitor 在跑，
-    //    配合单实例锁(FR-6.1)本不应走到这里；记录日志后正常退出(0)，不重复起服务
-    // 2. 否则为外部占用 → 顺序尝试 port+1..port+N（默认 N=10）
-    // 3. 全部占用 → 记 error 日志 + 桌面通知 + tray 置灰，应用继续运行
-    //    （余额/session 监控不依赖 HTTP，仅审批链路不可用）
+    // 1. 探测 http://127.0.0.1:{port}/health：
+    //    返回 {"status":"ok"} → 本应用旧实例在跑（单实例锁失效的极端情况），
+    //    记日志后正常退出(0)
+    // 2. 否则 → 桌面通知/对话框提示"端口 18456 被占用，请关闭占用程序后重启"，
+    //    退出(1)。不做端口重试，不写端口文件——approve.sh 直接用固定端口
   }
 })
 ```
-
-> 说明：审批 hook（approve.sh）需知道实际端口。实际监听端口写入 `app.getPath('userData')/server.port` 运行时文件，approve.sh 优先读该文件，回退到默认 18456（见 §6.13）。
 
 ### 6.6 approval-queue.ts — 审批队列
 
@@ -669,31 +670,24 @@ Timeout: 15s (AbortSignal.timeout)
 | `is_available` | — | — | `false` → 视为服务不可用，按错误态保留上次数据（NFR-3） |
 | `balance_infos[0].total_balance` | `balance` | `balance` | `parseFloat`，字符串 → REAL |
 | `balance_infos[0].currency` | `currency` | `balance_currency` | 默认 `"CNY"` |
-| `balance_infos[0].granted_balance` | （预留） | — | 赠送余额，v3.0 不展示 |
-| `balance_infos[0].topped_up_balance` | （预留） | — | 充值余额，v3.0 不展示 |
-| —（该接口不返回） | `todayTokens` | `today_tokens` | v3.0 置 0；token 消耗统计为后续扩展 |
-| —（该接口不返回） | `monthUsed` | `month_used` | 由相邻快照余额差值估算（余额下降额），无历史置 0 |
-| `topped_up + granted` 或配置预算 | `totalBudget` | `total_budget` | 余额百分比 = `balance / totalBudget`，用于 §6.3 告警阈值判定 |
+| `balance_infos[0].granted_balance` | — | — | 赠送余额，v1 不使用 |
+| `balance_infos[0].topped_up_balance` | — | — | 充值余额，v1 不使用 |
 
 > HTTP 非 200 / 超时 / JSON 解析失败 → 抛错，由 services.ts 捕获后保留上次快照（T-1.3 / NFR-3）。
+> 余额告警判定：`balance < config.providers.deepseek.balance_warn_threshold`（¥ 绝对金额，默认 10）。
 
 ### 6.8 claude-sessions.ts — Session 发现
 
 > **参考 abtop** `src/collector/claude.rs` — ClaudeCollector::collect_sessions() 的完整实现已验证，本节直接复用其核心流程。关键差异：abtop 是 Rust 实现，harness-monitor 用 Node.js 重写同逻辑。
 
-#### 6.8.1 Config 目录发现（参考 abtop `ConfigDir` / `refresh_config_dirs`）
+#### 6.8.1 Config 目录发现
 
 ```
-发现策略（多 profile 支持）:
-1. 始终扫描默认 ~/.claude/
-2. glob ~/.claude-* → 过滤含 sessions/ + projects/ 子目录的
-3. 读取**自身** config.yaml 的 `harnesses.claude-code.config_dirs` 字段
-   （见 §6.1 / §8.1；不依赖 abtop 的 ~/.config/abtop/config.toml）
-4. 从 CLAUDE_CONFIG_DIR 环境变量发现
-5. 从运行中 claude 进程的 /proc/<pid>/environ 发现 CLAUDE_CONFIG_DIR
+v3.2（简化）: 仅扫描 config.harnesses['claude-code'].config_dirs
+列表中的目录（默认 ["~/.claude"]）。
+不做自动发现（~/.claude-* 扫描、CLAUDE_CONFIG_DIR 环境变量、
+/proc 进程 environ 探测均已删除——单机单用户无需多 profile）。
 ```
-
-> 注意：当前 v3.0 默认只扫描 `~/.claude/`，上述 2-5 步为后续扩展预留。
 
 #### 6.8.2 Session 扫描流程（参考 abtop `ClaudeCollector::collect_sessions`）
 
@@ -722,15 +716,11 @@ Timeout: 15s (AbortSignal.timeout)
       Windows: sysinfo 库
       注意: AI 进程 ID 获取到内存，可能不包含子进程
 
-   d. Session 状态判定 (参考 abtop SessionStatus 枚举):
-      - 检查进程是否存在:
-        Linux:   fs.existsSync("/proc/{pid}")
-        macOS:   child_process.execSync("kill -0 {pid}") 成功
-        Windows: process.kill(pid, 0)
-      - 进程存在但 CPU < 阈值 → "idle" (Waiting)
-      - 进程存在且 CPU > 阈值 → "busy" (Thinking/Executing)
-      - 进程不存在 → "idle" + memory=0
-        (abtop 中对应的判断逻辑见 process.rs::has_active_descendant)
+   d. Session 状态判定（v3.2 简化：进程存活判定，无 CPU 阈值 / 进程树遍历）:
+      - 检查进程是否存在: fs.existsSync("/proc/{pid}")
+        （macOS 回退: child_process.execSync("kill -0 {pid}")）
+      - 进程存在 → "busy"（绿色脉冲灯）
+      - 进程不存在 → "idle"（灰色静止灯）+ memory=0
 
    e. 上下文百分比估算（与 Claude Code 终端底部上下文指示条同源）:
       glob("~/.claude/projects/*/{sessionId}.jsonl")
@@ -763,31 +753,21 @@ Timeout: 15s (AbortSignal.timeout)
    - session.hasPendingApproval = approvalQueue 中存在匹配项
 ```
 
-#### 6.8.3 与实际原型图的对应
+#### 6.8.3 采集字段范围
 
-abtop `collect_sessions` 返回的 `AgentSession` 结构包含字段远多于 harness-monitor 需求（token history、chat messages、tool calls、file access audit、subagents、git status、orphan ports 等），这些为后续扩展预留。当前 v3.0 仅采集原型图中展示的核心字段：name、status、uptime、memoryMB、apiProvider、ctxPct、cwd。
+v3.2 仅采集原型图中展示的核心字段：name、status、uptime、memoryMB、apiProvider、ctxPct、cwd、pid、sessionId。token 历史、tool call 时间线、git 状态、子 agent 树等均不采集。
 
-#### 6.8.4 终端跳转（参考 abtop jump 模块）
-
-> abtop `src/jump/` 支持 cmux → tmux → iTerm2 的适配器链模式，harness-monitor 简化为此流程：
+#### 6.8.4 终端跳转（v3.2 简化）
 
 ```
-终端打开优先级 (Linux):
-1. 检查是否在 cmux 环境中 → 调用 cmux API 跳转到对应窗格
-2. 检查 TMUX 环境变量 → tmux split-window / new-window
-3. 检查 WAYLAND_DISPLAY → kgx (gnome-console)
-4. 检查 DISPLAY → gnome-terminal
-5. 回退 → xterm
+终端打开顺序 (Linux / GNOME):
+1. 检查 WAYLAND_DISPLAY / DISPLAY → kgx (gnome-console)
+2. 回退 → gnome-terminal
+3. 最终回退 → xterm
 ```
 
-> abtop 的适配器模式（`TerminalJumper` trait + `resolve` 链式遍历）可以直接在 Node.js 中用策略模式复现：
-> ```typescript
-> interface TerminalJumper {
->   name: string
->   tryJump(pid: number, cwd: string): JumpResult // NotApplicable | Jumped | Failed
-> }
-> // 按优先级排列: cmux → tmux → kgx → gnome-terminal → xterm
-> ```
+直接 `spawn(terminal, [cwd 参数])`（kgx/gnome-terminal 用 `--working-directory`），
+无适配器链架构。cmux / tmux 窗格跳转已删除（当前环境用不到）。
 
 ### 6.9 services.ts — 定时任务
 
@@ -869,21 +849,21 @@ export interface BalanceInfo {
   provider: string            // "deepseek"
   balance: number             // total_balance parseFloat
   currency: string            // "CNY"
-  todayTokens: number         // v3.0 置 0（§6.7）
-  monthUsed: number           // 相邻快照余额差值估算
-  totalBudget: number         // 余额百分比基准（告警阈值判定）
 }
 
-/** api_usage 表行（§6.2）→ UsageView 渲染；db INTEGER/REAL → TS 映射 */
+/** api_usage 表行（§6.2）→ UsageView 渲染；db REAL → TS 映射 */
 export interface UsageRecord {
   provider: string            // "deepseek"
   model: string               // "all"
   balance: number
   balanceCurrency: string     // "CNY"
-  todayTokens: number
-  monthUsed: number
-  totalBudget: number
-  timestamp: string           // ISO 8601（db datetime('now')）
+  timestamp: string           // 本地时间 "YYYY-MM-DD HH:MM:SS"（db datetime('now','localtime')），渲染端按字面展示
+}
+
+/** get30DayBalance 聚合行 → TrendSparkline */
+export interface BalanceDailySnapshot {
+  day: string                 // "YYYY-MM-DD"（本地日期）
+  balance: number             // 当日最后一次快照余额
 }
 
 // ─── 审批流程 ───
@@ -913,7 +893,7 @@ export interface ApprovalRecord {
   cwd: string | null
   tool: string
   allowed: boolean
-  timestamp: string           // ISO 8601
+  timestamp: string           // 本地时间（同 UsageRecord.timestamp 约定）
 }
 
 /** approval:respond / respondApproval 的负载 */
@@ -923,7 +903,7 @@ export interface ApprovalResponse {
 }
 ```
 
-> 序列化约定：主进程经 `structuredClone` / IPC 传递纯 JSON，不含 Date/Map；时间一律 `number`(Unix ms) 或 ISO `string`，渲染侧用 `lib/formatters.ts` 格式化。
+> 序列化约定：主进程经 `structuredClone` / IPC 传递纯 JSON，不含 Date/Map；时间戳统一为本地时间 ISO `string`（db `datetime('now','localtime')`），渲染端按字面展示、用 `lib/formatters.ts` 格式化相对时间（相对时间计算以本地时间为基准，无时区转换）。
 
 ### 6.13 approve.sh — Hook 脚本设计（REVIEW #2）
 
@@ -964,9 +944,8 @@ Claude Code 触发 PreToolUse hook 时，向脚本 **stdin** 写入如下 JSON�
 # Claude Code PreToolUse hook — Bash 命令阻塞式审批
 set -uo pipefail   # 不用 -e：curl 失败需自行兜底，不能直接中断
 
-# 实际端口：优先读运行时文件（§6.5 端口冲突时会变），回退默认
-PORT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/harness-monitor/server.port"
-PORT="$(cat "$PORT_FILE" 2>/dev/null || echo 18456)"
+# 固定端口（v3.2：无端口重试、无运行时端口文件，见 §6.5）
+PORT="${HARNESS_MONITOR_PORT:-18456}"
 SERVER="http://127.0.0.1:${PORT}"
 # 客户端超时要 > 服务端 approve_timeout_sec(60s)，否则客户端先超时误判
 CURL_MAX=65
@@ -1083,27 +1062,26 @@ providers:
   deepseek:
     balance_url: "https://api.deepseek.com/user/balance"
     check_interval_min: 1
-    balance_warn_threshold: 0.15
+    balance_warn_threshold: 10            # ¥ 绝对金额（v3.2：原比例 0.15 改绝对值，API 不返回总预算）
 
 harnesses:
   claude-code:
     sessions_glob: "~/.claude/sessions/*.json"
     settings_path: "~/.claude/settings.json"
     refresh_interval_sec: 3
-    config_dirs:                      # 额外的 Claude config 目录（多 profile，见 §6.8.1）
-      - "~/.claude"                   # 默认始终包含
+    config_dirs:                      # Claude config 目录（v3.2 仅扫此列表，无自动发现）
+      - "~/.claude"
 
 notifications:
   enabled: true
-  approve_timeout_sec: 60
+  approve_timeout_sec: 60             # v1 固定，不在 UI 暴露（REQUIREMENTS §5 延后项）
 
 window:                               # 尺寸以设计资料为准，见 §2.9
   width: 340
   height: 650
-
-autostart:
-  enabled: false
 ```
+
+> v3.2：删除 `autostart` 段（开机自启移入 REQUIREMENTS §5 延后项）。M2 已实现的 `autostart` 字段读取在返工中一并移除。
 
 ### 8.2 加载策略
 
@@ -1134,11 +1112,11 @@ algorithm:
 
 | ID | 场景 | 预期结果 | 覆盖需求 |
 |----|------|---------|---------|
-| T-1.1 | `DEEPSEEK_API_KEY` 已设置 | UsageView 展示余额、货币、统计行 | FR-1.2 |
+| T-1.1 | `DEEPSEEK_API_KEY` 已设置 | UsageView 展示余额卡（余额 + 币种）与 30 天余额趋势线 | FR-1.2 / FR-1.3 |
 | T-1.2 | `DEEPSEEK_API_KEY` 未设置 | 卡片显示 "未配置 API Key" 空状态 | FR-1.1 |
 | T-1.3 | API 返回非 200 | 保留上次数据，上次无数据则显示错误态 | NFR-3 |
-| T-1.4 | 余额低于阈值 | Tray 红点 + 桌面通知 | FR-1.4 |
-| T-1.5 | 30 天趋势图渲染 | LineChart 正确展示数据 | FR-1.3 |
+| T-1.4 | 余额低于阈值（¥ 绝对金额） | Tray 红点 + 桌面通知 + 余额卡警示文字 | FR-1.4 |
+| T-1.5 | 30 天余额趋势线渲染 | 原生 SVG 折线正确展示每日余额快照 | FR-1.3 |
 
 ### 9.2 Session 监控
 
@@ -1188,7 +1166,8 @@ algorithm:
 | T-6.4 | server 超时无响应（> 65s） | curl `-m` 超时，fail-open exit 0 | FR-3.1 |
 | T-6.5 | `tool_name` 非 Bash / `tool_input.command` 为空 | 直接 exit 0，不发起请求 | FR-3.1 |
 | T-6.6 | 命令含危险关键字且 60s 无人操作 | 服务端自动 deny → `allowed:false` → exit 2 | FR-3.2 / FR-3.4 |
-| T-6.7 | `server.port` 运行时文件指向非默认端口 | 脚本读取该端口并正确连接 | FR-6.2 |
+
+> v3.2：删除 T-6.7（server.port 运行时文件用例——端口文件协议已随 §6.5 简化删除）。
 
 ---
 
@@ -1197,20 +1176,20 @@ algorithm:
 | 需求 ID | 设计章节 | 模块/组件 |
 |---------|---------|----------|
 | FR-1.1 余额查询 | 6.7, 6.9 | deepseek.ts + services.ts |
-| FR-1.2 余额卡片 | 4, 5.1 | UsageView.tsx |
-| FR-1.3 30天趋势图 | 4, 5.1 | TrendSparkline.tsx (Recharts AreaChart mini) |
-| FR-1.4 余额告警 | 6.3, 6.10 | tray.ts + notifications.ts |
+| FR-1.2 余额卡片 | 4, 5.1 | UsageView.tsx（余额 + 币种 + 低余额警示） |
+| FR-1.3 30天余额趋势 | 4, 5.1 | TrendSparkline.tsx（原生 SVG，db.get30DayBalance） |
+| FR-1.4 余额告警 | 6.3, 6.10 | tray.ts + notifications.ts（¥ 绝对金额阈值） |
 | FR-1.5 定时/手动刷新 | 6.9, 8.1 | services.ts |
-| FR-1.6 用量持久化 | 6.2 | db.ts (SQLite) |
-| FR-2.1 Session 发现 | 6.8, 6.9 | claude-sessions.ts + services.ts |
+| FR-1.6 用量持久化 | 6.2 | db.ts (SQLite 余额快照) |
+| FR-2.1 Session 发现 | 6.8, 6.9 | claude-sessions.ts + services.ts（仅默认目录） |
 | FR-2.2 进程内存 | 6.8 | claude-sessions.ts (VmRSS) |
-| FR-2.3 上下文估算 | 6.8 | claude-sessions.ts (history.jsonl) |
+| FR-2.3 上下文估算 | 6.8 | claude-sessions.ts (transcript usage) |
 | FR-2.4 API Provider 解析 | 6.8 | claude-sessions.ts (settings.json) |
-| FR-2.5 Session 卡片 | 4 | SessionCard.tsx + StatusDot.tsx |
+| FR-2.5 Session 卡片 | 4 | SessionCard.tsx + StatusDot.tsx（进程存活判定） |
 | FR-2.6 上下文进度条 | 4 | ContextGauge.tsx |
-| FR-2.7 跳转终端 | 6.11, 4 | IPC + SessionCard |
+| FR-2.7 跳转终端 | 6.11, 6.8.4 | IPC + kgx/gnome-terminal 直起 |
 | FR-2.8 终止 Session | 6.11, 4 | IPC + SessionCard |
-| FR-3.1 Hook 脚本 | 6.13 | resources/hooks/approve.sh |
+| FR-3.1 Hook 脚本 | 6.13 | resources/hooks/approve.sh（固定端口） |
 | FR-3.2 审批阻塞 | 6.6 | approval-queue.ts |
 | FR-3.3 审批卡片 | 4 | ApprovalBlock.tsx |
 | FR-3.4 危险检测 | 4, renderer/lib | danger-words.ts |
@@ -1219,110 +1198,24 @@ algorithm:
 | FR-3.7 审批历史 | 6.2, 4 | ApprovalHistory.tsx + db.ts |
 | FR-3.8 桌面通知 | 6.10 | notifications.ts |
 | FR-4.x 系统托盘 | 6.3 | tray.ts |
-| FR-5.1~5.4 设置 | 4, 8.1 | SettingsView.tsx |
+| FR-5.1~5.3 设置 | 4, 8.1 | SettingsView.tsx（无开机自启项） |
 | FR-6.1 单实例锁 | — | index.ts |
-| FR-6.2 HTTP API | 6.5 | server.ts |
+| FR-6.2 HTTP API | 6.5 | server.ts（固定端口，占用即退出） |
 | FR-6.3 健康检查 | 6.5 | GET /health |
 | FR-6.4 YAML 配置 | 6.1, 8.2 | config.ts |
 | FR-6.5 优雅退出 | — | index.ts |
-| FR-6.6 开机自启 | 4, 8.1 | SettingsView + config |
+
+> 延后项（REQUIREMENTS §5）：FR-3.9 终端并行 / FR-5.4 审批超时配置 / FR-6.6 开机自启 + 打包。
 
 ---
 
-## 11. 参考实现对照（abtop → harness-monitor）
+## 11. 参考实现说明
 
-> [abtop](https://github.com/graykode/abtop) 是一个 Rust TUI AI agent monitor，与 harness-monitor 有大量功能重叠。以下是已验证的核心实现对照：
-
-### 11.1 模块映射
-
-| abtop 模块 (Rust) | harness-monitor 模块 (Node.js/TS) | 功能 | 复用度 |
-|-------------------|----------------------------------|------|--------|
-| `collector/claude.rs` — ClaudeCollector | `claude-sessions.ts` — ClaudeSessionScanner | Session JSON 解析、进程状态、模型发现 | 完整复用（Node.js 重写） |
-| `collector/process.rs` — get_process_info() | 内嵌在 claude-sessions.ts | /proc 文件系统解析（Linux） | 完整复用 |
-| `collector/process.rs` — cmd_has_binary() | 内嵌在 claude-sessions.ts | 进程命令行匹配（含 autoupdater 布局） | 后续扩展 |
-| `collector/process.rs` — is_descendant_of() | 内嵌在 claude-sessions.ts | 进程树遍历 | 后续扩展 |
-| `collector/process.rs` — get_listening_ports() | 内嵌在 claude-sessions.ts | 孤儿端口检测（/proc/net/tcp） | 后续扩展 |
-| `collector/process.rs` — collect_git_stats() | 内嵌在 claude-sessions.ts | git status 统计 | 后续扩展 |
-| `jump/mod.rs` — jumpers() | 内嵌在 claude-sessions.ts | 终端跳转适配器链 | 复用（简化） |
-| `jump/cmux.rs` / `jump/tmux.rs` | 内嵌在 claude-sessions.ts | cmux / tmux 窗格跳转 | 完整复用 |
-| `config.rs` — load_config() | `config.ts` | TOML/YAML 配置加载（多路径回退） | 模式复用 |
-| `config.rs` — rewrite_kv_lines() | `config.ts` — saveConfig() | 配置文件原地编辑（保留注释和未知 key） | 模式复用 |
-| `model/session.rs` — AgentSession | 内嵌在 claude-sessions.ts | Session 数据模型 | 部分复用 |
-| `model/session.rs` — SessionStatus | StatusDot.tsx 的状态判定逻辑 | Thinking/Executing/Waiting/Done 状态机 | 完整复用 |
-| `snapshot.rs` — Snapshot / SessionView | IPC push payload 结构 | 数据序列化 + 前端绑定 | 模式复用 |
-| `collector/rate_limit.rs` | 后续扩展 | Rate Limit 信息采集 | 后续扩展 |
-| `locale.rs` | 后续扩展 | 中英文 i18n | 后续扩展 |
-
-### 11.2 关键复用模式
-
-**1. ProcessTree 遍历（abtop `is_descendant_of`）**
-
-```
-// abtop Rust → harness-monitor TS
-function isDescendantOf(pid: number, ancestor: number, procInfo: Map<number, ProcInfo>): boolean {
-  let current = pid;
-  const visited = new Set<number>();
-  while (visited.has(current) === false) {
-    visited.add(current);
-    const info = procInfo.get(current);
-    if (!info) return false;
-    if (info.ppid === ancestor) return true;
-    if (info.ppid === 0 || info.ppid === 1) return false;
-    current = info.ppid;
-  }
-  return false;
-}
-```
-
-**2. 终端跳转适配器链（abtop `jump::resolve`）**
-
-abtop 的适配器注册表模式（`Vec<Box<dyn TerminalJumper>>` → 链式 try_jump）直接映射到 harness-monitor 的 Terminal 打开优先级链：
-
-```
-cmux → tmux → kgx → gnome-terminal → xterm
-```
-
-每个适配器返回 `NotApplicable`（不在该终端中）→ 链继续；`Jumped` → 成功停止；`Failed` → 报告错误停止。
-
-**3. Session 状态机（abtop `SessionStatus`）**
-
-```
-Thinking   → 上一轮 user 消息后还没有 assistant 响应（thinking_since_ms > 0）
-Executing  → 进程树后代 CPU > 阈值 或 current_tasks 非空
-Waiting    → 进程存活但 CPU 低于阈值
-Done       → 进程已死 / JSON 标记为结束
-RateLimited → 检测到 rate limit 信号
-Unknown    → session 文件存在但进程归属未确认
-```
-
-当前 v3.0 只用双态 busy/idle（对应用户视角的 Working/Waiting），后续可扩展。
-
-**4. 上下文窗口检测（abtop `context_window_for_model`）**
-
-```typescript
-function contextWindowForModel(transcriptModel: string, configuredModel: string, maxContextTokens: number): number {
-  if (transcriptModel.includes('[1m]') || configuredModel.includes('[1m]') || maxContextTokens > 200_000) {
-    return 1_000_000; // 1M context window
-  }
-  return 200_000; // default
-}
-```
-
-### 11.3 abtop 已验证但 harness-monitor v3.0 暂不实现的功能
-
-以下功能 abtop 已完整实现，但 harness-monitor v3.0 排除，后续版本可参考：
-
-| abtop 功能 | 对应模块 | v3.0 不做的原因 |
-|-----------|---------|----------------|
-| Token 消耗追踪 + 历史 sparkline | collector/claude.rs → token_history | 需解析 transcript JSONL 增量读取，复杂度高 |
-| Rate Limit 检测与展示 | collector/rate_limit.rs | 仅 DeepSeek API 场景暂不需要 |
-| Git 状态显示 (added/modified) | process.rs → collect_git_stats | Session 卡片空间有限 |
-| 孤儿端口检测与清理 | collector/mod.rs → orphan_ports | 非当前优先需求 |
-| 子进程/子 agent 树 | collector/claude.rs → children/subagents | Session 卡片空间有限 |
-| Chat 消息尾 | collector/claude.rs → chat_messages | 非 UI 核心功能 |
-| Tool call 时间线 | collector/claude.rs → tool_calls | 需解析 transcript，复杂度高 |
-| File access audit | collector/claude.rs → file_accesses | 安全审计功能，后续可加 |
-| Multi-agent 支持 (Codex/OpenCode) | collector/codex.rs, collector/opencode.rs | v3.0 仅 Claude Code |
-| Demo mode | demo.rs → populate_demo | 原型图已包含 mock 数据，无需 demo 模式 |
-| 多主题 (12 themes) | theme.rs | 当前仅 macOS 浅色，后续扩展暗色 |
-| i18n (中/英) | locale.rs | v3.0 只做中文 |
+> [abtop](https://github.com/graykode/abtop)（Rust TUI AI agent monitor）为本项目 Session 发现部分提供了实现参照。已采纳的核心模式：
+>
+> - `~/.claude/sessions/*.json` 扫描 → 解析 pid / sessionId / cwd / startedAt，读 `/proc/{pid}/stat` 得内存（§6.8.2a-c）
+> - transcript jsonl（`~/.claude/projects/*/{sessionId}.jsonl`）末条 assistant 消息 usage → input + cache_read + cache_creation = 上下文占用（§6.8.2e，与终端状态栏同源）
+> - 模型名含 `[1m]` → 上下文窗口按 1M 计，否则 200K（§6.8.2e）
+> - settings.json 的 `ANTHROPIC_DEFAULT_*_MODEL_NAME` → 还原 API provider 名（§6.8.2f）
+>
+> v3.2 裁剪后**不采纳**的 abtop 模式：进程树遍历与 CPU 阈值 busy/idle 判定（改进程存活判定）、cmux/tmux 终端跳转适配器链（只留 kgx/gnome-terminal 直起）、多 profile 目录自动发现（只扫配置列表）。其余未实现功能（token 历史、rate limit、git 状态、子 agent 树等）如需扩展直接参考 abtop 源码，本文档不再逐一列表。
