@@ -121,8 +121,9 @@ node -e "require('./out/main/config').loadConfig()"
 
 # 用户配置覆盖
 mkdir -p ~/.config/harness-monitor
-echo "server:\n  port: 9999" > ~/.config/harness-monitor/config.yaml
+printf 'server:\n  port: 9999\n' > ~/.config/harness-monitor/config.yaml
 # → port=9999，其他保持默认
+# 注：用 printf（bash echo 不展开 \n，会写入字面量）；验证后删除测试文件
 ```
 
 ---

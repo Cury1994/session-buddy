@@ -1112,9 +1112,9 @@ autostart:
 
 algorithm:
   defaults = parse(<app>/config.yaml)
-  user_paths = [
-    ~/.config/harness-monitor/config.yaml,
-    ~/.config/claude-monitor/config.yaml,   // backward compat
+  user_paths = [                               // 按优先级【从低到高】排列依次合并，
+    ~/.config/claude-monitor/config.yaml,      // backward compat（低，先合并）
+    ~/.config/harness-monitor/config.yaml,     // 主配置（高，后合并可覆盖 compat）
   ]
   for path in user_paths:
     if path.exists:
@@ -1122,6 +1122,9 @@ algorithm:
       defaults = deepMerge(defaults, user_config)
   return defaults
 ```
+
+> v3.1.1 勘误：原版 user_paths 顺序为 harness-monitor 在前、claude-monitor 在后，
+> 循环合并会让向后兼容路径覆盖主配置，与 §6.1 优先级表矛盾。已按 §6.1 修正合并顺序。
 
 ---
 

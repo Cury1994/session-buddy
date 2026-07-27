@@ -7,8 +7,8 @@
 | 模块 | 优先级 | 状态 | 单测 | Code Review | 完成时间 | 备注 |
 |------|--------|------|------|-------------|---------|------|
 | M1 项目骨骼 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-24 | commit 4e30d2f + 5783a5d（review 整改） |
-| M2 配置管理 | P0 | ⏳ 未开始 | — | — | | |
-| M3 数据库 | P0 | ⏳ 未开始 | — | — | | |
+| M2 配置管理 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-27 | commit 9a277be；P2 小修随 M3 提交 |
+| M3 数据库 | P0 | 🔄 进行中 | — | — | | better-sqlite3，externalizeDeps 必加 |
 | M4 系统托盘 + 窗口管理 | P0 | ⏳ 未开始 | — | — | | 340×650 挂件 |
 | M5 HTTP Server + 审批队列 | P0 | ⏳ 未开始 | — | — | | id=UUID + 端口冲突处理 |
 | M6 DeepSeek 余额查询 | P0 | ⏳ 未开始 | — | — | | |
@@ -106,6 +106,31 @@
 ### 2026-07-24 ｜ 文档 ｜ 蓝图入库
 - docs/（REQUIREMENTS/DESIGN/TASKS/PROGRESS/REVIEW/plan）+ 基准原型 harness_monitor.html + 设计资料两份 txt 提交入库（审查基准需版本化）
 
+### 2026-07-27 ｜ 第三阶段 ｜ M2 开始
+- 注入上下文：TASKS §3（M2 任务 + 验收）/ DESIGN §6.1（search paths + AppConfig 类型）/ §8.1-8.2（schema + 加载策略）
+- 范围：src/main/config.ts — loadConfig 多路径优先级 + deepMerge + saveConfig + AppConfig 类型化
+- 派发：开发+测试合并 subagent（续用 M1 agent，环境上下文复用）
+
+### 2026-07-27 ｜ M2 ｜ 开发完成（commit 9a277be）
+- 产出：src/main/config.ts（loadConfig/saveConfig/deepMerge/DeepPartial）+ src/shared/types.ts（AppConfig 及子接口，对齐 §6.1/§8.1）+ electron.vite.config.ts 多入口（out/main/config.js 独立产出供裸 node 验收）
+- 验收：默认 port=18456 ✅；用户覆盖 port=9999 ✅；saveConfig 深合并写回（HOME=/tmp 隔离测试）✅；数组整体替换 ✅；npm run dev 多入口下窗口正常 ✅
+- 蓝图缺陷发现并修正：DESIGN §8.2 合并顺序与 §6.1 优先级表矛盾（compat 会覆盖主配置）→ 实现遵循 §6.1+TASKS §3（正确），主对话已出 §8.2 v3.1.1 勘误
+- 中途网关 502 两次（无工作丢失，重试恢复）
+
+### 2026-07-27 ｜ M2 ｜ Code Review 通过（无 P0/P1）
+- 审查方实测全过：优先级双文件（harness 胜 compat、compat 独有键保留）✅、--config 最高优先 ✅、deepMerge 不 mutate + 数组整体替换 ✅、损坏/非对象/无权限 YAML 降级不抛 ✅、saveConfig 目录自建 + 仅写覆盖 key ✅、裸 node require ✅、strict 无 any 逃逸 ✅
+- AppConfig 与 §6.1 逐项比对全一致（含 'claude-code' 连字符 key）
+- P2 处置：
+  - 随 M3 顺修：saveConfig 原子写（temp+rename）；--config 重复 first-wins 注释；deepMerge 死代码清理
+  - 延后：save 成功标志 → M13 一并设计；路径 import 期常量（记录备查）；写入权限收紧（config 引入 token 字段时）
+- 文档修正：TASKS §3 验收命令 echo→printf（bash echo 不展开 \n）
+
+### 2026-07-27 ｜ 第三阶段 ｜ M3 开始
+- 注入上下文：TASKS §4（M3 任务 + 验收）/ DESIGN §6.2（Schema + DAO 方法表）
+- 范围：src/main/db.ts — AppDatabase 类（initDB 建表 + WAL / recordUsage / getLatestUsage / get30DayUsage / recordApproval / getRecentApprovals / close）
+- 前置必做：electron.vite.config main 构建加 externalizeDeps（better-sqlite3 native .node 不可被 vite 打包，M1 review 遗留项）
+- 派发：开发+测试合并 subagent（先 fix(M2) P2 小修独立 commit，再 feat(M3)）
+
 ---
 
-**下一步**：M2 配置管理（config.ts 主进程模块，读 config.yaml，见 TASKS §3 / DESIGN §6.1）。
+**下一步**：M3 开发中。完成后独立 Code Review，通过后进 M4 系统托盘 + 窗口管理。
