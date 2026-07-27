@@ -1,5 +1,5 @@
 import { resolve } from 'path'
-import { defineConfig } from 'electron-vite'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
@@ -12,7 +12,8 @@ export default defineConfig({
         // config.ts 仅 import type 自 shared，无运行时共享代码，不与 index 产生共享 chunk。
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          config: resolve(__dirname, 'src/main/config.ts')
+          config: resolve(__dirname, 'src/main/config.ts'),
+          db: resolve(__dirname, 'src/main/db.ts')
         }
       }
     },
@@ -20,7 +21,9 @@ export default defineConfig({
       alias: {
         '@main': resolve(__dirname, 'src/main')
       }
-    }
+    },
+    // native 模块（better-sqlite3 等）与运行时依赖必须 external，否则被 vite 打包会损坏 .node 绑定
+    plugins: [externalizeDepsPlugin()]
   },
   preload: {
     build: {
@@ -30,7 +33,8 @@ export default defineConfig({
           index: resolve(__dirname, 'src/preload/index.ts')
         }
       }
-    }
+    },
+    plugins: [externalizeDepsPlugin()]
   },
   renderer: {
     root: 'src/renderer',

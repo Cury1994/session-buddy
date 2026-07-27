@@ -1,0 +1,242 @@
+import { mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { app } from 'electron'
+import Database from 'better-sqlite3'
+
+import type { ApprovalRecord, UsageRecord } from '../shared/types'
+
+/**
+ * M3 — 数据库封装（DESIGN §6.2）
+ *
+ * 错误处理取舍（TASKS §18.4 + M3 review 指引）：
+ * - DAO 读写方法：try/catch + console.warn，读失败返回安全空值（[] / 映射空集），
+ *   写失败仅告警不抛——上层（M5/M8）不应因单次 DB 抖动崩溃。
+ * - constructor / initDB：属致命错误（路径不可写、Schema 损坏等），**不捕获，直接抛**，
+ *   由调用方在启动阶段感知并处理。
+ */
+
+// ─── Schema（DESIGN §6.2 逐字，列/索引定义完全一致；加 IF NOT EXISTS 以支持重复启动幂等建表） ───
+
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS api_usage (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider         TEXT    NOT NULL DEFAULT 'deepseek',
+    model            TEXT    NOT NULL DEFAULT 'all',
+    balance          REAL    NOT NULL DEFAULT 0,
+    balance_currency TEXT    NOT NULL DEFAULT 'CNY',
+    today_tokens     INTEGER NOT NULL DEFAULT 0,
+    month_used       REAL    NOT NULL DEFAULT 0,
+    total_budget     REAL    NOT NULL DEFAULT 0,
+    timestamp        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_usage_provider_time ON api_usage(provider, model, timestamp);
+
+CREATE TABLE IF NOT EXISTS approval_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    harness      TEXT    NOT NULL,
+    session_name TEXT,
+    command      TEXT    NOT NULL,
+    cwd          TEXT,
+    tool         TEXT    DEFAULT 'Bash',
+    allowed      INTEGER NOT NULL DEFAULT 0,
+    timestamp    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_approval_time ON approval_history(timestamp DESC);
+`
+
+const INSERT_USAGE =
+  'INSERT INTO api_usage (provider, model, balance, balance_currency, today_tokens, month_used, total_budget) VALUES (?, ?, ?, ?, ?, ?, ?)'
+
+// 每个 (provider, model) 取最新一行：用 WHERE id IN (SELECT MAX(id) ... GROUP BY)，
+// 规避 SQLite `SELECT *, MAX(id) ... GROUP BY` 的裸列语义不可靠问题。
+const SELECT_LATEST_USAGE =
+  'SELECT * FROM api_usage WHERE id IN (SELECT MAX(id) FROM api_usage GROUP BY provider, model) ORDER BY provider, model'
+
+const SELECT_30DAY_USAGE =
+  "SELECT DATE(timestamp) AS day, SUM(today_tokens) AS tokens FROM api_usage WHERE provider = ? AND model = ? AND timestamp >= date('now', '-30 days') GROUP BY day ORDER BY day"
+
+// tool 列省略，由 schema DEFAULT 'Bash' 填充
+const INSERT_APPROVAL =
+  'INSERT INTO approval_history (harness, session_name, command, cwd, allowed) VALUES (?, ?, ?, ?, ?)'
+
+const SELECT_RECENT_APPROVALS =
+  'SELECT * FROM approval_history ORDER BY timestamp DESC LIMIT ?'
+
+// ─── 行原始结构（snake_case，对应表列） ───
+
+interface RawUsageRow {
+  id: number
+  provider: string
+  model: string
+  balance: number
+  balance_currency: string
+  today_tokens: number
+  month_used: number
+  total_budget: number
+  timestamp: string
+}
+
+interface RawApprovalRow {
+  id: number
+  harness: string
+  session_name: string | null
+  command: string
+  cwd: string | null
+  tool: string
+  allowed: number
+  timestamp: string
+}
+
+interface RawDayRow {
+  day: string
+  tokens: number | null
+}
+
+/** get30DayUsage 的按天聚合结果（§6.2 get30DayUsage；M11 TrendSparkline 消费） */
+export interface UsageDailyAggregate {
+  day: string
+  tokens: number
+}
+
+function toUsageRecord(row: RawUsageRow): UsageRecord {
+  return {
+    provider: row.provider,
+    model: row.model,
+    balance: row.balance,
+    balanceCurrency: row.balance_currency,
+    todayTokens: row.today_tokens,
+    monthUsed: row.month_used,
+    totalBudget: row.total_budget,
+    timestamp: row.timestamp
+  }
+}
+
+function toApprovalRecord(row: RawApprovalRow): ApprovalRecord {
+  return {
+    id: row.id,
+    harness: row.harness,
+    sessionName: row.session_name,
+    command: row.command,
+    cwd: row.cwd,
+    tool: row.tool,
+    allowed: row.allowed === 1,
+    timestamp: row.timestamp
+  }
+}
+
+/**
+ * 解析默认 DB 路径。
+ *
+ * 裸 node 下 `require('electron')` 返回的是 electron 二进制路径**字符串**而非 API 对象，
+ * 此时 `app` 解构为 undefined；仅当真正运行于 Electron 主进程（`app.getPath` 为函数）
+ * 时才用 `userData`，否则回退 `~/.config/harness-monitor/monitor.db`（与 §6.2 Linux 路径一致）。
+ */
+function resolveDefaultDbPath(): string {
+  if (app && typeof app.getPath === 'function') {
+    try {
+      return join(app.getPath('userData'), 'monitor.db')
+    } catch {
+      /* 取 userData 失败则回退 */
+    }
+  }
+  return join(homedir(), '.config', 'harness-monitor', 'monitor.db')
+}
+
+export class AppDatabase {
+  private readonly db: Database.Database
+  readonly path: string
+
+  /**
+   * @param dbPath 显式路径（测试/验收用）；省略则用 resolveDefaultDbPath()。
+   * 构造函数内的 mkdir / new Database 失败属致命错误，直接抛出。
+   */
+  constructor(dbPath?: string) {
+    this.path = dbPath ?? resolveDefaultDbPath()
+    // 确保父目录存在（默认 fallback 目录可能尚未创建；/tmp 等已存在时为 no-op）
+    mkdirSync(dirname(this.path), { recursive: true })
+    this.db = new Database(this.path)
+  }
+
+  /** 开 WAL + 建表/索引（幂等）。致命错误抛出。 */
+  initDB(): void {
+    this.db.pragma('journal_mode = WAL')
+    this.db.exec(SCHEMA_SQL)
+  }
+
+  recordUsage(
+    provider: string,
+    model: string,
+    balance: number,
+    currency: string,
+    todayTokens: number,
+    monthUsed: number,
+    totalBudget: number
+  ): void {
+    try {
+      this.db
+        .prepare<unknown[]>(INSERT_USAGE)
+        .run(provider, model, balance, currency, todayTokens, monthUsed, totalBudget)
+    } catch (err) {
+      console.warn(`[db] recordUsage 失败: ${(err as Error).message}`)
+    }
+  }
+
+  getLatestUsage(): UsageRecord[] {
+    try {
+      const rows = this.db.prepare<unknown[], RawUsageRow>(SELECT_LATEST_USAGE).all()
+      return rows.map(toUsageRecord)
+    } catch (err) {
+      console.warn(`[db] getLatestUsage 失败: ${(err as Error).message}`)
+      return []
+    }
+  }
+
+  get30DayUsage(provider: string, model: string): UsageDailyAggregate[] {
+    try {
+      const rows = this.db
+        .prepare<unknown[], RawDayRow>(SELECT_30DAY_USAGE)
+        .all(provider, model)
+      return rows.map((row) => ({ day: row.day, tokens: row.tokens ?? 0 }))
+    } catch (err) {
+      console.warn(`[db] get30DayUsage 失败: ${(err as Error).message}`)
+      return []
+    }
+  }
+
+  recordApproval(
+    harness: string,
+    sessionName: string | null,
+    command: string,
+    cwd: string | null,
+    allowed: boolean
+  ): void {
+    try {
+      this.db
+        .prepare<unknown[]>(INSERT_APPROVAL)
+        .run(harness, sessionName, command, cwd, allowed ? 1 : 0)
+    } catch (err) {
+      console.warn(`[db] recordApproval 失败: ${(err as Error).message}`)
+    }
+  }
+
+  getRecentApprovals(limit = 20): ApprovalRecord[] {
+    try {
+      const rows = this.db
+        .prepare<unknown[], RawApprovalRow>(SELECT_RECENT_APPROVALS)
+        .all(limit)
+      return rows.map(toApprovalRecord)
+    } catch (err) {
+      console.warn(`[db] getRecentApprovals 失败: ${(err as Error).message}`)
+      return []
+    }
+  }
+
+  close(): void {
+    try {
+      this.db.close()
+    } catch (err) {
+      console.warn(`[db] close 失败: ${(err as Error).message}`)
+    }
+  }
+}

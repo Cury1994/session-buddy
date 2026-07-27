@@ -60,3 +60,29 @@ export interface AppConfig {
   window: WindowConfig
   autostart: AutostartConfig
 }
+
+// ─── API 用量 / 审批历史（DESIGN §6.12，db INTEGER/REAL → TS 映射） ───
+
+/** api_usage 表行（§6.2）→ UsageView 渲染 */
+export interface UsageRecord {
+  provider: string
+  model: string
+  balance: number
+  balanceCurrency: string
+  todayTokens: number
+  monthUsed: number
+  totalBudget: number
+  timestamp: string // ISO 8601（db datetime('now')）
+}
+
+/** approval_history 表行（§6.2）→ ApprovalHistory 渲染；allowed INTEGER → boolean */
+export interface ApprovalRecord {
+  id: number
+  harness: string
+  sessionName: string | null
+  command: string
+  cwd: string | null
+  tool: string
+  allowed: boolean
+  timestamp: string // ISO 8601
+}
