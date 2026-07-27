@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml'
@@ -59,6 +60,15 @@ const DEFAULT_CONFIG: AppConfig = {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** 存在性守卫删除：清理原子写临时文件，任何删除错误均忽略 */
+function removeIfExists(filePath: string): void {
+  try {
+    unlinkSync(filePath)
+  } catch {
+    /* 临时文件不存在或清理失败均可忽略 */
+  }
 }
 
 /**
@@ -182,23 +192,19 @@ export function saveConfig(partial: DeepPartial<AppConfig>): AppConfig {
   )
 
   // 原子写：先写同目录临时文件，成功后 renameSync 覆盖目标（POSIX 同目录 rename 原子）。
-  // 避免写到一半崩溃留下半截 config.yaml。
-  const tmpPath = `${USER_FILE_PRIMARY}.tmp-${process.pid}`
+  // 临时文件名含 pid + 随机后缀，规避并发/残留命名冲突；任何失败路径都用存在性守卫清理临时文件。
+  const tmpPath = `${USER_FILE_PRIMARY}.tmp-${process.pid}-${randomUUID().slice(0, 8)}`
   try {
     mkdirSync(USER_DIR_PRIMARY, { recursive: true })
     writeFileSync(tmpPath, yamlStringify(mergedUser), 'utf8')
     try {
       renameSync(tmpPath, USER_FILE_PRIMARY)
     } catch (err) {
-      // rename 失败：清理临时文件 + warn 降级，不抛出（TASKS §18.4）
-      try {
-        unlinkSync(tmpPath)
-      } catch {
-        /* 临时文件清理失败可忽略 */
-      }
+      removeIfExists(tmpPath) // rename 失败：清理临时文件 + warn 降级，不抛出（TASKS §18.4）
       console.warn(`[config] 原子重命名失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`)
     }
   } catch (err) {
+    removeIfExists(tmpPath) // 写入失败：存在性守卫清理可能残留的临时文件
     console.warn(`[config] 写入失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`)
   }
 

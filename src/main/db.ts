@@ -61,7 +61,7 @@ const INSERT_APPROVAL =
   'INSERT INTO approval_history (harness, session_name, command, cwd, allowed) VALUES (?, ?, ?, ?, ?)'
 
 const SELECT_RECENT_APPROVALS =
-  'SELECT * FROM approval_history ORDER BY timestamp DESC LIMIT ?'
+  'SELECT * FROM approval_history ORDER BY timestamp DESC, id DESC LIMIT ?'
 
 // ─── 行原始结构（snake_case，对应表列） ───
 
@@ -147,6 +147,13 @@ export class AppDatabase {
   private readonly db: Database.Database
   readonly path: string
 
+  // 惰性缓存的 prepared statements：首次使用时 prepare 后复用，避免 M6/M8 秒级轮询重复编译 SQL。
+  private sInsertUsage: Database.Statement<unknown[]> | null = null
+  private sLatestUsage: Database.Statement<unknown[], RawUsageRow> | null = null
+  private s30DayUsage: Database.Statement<unknown[], RawDayRow> | null = null
+  private sInsertApproval: Database.Statement<unknown[]> | null = null
+  private sRecentApprovals: Database.Statement<unknown[], RawApprovalRow> | null = null
+
   /**
    * @param dbPath 显式路径（测试/验收用）；省略则用 resolveDefaultDbPath()。
    * 构造函数内的 mkdir / new Database 失败属致命错误，直接抛出。
@@ -174,9 +181,8 @@ export class AppDatabase {
     totalBudget: number
   ): void {
     try {
-      this.db
-        .prepare<unknown[]>(INSERT_USAGE)
-        .run(provider, model, balance, currency, todayTokens, monthUsed, totalBudget)
+      const stmt = (this.sInsertUsage ??= this.db.prepare<unknown[]>(INSERT_USAGE))
+      stmt.run(provider, model, balance, currency, todayTokens, monthUsed, totalBudget)
     } catch (err) {
       console.warn(`[db] recordUsage 失败: ${(err as Error).message}`)
     }
@@ -184,8 +190,10 @@ export class AppDatabase {
 
   getLatestUsage(): UsageRecord[] {
     try {
-      const rows = this.db.prepare<unknown[], RawUsageRow>(SELECT_LATEST_USAGE).all()
-      return rows.map(toUsageRecord)
+      const stmt = (this.sLatestUsage ??= this.db.prepare<unknown[], RawUsageRow>(
+        SELECT_LATEST_USAGE
+      ))
+      return stmt.all().map(toUsageRecord)
     } catch (err) {
       console.warn(`[db] getLatestUsage 失败: ${(err as Error).message}`)
       return []
@@ -194,10 +202,10 @@ export class AppDatabase {
 
   get30DayUsage(provider: string, model: string): UsageDailyAggregate[] {
     try {
-      const rows = this.db
-        .prepare<unknown[], RawDayRow>(SELECT_30DAY_USAGE)
-        .all(provider, model)
-      return rows.map((row) => ({ day: row.day, tokens: row.tokens ?? 0 }))
+      const stmt = (this.s30DayUsage ??= this.db.prepare<unknown[], RawDayRow>(
+        SELECT_30DAY_USAGE
+      ))
+      return stmt.all(provider, model).map((row) => ({ day: row.day, tokens: row.tokens ?? 0 }))
     } catch (err) {
       console.warn(`[db] get30DayUsage 失败: ${(err as Error).message}`)
       return []
@@ -212,9 +220,8 @@ export class AppDatabase {
     allowed: boolean
   ): void {
     try {
-      this.db
-        .prepare<unknown[]>(INSERT_APPROVAL)
-        .run(harness, sessionName, command, cwd, allowed ? 1 : 0)
+      const stmt = (this.sInsertApproval ??= this.db.prepare<unknown[]>(INSERT_APPROVAL))
+      stmt.run(harness, sessionName, command, cwd, allowed ? 1 : 0)
     } catch (err) {
       console.warn(`[db] recordApproval 失败: ${(err as Error).message}`)
     }
@@ -222,10 +229,10 @@ export class AppDatabase {
 
   getRecentApprovals(limit = 20): ApprovalRecord[] {
     try {
-      const rows = this.db
-        .prepare<unknown[], RawApprovalRow>(SELECT_RECENT_APPROVALS)
-        .all(limit)
-      return rows.map(toApprovalRecord)
+      const stmt = (this.sRecentApprovals ??= this.db.prepare<unknown[], RawApprovalRow>(
+        SELECT_RECENT_APPROVALS
+      ))
+      return stmt.all(limit).map(toApprovalRecord)
     } catch (err) {
       console.warn(`[db] getRecentApprovals 失败: ${(err as Error).message}`)
       return []
