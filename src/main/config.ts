@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml'
@@ -71,7 +71,6 @@ export function deepMerge(
 ): Record<string, unknown> {
   const result = structuredClone(base)
   if (!isPlainObject(overrides)) return result
-  if (!isPlainObject(result)) return structuredClone(overrides)
 
   for (const [key, overValue] of Object.entries(overrides)) {
     const baseValue = result[key]
@@ -116,7 +115,10 @@ function readYamlFile(filePath: string): Record<string, unknown> | undefined {
   return parsed
 }
 
-/** 解析 `--config <path>` / `--config=<path>`（DESIGN §6.1 优先级 1，预留实装） */
+/**
+ * 解析 `--config <path>` / `--config=<path>`（DESIGN §6.1 优先级 1，预留实装）。
+ * 重复出现 `--config` 时为 **first-wins**：首次匹配即 `return`，后续重复参数被忽略。
+ */
 function resolveCliConfigPath(argv: readonly string[] = process.argv): string | undefined {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -179,9 +181,23 @@ export function saveConfig(partial: DeepPartial<AppConfig>): AppConfig {
     partial as unknown as Record<string, unknown>
   )
 
+  // 原子写：先写同目录临时文件，成功后 renameSync 覆盖目标（POSIX 同目录 rename 原子）。
+  // 避免写到一半崩溃留下半截 config.yaml。
+  const tmpPath = `${USER_FILE_PRIMARY}.tmp-${process.pid}`
   try {
     mkdirSync(USER_DIR_PRIMARY, { recursive: true })
-    writeFileSync(USER_FILE_PRIMARY, yamlStringify(mergedUser), 'utf8')
+    writeFileSync(tmpPath, yamlStringify(mergedUser), 'utf8')
+    try {
+      renameSync(tmpPath, USER_FILE_PRIMARY)
+    } catch (err) {
+      // rename 失败：清理临时文件 + warn 降级，不抛出（TASKS §18.4）
+      try {
+        unlinkSync(tmpPath)
+      } catch {
+        /* 临时文件清理失败可忽略 */
+      }
+      console.warn(`[config] 原子重命名失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`)
+    }
   } catch (err) {
     console.warn(`[config] 写入失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`)
   }
