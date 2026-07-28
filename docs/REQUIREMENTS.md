@@ -55,7 +55,7 @@
 |----|------|---------|--------|
 | FR-2.1 | Session 发现 | 扫描 `~/.claude/sessions/*.json`，每 3 秒自动刷新 | P0 |
 | FR-2.2 | 进程内存 | 读取 `/proc/<pid>/status` 的 VmRSS 字段获取物理内存占用 | P0 |
-| FR-2.3 | 上下文估算 | 解析 session 对应 transcript（`~/.claude/projects/*/<sessionId>.jsonl`）最后一条 assistant 消息的 usage，按（input + cache_read + cache_creation）tokens ÷ 上下文窗口（200K/1M）得上下文消耗百分比（上限 100%）；与 Claude Code 终端底部上下文指示条同源 | P0 |
+| FR-2.3 | 上下文估算 | 解析 session 对应 transcript（`~/.claude/projects/*/<sessionId>.jsonl`）最后一条含 usage 的记录（不按 role 过滤），按（input + cache_read + cache_creation）tokens ÷ 上下文窗口（200K/1M）得上下文消耗百分比（上限 100%）；与 Claude Code 终端底部上下文指示条同源 | P0 |
 | FR-2.4 | API Provider 解析 | 读取 `~/.claude/settings.json` 中 `ANTHROPIC_DEFAULT_*_MODEL_NAME` 环境变量，还原真实 API provider 名称 | P0 |
 | FR-2.5 | Session 卡片 | 每 session 一张卡片：脉冲状态灯（忙碌/空闲）、名称、运行时长、API provider、上下文百分比、内存 MB、工作目录、任务状态 | P0 |
 | FR-2.6 | 上下文进度条 | Cyan 色细进度条展示上下文消耗百分比 | P1 |

@@ -424,10 +424,14 @@ renderer:
   → window.electronAPI.respondApproval(id, true)
     → IPC → ipcMain.handle("approval:respond")
       → approvalQueue.respond(id, true)
-        → promise resolves → Express returns {"allowed": true}
-      → db.recordApproval(...)
+        → promise resolves
       → win.webContents.send("approval:resolved", {id, allowed: true})
-      → if queue empty: tray.setIconColor('green')
+
+[POST /approve 的 await 恢复处（唯一落库点，M5 勘误）]
+  → db.recordApproval(harness, session, command, cwd, allowed)
+      // 单一落库点：approve / deny / 超时 auto-deny 三路径都经此，超时审批不漏记
+  → refreshTrayColor()   // 优先级协议 红>橙>绿（computeTrayColor），非字面置绿
+  → Express returns {"id", "allowed"}
 
 [approve.sh]
   → curl response {"allowed": true}
@@ -535,7 +539,7 @@ CREATE INDEX idx_approval_time ON approval_history(timestamp DESC);
 
 ### 6.3 tray.ts — 系统托盘
 
-**图标**：代码生成 SVG data URL（22×22 圆点 + 外发光），无需外部图片资源。
+**图标**：代码生成 22×22 PNG 像素数据（圆点 + 高斯外发光，四色 hex 见下），`nativeImage.createFromBuffer()` 载入，无需外部图片资源。~~SVG data URL~~ 不可行：Electron nativeImage 不做 SVG 光栅化（Chromium 位图解码器不含 SVG），M4 实测经 appindicator 送达的 IconPixmap 为空图 → 改程序化 PNG 编码（zlib + CRC32）。
 
 **颜色状态机**（优先级从高到低）：
 
@@ -710,8 +714,9 @@ v3.2（简化）: 仅扫描 config.harnesses['claude-code'].config_dirs
       - pid 为 0 则跳过
 
    c. 进程内存 (参考 abtop process.rs::get_process_info):
-      Linux:   fs.readFile("/proc/{pid}/stat") → 解析第 22 字段 (rss) × page_size / 1024 → rss_kb
-               转换为 MB
+      Linux:   fs.readFile("/proc/{pid}/stat") → 解析第 24 字段 (rss) × page_size → 字节
+               转换为 MB（page_size 取 `getconf PAGE_SIZE`，回退 4096）
+               ⚠ M6 勘误：proc(5) 中 rss 为第 **24** 字段（v3.2 原写 22，22 是 starttime，误用会得荒谬值）
       macOS:   child_process.execSync("ps -o rss= -p {pid}") → KB
       Windows: sysinfo 库
       注意: AI 进程 ID 获取到内存，可能不包含子进程
@@ -724,7 +729,7 @@ v3.2（简化）: 仅扫描 config.harnesses['claude-code'].config_dirs
 
    e. 上下文百分比估算（与 Claude Code 终端底部上下文指示条同源）:
       glob("~/.claude/projects/*/{sessionId}.jsonl")
-      → 逐行解析，取**最后一条 assistant 消息**的 usage:
+      → 逐行解析，取**最后一条含 usage 的记录**（不按 role 过滤，与 statusline.py 真源一致；M6 实现为尾部 256KB 增量读，审查整改后）:
         contextTokens = input_tokens
                       + cache_read_input_tokens
                       + cache_creation_input_tokens

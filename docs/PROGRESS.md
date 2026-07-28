@@ -9,10 +9,10 @@
 | M1 项目骨骼 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-24 | commit 4e30d2f + 5783a5d（review 整改） |
 | M2 配置管理 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-27 | commit 9a277be；P2 小修随 M3 提交 |
 | M3 数据库 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-27 | commit 54b20d0 + b5908e4；**v2.3 schema 返工见下条** |
-| M3r Schema 精简返工 | P0 | 🔄 进行中 | — | — | | v2.3 裁剪：删三假数据列 + localtime + autostart 移除 |
-| M4 系统托盘 + 窗口管理 | P0 | 🔄 待启动 | — | — | | 340×650 挂件；任务书已拟 |
-| M5 HTTP Server + 审批队列 + 审批联动 | P0 | ⏳ 未开始 | — | — | | 旧 M5 + M14 审批侧；UUID + 端口占用即退 + 颜色优先级协议 |
-| M6 数据服务 + 调度 + 余额联动 | P0 | ⏳ 未开始 | — | — | | 旧 M6+M7+M8+M14 余额侧；扫描简化版（进程存活判定）；ctx% = usage token |
+| M3r Schema 精简返工 | P0 | ✅ 完成 | 通过 | 通过(轻量) | 2026-07-27 | commit a1a7f82；主对话 diff 审查 |
+| M4 系统托盘 + 窗口管理 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit 681d23a；PNG 图标（SVG 不可行，蓝图已更正）；3 项 GUI 确认待用户 |
+| M5 HTTP Server + 审批队列 + 审批联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eee9196；橙绿联动 IconPixmap 实测；electron-rebuild（见日志） |
+| M6 数据服务 + 调度 + 余额联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eb2361e；ctxPct 与 statusline.py 3/3 一致；/proc rss field 24（蓝图已勘误） |
 | M7 IPC + 挂件壳 | P0 | ⏳ 未开始 | — | — | | 旧 M9+M10；时区已在 M3r 解决，非决策点 |
 | M8 用量视图 | P0 | ⏳ 未开始 | — | — | | 旧 M11；裁剪版：余额卡 + 余额趋势线（原生 SVG，删 recharts） |
 | M9 Sessions 视图 | P0 | ⏳ 未开始 | — | — | | 旧 M12；SessionCard/ApprovalBlock |
@@ -21,9 +21,9 @@
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 3/4 ｜ Phase 2 后端 0/2 ｜ Phase 3 前端 0/4 ｜ Phase 4 集成 0/1 ｜ 总体 3/11 (27%)
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 0/4 ｜ Phase 4 集成 0/1 ｜ 总体 6/11 (55%)
 
-**当前阶段**：第三阶段（模块化开发）— M1~M3 完成，M3r 返工派发中，随后 M4
+**当前阶段**：第三阶段（模块化开发）— M1~M6 完成，后端批量 Code Review 进行中（审毕起常驻实例交用户 → M7）
 
 ---
 
@@ -192,6 +192,99 @@
 - 处置：~/.config/harness-monitor/monitor.db 为开发期旧 schema，无真实数据，直接删重建
 - 派发：独立 subagent（新会话，/clear 后旧 agent 已不可续）；变更小，完成后走轻量审查
 
+### 2026-07-27 ｜ M3r ｜ 完成（commit a1a7f82）
+- 产出：db.ts 删三列 + localtime（两表）+ recordUsage(4 参) + get30DayBalance（每日 MAX(id) 余额快照，WHERE id IN 子查询沿用 getLatestUsage 风格）；types.ts 精简 UsageRecord / 新增 BalanceInfo + BalanceDailySnapshot / 删 AutostartConfig；config.ts DEFAULT_CONFIG 联动（阈值 10、删 autostart）；config.yaml 同步
+- 偏差（均合理）：get30DayBalance 30 天窗口改 `date('now','localtime','-30 days')`（与 localtime 存储基准一致，避免 UTC+8 凌晨跨日错位，代码已注释）；config.ts 随类型联动修改（typecheck 必然要求）
+- 验收：npm run build 三入口零错误 + 双 typecheck ✅；DB 全项 ✅（timestamp 实测本地时间 15:33 ≠ UTC 07:33，WAL ✅，同双快照取当日最后一条 ✅）；M2 回归 ✅（port=18456、无 autostart、阈值 10）；全仓 grep 删净字段零残留 ✅
+- 审查：主对话 diff 轻量审查通过（高速模式下小返工不单开 review agent）
+
+### 2026-07-27 ｜ 工作流 ｜ 高速模式启用
+- 用户选定高速推进档：确认门取消、每模块完成即报告（随时可打断）、Code Review 两轮（后端 M4+M5+M6 完成后全量审 / 前端 M7~M10 完成后全量审）
+- 记忆条目 stage-gate-confirmation 已改写（旧逐模块确认门作废，保留历史背景）
+
+### 2026-07-27 ｜ 第三阶段 ｜ M4 开始
+- 注入上下文：TASKS §5（M4 任务 + 验收）/ DESIGN §6.3（托盘颜色状态机 + 菜单）/ §6.4（BrowserWindow 配置）/ §2.9-2.10（窗口尺寸 + Linux 适配）
+- 范围：tray.ts（SVG 图标 + 四色状态机 + 右键菜单（含动态 Active Agents，session 快照注入口留桩）+ 左键 toggle）/ window.ts（frame:false 340×650 圆角 + blur 隐藏 + pin）/ index.ts（单实例锁 + 生命周期）+ 最小窗口控制 IPC（红绿灯/置顶，全量 IPC 归 M7）
+- 验证约定：M4 只做主进程，红绿灯/置顶行为经 DevTools console 调 electronAPI 验证，GUI 按钮 M7 接线后复验
+- 环境：GNOME 托盘需 appindicator 扩展；已指示 subagent 不重启 gnome-shell / 不注销用户，受阻则报告待用户协助
+- 派发：开发+测试合并 subagent（高速模式首轮，M3r 完成后直接续进，未经确认门）
+
+### 2026-07-28 ｜ M4 ｜ 完成（commit 681d23a）
+- 产出：tray.ts（四色 PNG 图标 + 右键动态菜单 + setSessionSnapshot 注入口 + 左键 toggle）/ window.ts（340×650 frame:false + blur→hide + pin 豁免 + close→hide）/ index.ts 重写（单实例锁 + 生命周期 + SIGTERM/SIGINT + 4 条窗口控制 IPC）/ preload 最小 electronAPI
+- 验证全绿：xwininfo 340×650 ✅；托盘 SNI 注册 Status=Active、IconPixmap (22,22) 非空 ✅（扩展 ubuntu-appindicators 已 ACTIVE，无需用户装扩展）；IPC 四项经 CDP 实测（pin→_NET_WM_STATE_ABOVE / maximize / minimize→Iconic / hide→Withdrawn）✅；blur→hide 真实焦点回收实测 + pin 豁免 ✅；close 不 quit ✅；单实例第二进程 exit 0 ✅；SIGTERM exit 0 无残留 ✅；截图 /tmp/hm_m4_renderer.png
+- 偏差与蓝图更正：
+  - 【蓝图级】**SVG data URL 图标不可行**——Electron nativeImage 不光栅化 SVG（Chromium 位图解码器不含 SVG），实测 IconPixmap 空图；改程序化 PNG 编码（zlib+CRC32，四色 hex 不变）。DESIGN §6.3 / TASKS §5 已更正
+  - blur 500ms 宽限期（GNOME Wayland show→focus→焦点弹回序列防抖，已注释）
+  - HM_DEBUG_SHOW=1 调试逃生舱（默认关闭，保留）
+- 待用户 GUI 确认 3 项（Wayland 无法无头自动化）：① 顶栏绿点右键菜单弹出与内容 ② 左键 toggle（appindicator 下 click 事件常不触发，§2.10 已知降级，若确不复现则 M11 前定回退方案）③ 圆点颜色肉眼确认
+- 交接：Preferences 菜单项 M10 接 Settings；颜色切换 M5/M6 经 setIconColor；session 列表 M6 经 setSessionSnapshot
+
+### 2026-07-28 ｜ 第三阶段 ｜ M5 开始
+- 注入上下文：TASKS §6（M5 任务 + 验收）/ DESIGN §6.5（server + EADDRINUSE 简化版）/ §6.6（approval-queue + UUID）/ §6.10（notifications）/ §5.3（审批全流程）/ §6.12（类型）/ §6.3（颜色状态机与优先级）
+- 范围：approval-queue.ts / notifications.ts / server.ts（六路由 + 审批侧橙绿联动 + 端口占用即退）/ index.ts 接线（db 生命周期 + server 启停）；颜色优先级协议（红>橙>绿）落代码注释
+- 验证手段：curl 全流程 + D-Bus StatusNotifierItem IconPixmap 像素色验证橙→绿 + dbus-monitor 捕获桌面通知 + 临时改 approve_timeout_sec 测自动 deny（验完恢复）
+- 派发：开发+测试合并 subagent（高速模式，M4 完成直接续进）
+
+### 2026-07-28 ｜ M5 ｜ 完成（commit eee9196）
+- 产出：approval-queue.ts（UUID + auto-deny）/ notifications.ts（两通知 + 开关 + 点击唤起）/ server.ts（六路由 + computeTrayColor 优先级协议导出 + EADDRINUSE 简化版）/ index.ts 接线（db 生命周期 + server 启停 + 后端失败灰灯 exit 1）/ shared 补 Approval* + Session* 类型
+- 验证全绿：health/sessions/approvals/usage ✅；阻塞审批全流程——dbus 抓到 Notify、**IconPixmap 取色橙 #ffab00 → respond 13ms 返回 → 回绿 #00e576**（像素级实测联动）✅；自动 deny（临时 timeout=3s）3.04s 返回 allowed:false ✅；端口占用 exit 1 + 旧实例探测 exit 0 ✅；单实例 + SIGTERM 回归 ✅
+- 偏差与蓝图更正：
+  - 【环境级】better-sqlite3 经 electron-rebuild 重建为 Electron ABI（127→128，M5 首个进程内载 db 模块触发）——**裸 node require db 的验收方式自此失效**，db 相关验证走运行中应用 / sqlite3 CLI；TASKS §4 已加注记，D1 打包需 postinstall 固化
+  - 【蓝图级】recordApproval 落库点从 respond 分支移至 POST /approve 的 promise 恢复处（单一落库点，覆盖超时 auto-deny 路径，否则超时审批漏记历史）——DESIGN §5.3 已勘误
+  - refreshTrayColor() 收敛颜色联动（严格红>橙>绿，比字面置橙正确）
+- 交接：getSessions 注入口缺省 []（M6 接）；approval:pending/resolved push 已接（M7 监听）
+- 环境杂项：端口 5173 有旧 prototype-preview 遗留 python http.server（非本项目产生，未动，建议用户自行 kill）
+
+### 2026-07-28 ｜ 第三阶段 ｜ M6 开始
+- 注入上下文：TASKS §7（M6 任务 + 验收 + 裸 node 约定）/ DESIGN §6.7（DeepSeek 字段映射）/ §6.8（扫描流程，§6.8.2e ctxPct 与 statusline.py 同源）/ §6.9（调度）/ §6.3（颜色状态机）；另附 ~/.claude/statusline.py 作为 ctxPct 算法真源对照
+- 范围：deepseek.ts（checkBalance → BalanceInfo|null）/ claude-sessions.ts（简化扫描器：进程存活判定 + VmRSS + provider 解析 + ctxPct usage token 估算 + 审批合并）/ services.ts（双定时器 + {stop()} + 余额侧联动复用 server.ts computeTrayColor）/ index.ts 接线（getSessions 注入 + setSessionSnapshot 同步）
+- 验收亮点：本机有真实 claude sessions（含本开发会话），用真实数据验收 ctxPct/memoryMB；无 DEEPSEEK_API_KEY 时 mock balance 端点验证解析
+- 派发：开发+测试合并 subagent（高速模式续进）；**M6 完成后触发后端批量 Code Review（M4+M5+M6）**，再起常驻实例交用户试玩（承诺顺延：带真实余额+会话数据的实例比裸 M5 更值得玩）
+
+### 2026-07-28 ｜ M6 ｜ 完成（commit eb2361e）
+- 产出：deepseek.ts（checkBalance，全失败态→null）/ claude-sessions.ts（简化扫描器 328 行：进程存活判定 + /proc 内存 + provider 解析 + ctxPct + 审批合并 + 缓存）/ services.ts（双定时器 + 余额联动复用 computeTrayColor + 低余额通知去抖）/ index.ts 接线 / electron.vite.config 加深seek+claude-sessions 独立入口（裸 node 验收）
+- 验证全绿：
+  - **ctxPct 与 statusline.py 逐字同源对照：本机 3 个真实 session 3/3 MATCH**（8% / 21% / 5%，1M 窗口判定一致），内存与 VmRSS 逐字节一致（411/575/500 MB）
+  - DeepSeek 解析 5 态（good/unavail/500/no-key/timeout 精确 15s）✅（无真实 key，mock 端点验证）
+  - 调度：启动即首轮 push，uptimeSec delta=3.0s 证实 3s 轮询；余额告警 tray 红 #ff5252 + Notify 抓到 + 去抖仅弹一次；**红>橙优先级实测**（挂审批仍红，清队列仍红，恢复阈值→绿）；M5 橙绿回归 ✅；单实例 + SIGTERM 零残留 ✅
+- 偏差与蓝图更正：
+  - 【蓝图级】/proc/{pid}/stat rss 为第 **24** 字段（DESIGN §6.8.2c 原写 22=starttime，实测荒谬值后查证 proc(5) 更正）；page_size 用 getconf PAGE_SIZE
+  - refreshTrayColor 实为 server.ts 内部闭包，M6 复用导出的 computeTrayColor 纯函数 + setIconColor（两链路收敛同一优先级函数，意图一致）
+  - DeepSeekBalanceResponse 类型置于 deepseek.ts 本地（§6.12 列在 shared；仅本模块线格式使用，交 review 裁定）
+- 遗留：~/.config/harness-monitor/monitor.db 有 mock 测试数据（¥50 余额 + 2 条测试审批），真实运行后覆盖；transcript 全读 O(size) v1 可接受（已注释）；3 个真实会话 cwd 均 /home/cury → name 都显示 cury（basename 按 §6.8.2a，非会话标题）
+
+### 2026-07-28 ｜ 后端批量 Code Review ｜ 派发（M4+M5+M6）
+- 审查方：独立 subagent（sonnet 交叉验证，高速模式两轮审之一）
+- 范围：commits 681d23a / eee9196 / eb2361e 全量 diff + DESIGN §2.9/§6.3~§6.11 符合度 + 实测复现（build + 审批流 + 托盘取色 + session 扫描）
+- 已预披露偏差（蓝图已更正或意图一致，不重复计为问题）：PNG 图标 / recordApproval 单落库点 / electron-rebuild / /proc field 24 / computeTrayColor 复用方式
+- 通过条件：无 P0/P1；P2 列表交主对话裁定（批量修或延后）
+
+### 2026-07-28 ｜ 后端批量 Code Review ｜ 通过（无 P0/P1）
+- 审查方：独立 subagent（sonnet 交叉验证）；实测复现全绿：build ✅、真实 session 3 条 ✅、审批全流程（respond 11.7ms / 超时 auto-deny 落库 allowed=0 **意外实测证实单落库点覆盖超时路径**）✅、并发审批竞态无重复落库 ✅、托盘像素取色 绿→橙→绿 ✅、死进程降级 ✅、单实例 ✅、SIGTERM 10 进程全退 + WAL checkpoint ✅、listen 绑 127.0.0.1（读码 + ss 双证）✅、field 24 独立交叉验证 ✅、ctxPct 与 statusline.py 逐行同源（不按 role 过滤）✅
+- 肯定项：computeTrayColor 单一真源、recordApproval 单落库点、Promise 单次解析不变量、strict 全族零 any、isDestroyed 防御、偏差注释可追溯
+- P2 裁定（全部修，派整改包）：
+  - ① server.ts express 默认错误页泄露绝对路径（非法 JSON → HTML 栈）→ 注册 JSON 错误中间件
+  - ② discoverSessions 全同步阻塞事件循环（transcript readFileSync 全读，3s 一轮）→ 改尾部 256KB 增量读
+  - ③ 致命路径灰灯紧跟 exit(1) 不可观测 → 去置灰、纯退出 + 日志
+- P3 裁定：④ app.exit→app.quit() 走 will-quit 清理（exitCode=1 保留）修；⑥ getLatestUsage 一轮双调 修；⑤ 退出瞬间 pending 审批漏记（弃审不记可接受）延后；⑦ 限流/IPC 校验（单用户回环）延后
+- 灰色项裁定：DeepSeekBalanceResponse 维持本地（仅本模块线格式，收敛 shared 暴露面，reviewer 同议）
+- 文档勘误：§6.8.2e / TASKS §7 / REQUIREMENTS FR-2.3 措辞"最后一条 assistant 消息"→"最后一条含 usage 的记录"（与 statusline.py 真源一致）
+
+### 2026-07-28 ｜ 审查整改包 ｜ 派发
+- 范围：P2×3（JSON 错误中间件 / transcript 尾部读 / 去死代码灰灯）+ P3×2（app.quit 清理链 / getLatestUsage 复用）
+- 验收：build + ctxPct 3/3 复验（尾部读不改变结果）+ 审批流回归 + 非法 JSON → {"ok":false} 无路径泄露 + EADDRINUSE exitCode=1 + SIGTERM 回归
+- 完成后：主对话 diff 轻量复核 → 起常驻实例交用户 → 派发 M7
+
+### 2026-07-28 ｜ 审查整改包 ｜ 完成（commit bf5e90d）
+- 5 项全修 + 验证绿：JSON 错误中间件（400 + 路径泄露计数 0）／ transcript 尾部 256KB 读（ctxPct 3/3 MATCH 不变 8/23/5 + 300KB 假文件 decoy 测试命中尾部 usage、忽略头部诱饵）／ 灰灯死代码删除 ／ 退出清理链（EADDRINUSE exitCode=1 实测）／ getLatestUsage 单轮复用
+- 偏差（agent 发现）：Electron app.quit() 不保留 process.exitCode（最小复现证实）→ will-quit 清理完成后补 `app.exit(Number(exitCode))` 兜底非零码，清理链与退出码两全
+- 主对话 diff 轻量复核：scanUsageFromTail 尾→头扫描语义与原正向扫描取末条一致 ✅
+
+### 2026-07-28 ｜ 常驻实例 ｜ 交用户试玩
+- 处置：清空开发期测试数据（api_usage 3 行 mock + approval_history 测试条目，python sqlite3 直删）→ setsid 脱离启动 `electron . --disable-gpu`（日志 /tmp/harness-monitor.log）
+- 环境：用户 shell 配置与当前环境均无 DEEPSEEK_API_KEY → 余额数据暂空（用量卡 M8 才做，当前窗口仍为 M1 占位）；待用户告知 key 提供方式
+- 交接约定：用户反馈托盘三件事（右键菜单/左键 toggle/绿点）+ 审批试玩结果后回收实例再派发 M7（单实例锁冲突，M7 开发验证需起应用，实例须先下线）
+
 ---
 
-**下一步**：M3r 返工完成后启动 M4（任务书已就绪；推进档位待用户确认）。
+**下一步**：等用户试玩反馈 → 回收实例 → 派发 M7（IPC + 挂件壳，前端阶段开始）。

@@ -173,6 +173,8 @@ db.close();
 "
 # → 两表读写正常；timestamp 为本地时间；SQLite 文件存在
 # → 旧 schema 遗留：~/.config/harness-monitor/monitor.db（M1~M3 开发期生成，如有）直接删除重建，无需迁移（无真实数据）
+# → v2.3 注记（M5 发现）：better-sqlite3 已 electron-rebuild 为 Electron ABI，
+#   上述裸 node 脚本自此失效——db 相关验证改走运行中应用 / sqlite3 CLI / python
 ```
 
 ---
@@ -186,8 +188,8 @@ db.close();
 ### 任务
 1. 实现 `src/main/tray.ts`：
    - `createTray(config, window)`:
-     - 生成 SVG data URL（22×22 圆点 + 外发光）
-     - `nativeImage.createFromDataURL()` → `new Tray(nativeImage)`
+     - 程序化生成 22×22 PNG 像素数据（圆点 + 高斯外发光；M4 实测 nativeImage 无法光栅化 SVG，已改 PNG 编码）
+     - `nativeImage.createFromBuffer()` → `new Tray(nativeImage)`
      - 右键菜单（原生 Menu，结构见 DESIGN §6.3）：`Harness Monitor`(label) / Show Dashboard ⌘O / Hide Dashboard ⌘H / ── / Active Agents(动态 session 列表：状态点+名称+项目名) / ── / Preferences... ⌘, / ── / Quit ⌘Q
      - Active Agents 项在 `right-click` 事件用最新 session 快照重建
      - 左键 → toggle 窗口
@@ -302,7 +304,7 @@ curl -X POST http://127.0.0.1:18456/approve/<id>/respond \
        - `readFile(/proc/{pid}/stat)` → 第 22 字段 rss × page_size → memoryMB（进程死亡 → 0）
        - **状态判定（简化）**：`fs.existsSync(/proc/{pid})` → 存活="busy"（绿脉冲）；不存在="idle"（灰静止灯）+ memory=0。**不做 CPU 阈值 / 进程树遍历**
        - `readFile(~/.claude/settings.json)` → 提取 `ANTHROPIC_DEFAULT_*_MODEL_NAME` → apiProvider
-       - Glob `~/.claude/projects/*/${sessionId}.jsonl` → 取末条 assistant 消息 usage → contextTokens = input+cache_read+cache_creation → ctxPct = min(100, contextTokens/context_window×100)；context_window：模型名含 `[1m]` → 1M，否则 200K（见 DESIGN §6.8.2e）
+       - Glob `~/.claude/projects/*/${sessionId}.jsonl` → 取末条含 usage 的记录（不按 role 过滤）→ contextTokens = input+cache_read+cache_creation → ctxPct = min(100, contextTokens/context_window×100)；context_window：模型名含 `[1m]` → 1M，否则 200K（见 DESIGN §6.8.2e）
        - uptimeSec = (Date.now() - startedAt) / 1000
      - 错误处理：文件不可读 → skip；transcript 无 usage → ctxPct=0
      - 过滤：排除 pid == process.pid；按 startedAt 降序
@@ -561,7 +563,7 @@ npm run dev
 
 | ID | 内容 | 原需求 | 备注 |
 |----|------|--------|------|
-| D1 | 打包（.deb / AppImage）+ 开机自启 + chrome-sandbox SUID 固化 | FR-6.6 / 旧 M15 / M1 遗留 | 前期直接 `npm run dev` / electron 跑源码自用 |
+| D1 | 打包（.deb / AppImage）+ 开机自启 + chrome-sandbox SUID 固化 + electron-rebuild postinstall 固化（M5 发现：native 模块需按 Electron ABI 重建，全新安装必须走 postinstall） | FR-6.6 / 旧 M15 / M1+M5 遗留 | 前期直接 `npm run dev` / electron 跑源码自用 |
 | D2 | 终端并行审批：hook 输出提示到终端，Ctrl+C 拒绝 / 另开窗口 curl 响应 | FR-3.9 | 面板批准/拒绝已覆盖主路径 |
 | D3 | 审批超时时间可配置 | FR-5.4 | v1 固定 60 秒 |
 
