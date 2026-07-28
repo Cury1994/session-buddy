@@ -7,10 +7,14 @@ import { AppDatabase } from './db'
 import { ApprovalQueue } from './approval-queue'
 import { initNotifications } from './notifications'
 import { createServer } from './server'
+import { DeepSeekProvider } from './deepseek'
+import { ClaudeCodeSessionScanner } from './claude-sessions'
+import { startBalanceChecker, startSessionScanner } from './services'
 
 import type { ManagedTray } from './tray'
 import type { ManagedWindow } from './window'
 import type { ManagedServer } from './server'
+import type { ScheduledTask } from './services'
 
 /**
  * M4/M5 — 主进程入口（整合托盘 + 窗口管理 + 数据库 + HTTP Server + 审批队列）
@@ -19,8 +23,9 @@ import type { ManagedServer } from './server'
  *   - 单实例锁：重复实例立即退出
  *   - whenReady → createMainWindow + createTray + AppDatabase(initDB)
  *                 + ApprovalQueue + initNotifications + server.start
+ *                 + DeepSeekProvider + ClaudeCodeSessionScanner + 双调度器启动
  *   - window-all-closed → 不 quit（托盘常驻）
- *   - will-quit → server.stop() + tray.destroy() + db.close()
+ *   - will-quit → 双调度器 stop() + server.stop() + tray.destroy() + db.close()
  *   - SIGTERM/SIGINT → app.quit()（FR-6.5 优雅退出，经 will-quit 走清理）
  */
 
@@ -28,6 +33,8 @@ let managedWindow: ManagedWindow | null = null
 let managedTray: ManagedTray | null = null
 let managedServer: ManagedServer | null = null
 let database: AppDatabase | null = null
+let balanceTask: ScheduledTask | null = null
+let sessionTask: ScheduledTask | null = null
 
 // ─── 单实例锁 ───
 
@@ -95,15 +102,41 @@ if (!gotTheLock) {
       const approvalQueue = new ApprovalQueue(config.notifications.approve_timeout_sec)
       initNotifications(managedWindow.win, config)
 
-      // getSessions 注入口留给 M6 scanner；M5 缺省返回 []（createServer 内部兜底）
+      // ─── M6：数据服务 + 调度 ───
+      // DeepSeekProvider 读 process.env.DEEPSEEK_API_KEY + config balance_url（§6.7）。
+      // ClaudeCodeSessionScanner 持 approvalQueue 引用（合并 hasPendingApproval，§6.8.2 step 4）。
+      const balanceProvider = new DeepSeekProvider(config)
+      const sessionScanner = new ClaudeCodeSessionScanner(config, approvalQueue)
+
+      // getSessions 注入 scanner 缓存的同步读取（server /api/sessions 用，§5.2）
       managedServer = createServer({
         db: database,
         approvalQueue,
         tray: managedTray,
         win: managedWindow.win,
-        config
+        config,
+        getSessions: () => sessionScanner.getSessions()
       })
       managedServer.start(config.server.port)
+
+      // 双调度器：立即各执行一次，随后按配置间隔轮询（§6.9）。
+      // 余额侧颜色联动复用 server.ts computeTrayColor（红>橙>绿，services.ts 内注释）。
+      balanceTask = startBalanceChecker({
+        db: database,
+        provider: balanceProvider,
+        approvalQueue,
+        config,
+        win: managedWindow.win,
+        tray: managedTray
+      })
+      sessionTask = startSessionScanner({
+        scanner: sessionScanner,
+        approvalQueue,
+        db: database,
+        config,
+        win: managedWindow.win,
+        tray: managedTray
+      })
     } catch (err) {
       console.error(`[main] 后端启动失败（致命）: ${(err as Error).message}`)
       managedTray?.setIconColor('gray')
@@ -131,8 +164,13 @@ if (!gotTheLock) {
     managedWindow?.markQuitting()
   })
 
-  // 退出时清理：HTTP server + 托盘 + 数据库（§6.5 / §6.4 / §6.2）
+  // 退出时清理：双调度器 → HTTP server → 托盘 → 数据库（§6.9 / §6.5 / §6.4 / §6.2）
+  // 定时器先于 server/db 停，避免 stop 间隙回调再触达已关闭的 db / 已销毁的 tray
   app.on('will-quit', () => {
+    balanceTask?.stop()
+    balanceTask = null
+    sessionTask?.stop()
+    sessionTask = null
     managedServer?.stop()
     managedServer = null
     managedTray?.destroy()
