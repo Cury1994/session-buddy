@@ -5,6 +5,8 @@
  * 避免各端字段名漂移。各类型随对应模块落地逐步追加（§6.12 为整体规划）。
  *
  * M2 引入：AppConfig 及其嵌套子接口（DESIGN §6.1 / §8.1）。
+ * M3 引入：UsageRecord / BalanceDailySnapshot / ApprovalRecord / BalanceInfo（§6.12）。
+ * M5 引入：ApprovalPayload / PendingApproval / ApprovalResponse / SessionStatus / SessionInfo（§6.12 / §5.3 / §6.8）。
  */
 
 // ─── 配置（AppConfig，DESIGN §6.1） ───
@@ -92,4 +94,52 @@ export interface ApprovalRecord {
   tool: string
   allowed: boolean
   timestamp: string // 本地时间（同 UsageRecord.timestamp 约定）
+}
+
+// ─── 审批流程（DESIGN §6.12 / §5.3 / §6.6） ───
+
+/** approve.sh POST /approve 的请求体 / IPC approval:pending 的负载（§5.3） */
+export interface ApprovalPayload {
+  harness: string // "claude-code"
+  session: string // session 名 / id
+  command: string // 待审批命令全文
+  cwd: string // 工作目录
+  tool: string // "Bash"
+}
+
+/** 队列内审批项 = payload + 运行时字段（§6.6 getAll()） */
+export interface PendingApproval extends ApprovalPayload {
+  id: string // crypto.randomUUID()（§6.6 id 策略）
+  createdAt: number // Unix ms
+  timeoutSec: number // 配置超时，默认 60（§6.6）
+}
+
+/** approval:respond / respondApproval 的负载（§6.12） */
+export interface ApprovalResponse {
+  id: string
+  allowed: boolean
+}
+
+// ─── Session 监控（DESIGN §6.12 / §6.8，M6 scanner 产出） ───
+
+/** Session 状态：busy=Working（脉冲灯）/ idle=Waiting（静止灯） */
+export type SessionStatus = 'busy' | 'idle'
+
+/**
+ * claude-sessions.ts 产出 → GET /api/sessions / SessionCard 渲染（§6.8 / §4）。
+ * M5 仅定义类型并暴露 /api/sessions 注入口（缺省 []）；实际数据由 M6 scanner 填充。
+ */
+export interface SessionInfo {
+  sessionId: string // Claude session 唯一 id（截断 256，§6.8.2b）
+  pid: number
+  name: string // 项目名（cwd basename）
+  status: SessionStatus
+  tool: string // 当前工具，如 "Bash"
+  apiProvider: string // 解析后的 provider 名（§6.8.2f）
+  uptimeSec: number // 运行时长（秒）= (now - startedAt)/1000
+  memoryMB: number // 物理内存 MB（进程死亡为 0）
+  ctxPct: number // 上下文消耗百分比 0-100（§6.8.2e）
+  cwd: string // 工作目录（截断 4096，§6.8.2b）
+  startedAt: number // Unix ms
+  hasPendingApproval: boolean // approvalQueue 中存在匹配项
 }

@@ -3,23 +3,31 @@ import { app, ipcMain } from 'electron'
 import { loadConfig } from './config'
 import { createMainWindow } from './window'
 import { createTray } from './tray'
+import { AppDatabase } from './db'
+import { ApprovalQueue } from './approval-queue'
+import { initNotifications } from './notifications'
+import { createServer } from './server'
 
 import type { ManagedTray } from './tray'
 import type { ManagedWindow } from './window'
+import type { ManagedServer } from './server'
 
 /**
- * M4 — 主进程入口（整合托盘 + 窗口管理）
+ * M4/M5 — 主进程入口（整合托盘 + 窗口管理 + 数据库 + HTTP Server + 审批队列）
  *
- * 生命周期约定（DESIGN §6.4 / TASKS M4）：
+ * 生命周期约定（DESIGN §6.4 / §6.5 / TASKS M4-M5）：
  *   - 单实例锁：重复实例立即退出
- *   - whenReady → createMainWindow + createTray（窗口初始隐藏，托盘左键唤起）
+ *   - whenReady → createMainWindow + createTray + AppDatabase(initDB)
+ *                 + ApprovalQueue + initNotifications + server.start
  *   - window-all-closed → 不 quit（托盘常驻）
- *   - will-quit → tray.destroy()
- *   - SIGTERM/SIGINT → app.quit()（FR-6.5 优雅退出）
+ *   - will-quit → server.stop() + tray.destroy() + db.close()
+ *   - SIGTERM/SIGINT → app.quit()（FR-6.5 优雅退出，经 will-quit 走清理）
  */
 
 let managedWindow: ManagedWindow | null = null
 let managedTray: ManagedTray | null = null
+let managedServer: ManagedServer | null = null
+let database: AppDatabase | null = null
 
 // ─── 单实例锁 ───
 
@@ -75,6 +83,34 @@ if (!gotTheLock) {
     managedTray = createTray(config, managedWindow.win)
     registerWindowIpc()
 
+    // ─── M5：数据库 + 审批队列 + 通知 + HTTP Server ───
+    // AppDatabase 用默认路径（Linux: ~/.config/harness-monitor/monitor.db，§6.2）。
+    // constructor / initDB 属致命错误（db.ts 约定：路径不可写 / Schema 损坏等），
+    // 由本调用方在启动阶段捕获并退出，避免裸 unhandled rejection 让应用半死
+    // （托盘在、server 未起）。灰灯 = server 未启动 / 致命错误（§6.3）。
+    try {
+      database = new AppDatabase()
+      database.initDB()
+
+      const approvalQueue = new ApprovalQueue(config.notifications.approve_timeout_sec)
+      initNotifications(managedWindow.win, config)
+
+      // getSessions 注入口留给 M6 scanner；M5 缺省返回 []（createServer 内部兜底）
+      managedServer = createServer({
+        db: database,
+        approvalQueue,
+        tray: managedTray,
+        win: managedWindow.win,
+        config
+      })
+      managedServer.start(config.server.port)
+    } catch (err) {
+      console.error(`[main] 后端启动失败（致命）: ${(err as Error).message}`)
+      managedTray?.setIconColor('gray')
+      app.exit(1)
+      return
+    }
+
     // macOS：点击 dock 图标且无窗口时重建窗口
     app.on('activate', () => {
       if (managedWindow?.win.isDestroyed() ?? true) {
@@ -95,10 +131,14 @@ if (!gotTheLock) {
     managedWindow?.markQuitting()
   })
 
-  // 退出时清理托盘
+  // 退出时清理：HTTP server + 托盘 + 数据库（§6.5 / §6.4 / §6.2）
   app.on('will-quit', () => {
+    managedServer?.stop()
+    managedServer = null
     managedTray?.destroy()
     managedTray = null
+    database?.close()
+    database = null
   })
 
   // ─── 优雅退出（FR-6.5）───
