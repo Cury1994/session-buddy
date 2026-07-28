@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
@@ -62,19 +62,57 @@ function contextWindowForModel(modelId: string): number {
   return 200_000
 }
 
-/** 与 statusline.py `used_tokens()` 一致：末条 usage 的三项之和 */
+/** 尾部读取窗口：256KB。末条 usage 记录总在此范围内 */
+const TAIL_BYTES = 262144
+
+/**
+ * 与 statusline.py `used_tokens()` 一致：末条 usage 的三项之和。
+ *
+ * 审查 P2-2：transcript 可达数十 MB，整份 readFileSync 会同步阻塞主进程事件循环
+ * （discoverSessions 3s 一轮）。改为尾部增量读——最后一条含 usage 的记录总在文件
+ * 末尾附近，故只读最后 256KB：
+ *   size ≤ 256KB → 全读；
+ *   size  > 256KB → openSync + readSync 读尾部 256KB → 丢弃可能被截断的首段 →
+ *                   从尾向前扫描第一条 parse 成功且含 usage 的记录。
+ * 语义不变：尾读结果与全读一致（末条 usage 必在尾部窗口内）。文件不可读/不存在 → 0。
+ */
 function usedTokens(transcriptPath: string): number {
   if (!transcriptPath || !existsSync(transcriptPath)) return 0
-  let content: string
+
+  let lines: string[]
   try {
-    content = readFileSync(transcriptPath, 'utf8')
+    const size = statSync(transcriptPath).size
+    let content: string
+    if (size <= TAIL_BYTES) {
+      content = readFileSync(transcriptPath, 'utf8')
+    } else {
+      const fd = openSync(transcriptPath, 'r')
+      try {
+        const buf = Buffer.allocUnsafe(TAIL_BYTES)
+        readSync(fd, buf, 0, TAIL_BYTES, size - TAIL_BYTES)
+        content = buf.toString('utf8')
+      } finally {
+        closeSync(fd)
+      }
+      // 尾读首行可能被截断为非法 JSON，丢弃（全读路径无需丢弃，故仅此分支执行）
+      lines = content.split('\n')
+      lines.shift()
+      return scanUsageFromTail(lines)
+    }
+    lines = content.split('\n')
   } catch {
     return 0
   }
+  return scanUsageFromTail(lines)
+}
 
-  let last: Record<string, unknown> | null = null
-  for (const rawLine of content.split('\n')) {
-    const line = rawLine.trim()
+/**
+ * 从尾向前扫描第一条 parse 成功且含 usage 的记录（兼容 message.usage 与顶层 usage
+ * 两种位置，与原全读实现一致），返回 input + cache_read + cache_creation 之和。
+ */
+function scanUsageFromTail(lines: string[]): number {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = (lines[i] ?? '').trim()
     if (!line) continue
     let obj: unknown
     try {
@@ -94,16 +132,15 @@ function usedTokens(transcriptPath: string): number {
       usage = record['usage']
     }
     if (typeof usage === 'object' && usage !== null) {
-      last = usage as Record<string, unknown>
+      const last = usage as Record<string, unknown>
+      const num = (k: string): number => {
+        const v = last[k]
+        return typeof v === 'number' && Number.isFinite(v) ? v : 0
+      }
+      return num('input_tokens') + num('cache_read_input_tokens') + num('cache_creation_input_tokens')
     }
   }
-
-  if (!last) return 0
-  const num = (k: string): number => {
-    const v = last?.[k]
-    return typeof v === 'number' && Number.isFinite(v) ? v : 0
-  }
-  return num('input_tokens') + num('cache_read_input_tokens') + num('cache_creation_input_tokens')
+  return 0
 }
 
 // ─── API provider / 模型解析（§6.8.2f） ───

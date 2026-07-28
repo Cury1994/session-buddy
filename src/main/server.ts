@@ -191,6 +191,26 @@ export function createServer(deps: ServerDeps): ManagedServer {
     res.json({ ok: true })
   })
 
+  // ─── 错误中间件（必须在所有路由之后注册）───
+  // express.json()（body-parser）解析非法 JSON 时会抛错，默认错误页回传含绝对路径 +
+  // 调用栈的 HTML（审查 P2-1）。统一兜底为 JSON 400，仅 warn 一行 err.message，
+  // 不回传栈 / 路径。
+  expressApp.use(
+    (
+      err: Error & { status?: number },
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction
+    ) => {
+      if (res.headersSent) {
+        next(err)
+        return
+      }
+      console.warn(`[server] 请求错误: ${err.message}`)
+      res.status(err.status || 400).json({ ok: false, error: 'bad request' })
+    }
+  )
+
   // ─── 生命周期 ───
 
   /**
@@ -216,7 +236,10 @@ export function createServer(deps: ServerDeps): ManagedServer {
 
     if (isOldInstance) {
       console.log(`[server] 端口 ${port} 已被本应用旧实例占用（/health 正常），本进程正常退出`)
-      app.exit(0)
+      // 走 app.quit() → will-quit 清理链（db.close / tray.destroy / server.stop），
+      // 而非 app.exit() 绕过清理（审查 P3-4）。保留退出码 0。
+      process.exitCode = 0
+      app.quit()
       return
     }
 
@@ -225,8 +248,11 @@ export function createServer(deps: ServerDeps): ManagedServer {
     if (Notification.isSupported()) {
       new Notification({ title: 'Harness Monitor', body: msg }).show()
     }
-    // 给桌面通知一点显示时间再退出（日志已即时输出）
-    setTimeout(() => app.exit(1), 1500)
+    // 给桌面通知一点显示时间再退出（日志已即时输出）。退出码 1 + 走清理链。
+    setTimeout(() => {
+      process.exitCode = 1
+      app.quit()
+    }, 1500)
   }
 
   return {
@@ -239,7 +265,8 @@ export function createServer(deps: ServerDeps): ManagedServer {
           void handlePortInUse(port)
         } else {
           console.error(`[server] 启动失败: ${err.message}`)
-          app.exit(1)
+          process.exitCode = 1
+          app.quit()
         }
       })
     },

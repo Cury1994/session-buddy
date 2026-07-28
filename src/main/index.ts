@@ -139,8 +139,12 @@ if (!gotTheLock) {
       })
     } catch (err) {
       console.error(`[main] 后端启动失败（致命）: ${(err as Error).message}`)
-      managedTray?.setIconColor('gray')
-      app.exit(1)
+      // 审查 P2-3：不再 setIconColor('gray') —— 致命即退出，灰灯随进程消失，
+      // 从未有可观测窗口，属不可观测状态。保留 error 日志 + 退出。
+      // 审查 P3-4：走 app.quit() → will-quit 清理链（tray.destroy / db.close 等），
+      // 而非 app.exit() 绕过清理。will-quit 对各资源的 undefined 状态已用可选链健壮处理。
+      process.exitCode = 1
+      app.quit()
       return
     }
 
@@ -177,6 +181,12 @@ if (!gotTheLock) {
     managedTray = null
     database?.close()
     database = null
+
+    // 审查 P3-4：致命路径经 process.exitCode + app.quit() 走清理链，但 Electron 默认
+    // 退出流程以 exit 0 结束，不保留非零码。清理完成后若 exitCode 为非零，用 app.exit()
+    // 强制以该码退出——清理链与退出码两全。正常退出路径 exitCode 为 undefined，
+    // 继续走 Electron 默认流程（exit 0），行为不变。
+    if (process.exitCode) app.exit(Number(process.exitCode))
   })
 
   // ─── 优雅退出（FR-6.5）───

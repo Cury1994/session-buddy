@@ -73,7 +73,10 @@ export function startBalanceChecker(deps: BalanceCheckerDeps): ScheduledTask {
       if (!info) return // NFR-3：失败保留上次数据，不 push、不改色
 
       db.recordUsage(info.provider, 'all', info.balance, info.currency)
-      sendToRenderer(win, 'usage:updated', db.getLatestUsage())
+      // 审查 P3-5：本轮只取一次最新余额快照，sendToRenderer 与 computeTrayColor 复用，
+      // 避免同一 tick 内两次 db.getLatestUsage()。
+      const latest = db.getLatestUsage()
+      sendToRenderer(win, 'usage:updated', latest)
 
       const isLow = info.balance < threshold
       if (isLow && !lowNotified) {
@@ -84,7 +87,7 @@ export function startBalanceChecker(deps: BalanceCheckerDeps): ScheduledTask {
       }
 
       // 颜色优先级协议（红>橙>绿）：余额告警→红由 computeTrayColor 判定
-      tray.setIconColor(computeTrayColor(approvalQueue.size, db.getLatestUsage(), threshold))
+      tray.setIconColor(computeTrayColor(approvalQueue.size, latest, threshold))
     } catch (err) {
       console.warn(`[services] balanceChecker tick 失败: ${(err as Error).message}`)
     }
