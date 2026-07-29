@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      M7 CSP（收口 M1 遗留）：渲染进程锁定 'self'，与 sandbox:true + contextIsolation 配套。
+      - style-src 'unsafe-inline'：Vite dev 运行期动态注入 <style>（Tailwind 产物为外部 css，不受影响）
+      - connect-src 'self' ws:：dev 的 Vite HMR 需要 websocket；prod 构建无 ws 连接，ws: 放行无副作用
+      - img-src data:：原生 SVG/data URL 图标预留
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws:"
+    />
     <title>harness-monitor</title>
   </head>
   <body>

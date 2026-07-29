@@ -227,9 +227,17 @@ export function createTray(_config: AppConfig, win: BrowserWindow): ManagedTray 
   return {
     tray,
     setIconColor(color: TrayIconColor): void {
+      // 同色 no-op：避免冗余 setImage（appindicator D-Bus 流量）与 push 刷屏。
+      // 初始图标已在构造时 setImage，同色重复调用无视觉意义。
+      if (color === currentColor) return
       currentColor = color
       if (!tray.isDestroyed()) {
         tray.setImage(nativeImage.createFromBuffer(buildIconPng(color)))
+        // M7：颜色变化同步给渲染端（§6.11 tray:color-changed push）。
+        // isDestroyed 守卫：will-quit 清理链中 tray 先于 win 销毁的时序差安全。
+        if (!win.isDestroyed()) {
+          win.webContents.send('tray:color-changed', color)
+        }
       }
     },
     getCurrentColor: () => currentColor,

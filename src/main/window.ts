@@ -40,9 +40,11 @@ export function createMainWindow(config: AppConfig): ManagedWindow {
     show: false, // 初始隐藏，托盘左键唤起（§6.4）
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      // sandbox:false 为 M1 遗留决策（better-sqlite3 等原生模块链路），
-      // 决策记录 + CSP meta 在 M7 补齐（TASKS 跨模块遗留项登记）
-      sandbox: false,
+      // sandbox:true（M7 决策落定，收口 M1 遗留）：preload 仅使用
+      // contextBridge + ipcRenderer（沙箱兼容 API），无 require('node:*') /
+      // 原生模块链路，实测渲染端 electronAPI 全通道可用。主进程原生模块
+      // （better-sqlite3 等）不受渲染端沙箱影响。CSP meta 见 renderer/index.html。
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false
     }

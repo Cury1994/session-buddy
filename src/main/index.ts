@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
 
 import { loadConfig } from './config'
 import { createMainWindow } from './window'
@@ -10,6 +10,7 @@ import { createServer } from './server'
 import { DeepSeekProvider } from './deepseek'
 import { ClaudeCodeSessionScanner } from './claude-sessions'
 import { startBalanceChecker, startSessionScanner } from './services'
+import { registerIpcHandlers } from './ipc-handlers'
 
 import type { ManagedTray } from './tray'
 import type { ManagedWindow } from './window'
@@ -54,41 +55,11 @@ if (!gotTheLock) {
     }
   })
 
-  // ─── 最小窗口控制 IPC（M4 子集；全量 IPC 在 M7 ipc-handlers.ts）───
-  // 通道命名沿用 §6.11 风格：window:* / app:toggle-pin（已在 §6.11 列出）
-  function registerWindowIpc(): void {
-    ipcMain.handle('window:hide', () => {
-      const win = managedWindow?.win
-      if (win && !win.isDestroyed()) win.hide()
-    })
-
-    ipcMain.handle('window:minimize', () => {
-      const win = managedWindow?.win
-      if (win && !win.isDestroyed()) win.minimize()
-    })
-
-    ipcMain.handle('window:toggle-maximize', () => {
-      const win = managedWindow?.win
-      if (win && !win.isDestroyed()) {
-        if (win.isMaximized()) {
-          win.unmaximize()
-        } else {
-          win.maximize()
-        }
-      }
-    })
-
-    ipcMain.handle('app:toggle-pin', (_event, pinned: boolean) => {
-      managedWindow?.togglePin(pinned)
-    })
-  }
-
   app.whenReady().then(() => {
     const config = loadConfig()
 
     managedWindow = createMainWindow(config)
     managedTray = createTray(config, managedWindow.win)
-    registerWindowIpc()
 
     // ─── M5：数据库 + 审批队列 + 通知 + HTTP Server ───
     // AppDatabase 用默认路径（Linux: ~/.config/harness-monitor/monitor.db，§6.2）。
@@ -136,6 +107,21 @@ if (!gotTheLock) {
         config,
         win: managedWindow.win,
         tray: managedTray
+      })
+
+      // ─── M7：IPC 通道集中注册（§6.11 全量 invoke + 窗口控制子集）───
+      // 薄封装委托给上面创建的各模块；window:* / app:toggle-pin 自 M4 的 index.ts
+      // 临时注册迁入 ipc-handlers.ts 统一管理。app:refresh 委托双调度器的 tick()
+      // （services.ts 暴露的手动触发入口，与定时回调同一闭包）。
+      registerIpcHandlers({
+        db: database,
+        scanner: sessionScanner,
+        approvalQueue,
+        tray: managedTray,
+        window: managedWindow,
+        triggerRefresh: async () => {
+          await Promise.all([balanceTask?.tick(), sessionTask?.tick()])
+        }
       })
     } catch (err) {
       console.error(`[main] 后端启动失败（致命）: ${(err as Error).message}`)

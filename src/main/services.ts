@@ -46,6 +46,8 @@ export interface SessionScannerDeps {
 
 export interface ScheduledTask {
   stop(): void
+  /** 手动触发一轮（M7 app:refresh IPC 委托，§6.11）：与定时回调同一 tick 闭包 */
+  tick(): Promise<void>
 }
 
 function sendToRenderer(win: BrowserWindow, channel: string, payload: unknown): void {
@@ -101,7 +103,8 @@ export function startBalanceChecker(deps: BalanceCheckerDeps): ScheduledTask {
   return {
     stop(): void {
       clearInterval(timer)
-    }
+    },
+    tick: () => tick()
   }
 }
 
@@ -135,6 +138,7 @@ export function startSessionScanner(deps: SessionScannerDeps): ScheduledTask {
   return {
     stop(): void {
       clearInterval(timer)
-    }
+    },
+    tick: () => tick()
   }
 }
