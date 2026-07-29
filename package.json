@@ -22,7 +22,6 @@
     "express": "^4.22.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "recharts": "^2.15.4",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
