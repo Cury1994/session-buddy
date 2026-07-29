@@ -251,6 +251,154 @@
     line-height: 1.5;
   }
 
+  /* ── M8 用量视图（TASKS §9 视觉规格，基准原型 view-usage 段） ── */
+
+  /* 卡片头行：标题 + Live 徽章（原型 inline flex 布局落地为类） */
+  .usage-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  /* 卡内标题：13px / 600 / rgba(0,0,0,0.55)（M8 任务书规格） */
+  .usage-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  /* 趋势卡标题与内容留白 */
+  .usage-trend-title {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  /* Live 徽章：#00bfa5 小圆点（呼吸脉冲）+ 10px 文字，浅青底 */
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #00897b;
+    background: rgba(0, 191, 165, 0.12);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  @keyframes live-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #00bfa5;
+    animation: live-pulse 2s ease-in-out infinite;
+  }
+
+  /* 余额大数字：28px / 700 / rgba(0,0,0,0.85)，¥ 符号 16px 顶对齐（原型逐字） */
+  .balance-display {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.15;
+  }
+
+  .balance-symbol {
+    font-size: 16px;
+    font-weight: 600;
+    vertical-align: top;
+    margin-right: 1px;
+  }
+
+  /* 低余额警示：#ff5252 / 12px（v2.3 裁剪：无进度条，仅文字警示） */
+  .balance-warning {
+    font-size: 12px;
+    font-weight: 500;
+    color: #ff5252;
+    margin-top: 6px;
+  }
+
+  /* 余额元信息：币种 + 快照时刻 */
+  .balance-meta {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  /* EmptyState / 错误态 / 加载态：居中弱化文字 */
+  .empty-state {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    text-align: center;
+    margin: 12px 0 6px;
+  }
+
+  .empty-state-compact {
+    margin: 4px 0 2px;
+  }
+
+  /* ── M8 TrendSparkline（原生 SVG，60px 面积折线） ── */
+  .sparkline-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  .sparkline-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* hover 高亮点：7px 青圆 + 白描边（HTML 层渲染，规避 viewBox 非等比缩放变形） */
+  .sparkline-dot {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #00bfa5;
+    border: 1.5px solid #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  /* hover Tooltip：跟随鼠标（left/top 由组件计算，translate(-50%) 居中钳位） */
+  .sparkline-tooltip {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.78);
+    color: #ffffff;
+    white-space: nowrap;
+    transform: translate(-50%, 0);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .sparkline-tooltip-day {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
+  .sparkline-tooltip-val {
+    font-size: 11px;
+    font-weight: 600;
+  }
+
   /* DESIGN §2.10 — X11 无合成器时 backdrop-filter 不生效，
    * 回退到不透明近似色（窗体 #f5f5fa、卡片 #ffffff）。
    * M10 会按 XDG_SESSION_TYPE / 渲染检测切换 .no-compositor 类。 */
@@ -261,5 +409,407 @@
   }
   .no-compositor .card {
     background: #ffffff;
+  }
+}
+
+/* ============================================================
+ * M9 — Sessions 视图（SessionCard / ApprovalBlock / ApprovalHistory）
+ * 色值以 TASKS §10 视觉规范为准（与 :root 语义色刻意区分）：
+ *   busy 绿 #00e676 / idle 灰 rgba(0,0,0,0.3) / ctx cyan #00bcd4
+ *   审批红边 #ff5252 / 警告头浅红 rgba(255,82,82,0.1)
+ *   命令黑底 #1e1e1e、文字 #e0e0e0、危险词 #ff6b6b / 微文字 rgba(0,0,0,0.4)
+ * 命名刻意带 session/approval/history 前缀，避免与 M8 用量段冲突；
+ * 通用 .btn / .mini-badge 沿用基准原型命名（M8 段未占用）。
+ * ============================================================ */
+@keyframes status-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.6);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px rgba(0, 230, 118, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 230, 118, 0);
+  }
+}
+
+/* FR-3.6 审批后 2s 淡出（forwards 保持终态，到时由 hook 卸载） */
+@keyframes approval-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@layer components {
+  /* ── Session 卡片（基底 .card，padding:0 使审批块齐边；border 按规范 0.08 黑） ── */
+  .session-card {
+    position: relative;
+    padding: 0;
+    overflow: hidden;
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+  .session-card-body {
+    padding: 12px;
+  }
+  /* 命中 pending 审批：红边 + 红色投影（基准原型紧急卡） */
+  .session-card.has-approval {
+    border-color: rgba(255, 82, 82, 0.4);
+    box-shadow: 0 4px 12px rgba(255, 82, 82, 0.1);
+  }
+
+  /* Header：左 id 行（灯 + 名），右动作组 */
+  .session-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .session-idline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .session-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  /* 状态灯（8px） */
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .status-dot.busy {
+    background-color: #00e676;
+    animation: status-pulse 2s infinite;
+  }
+  .status-dot.idle {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+  .status-dot.dead {
+    background-color: rgba(0, 0, 0, 0.3);
+    opacity: 0.5;
+  }
+
+  /* 图标小按钮（Terminal / Terminate） */
+  .mini-icon-btn {
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    background-color: rgba(255, 255, 255, 0.7);
+    color: var(--text-main);
+    line-height: 0;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: default;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.1s;
+  }
+  .mini-icon-btn:hover {
+    background-color: #ffffff;
+  }
+  /* 终止按钮：hover 卡片才显现（FR-2.8 不占常驻版面）；danger 红调；confirm 常驻红底 */
+  .mini-icon-btn.danger {
+    opacity: 0;
+    transition: opacity 0.15s, background 0.1s;
+  }
+  .session-card:hover .mini-icon-btn.danger {
+    opacity: 1;
+  }
+  .mini-icon-btn.danger:hover {
+    color: #ff5252;
+    border-color: rgba(255, 82, 82, 0.4);
+  }
+  .mini-icon-btn.danger.confirm {
+    opacity: 1;
+    color: #ffffff;
+    background-color: #ff5252;
+    border-color: #ff5252;
+    line-height: 1.2;
+  }
+
+  /* 徽章行 */
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .mini-badge {
+    font-size: 10px;
+    line-height: 1.4;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+  .provider-badge {
+    background: rgba(212, 163, 115, 0.15);
+    color: #b07d46;
+    border: 1px solid rgba(212, 163, 115, 0.3);
+  }
+  .model-badge {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-main);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  /* Meta 行：Ctx + gauge(flex:1) + Mem(靠右) */
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+  .ctx-label {
+    flex-shrink: 0;
+  }
+  .ctx-gauge {
+    flex: 1;
+    height: 3px;
+    background-color: rgba(0, 0, 0, 0.06);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .ctx-gauge-fill {
+    height: 100%;
+    background-color: #00bcd4;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+  .mem-label {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* 微文字（Uptime 等补充） */
+  .micro-row {
+    margin-top: 4px;
+  }
+  .micro-text {
+    font-size: 10px;
+    color: rgba(0, 0, 0, 0.4);
+  }
+
+  /* cwd 单行截断 + title tooltip */
+  .session-cwd {
+    margin-top: 6px;
+    font-size: 10px;
+    color: rgba(0, 0, 0, 0.4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── 审批紧急块 ── */
+  .approval-block {
+    background-color: rgba(255, 82, 82, 0.1);
+    border-top: 1px solid rgba(255, 82, 82, 0.15);
+    padding: 12px;
+  }
+  .approval-fade {
+    animation: approval-fade-out 2s ease forwards;
+  }
+  .approval-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #ff5252;
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .approval-header.resolved-ok {
+    color: #00a854;
+  }
+  .approval-header.resolved-deny {
+    color: #ff5252;
+  }
+  .approval-mark {
+    font-weight: 700;
+  }
+  .cmd-box {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    padding: 8px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    margin-bottom: 10px;
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+  .cmd-danger {
+    color: #ff6b6b;
+    font-weight: 600;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  /* 通用按钮（基准原型 .btn / .btn-primary） */
+  .btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    background-color: rgba(255, 255, 255, 0.7);
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: default;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.1s;
+  }
+  .btn:hover:not(:disabled) {
+    background-color: #ffffff;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+  }
+  .btn-primary {
+    border: none;
+    background-color: var(--accent-blue);
+    color: #ffffff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: #0062cc;
+  }
+  .btn-flex {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* ── 审批历史 ── */
+  .history-card {
+    padding: 0;
+  }
+  .history-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: default;
+    text-align: left;
+  }
+  .chevron {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+  }
+  .chevron.open {
+    transform: rotate(90deg);
+  }
+  .history-count {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.4);
+  }
+  .history-body {
+    padding: 0 12px 12px 12px;
+  }
+  .history-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .history-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 5px 0;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    font-size: 11px;
+  }
+  .history-mark {
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+  .history-mark.ok {
+    color: #00a854;
+  }
+  .history-mark.deny {
+    color: #ff5252;
+  }
+  .history-cmd {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-session {
+    flex-shrink: 0;
+    max-width: 70px;
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-time {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: rgba(0, 0, 0, 0.4);
+  }
+
+  /* ── Sessions EmptyState（命名避开 M8 .empty-state） ── */
+  .sessions-empty {
+    text-align: center;
+    padding: 36px 16px;
+  }
+  .sessions-empty-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+  }
+  .sessions-empty-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 4px;
+  }
+  .sessions-empty-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
   }
 }
