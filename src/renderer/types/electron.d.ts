@@ -16,6 +16,7 @@ import type {
   ApprovalPayload,
   ApprovalRecord,
   BalanceDailySnapshot,
+  DeepPartial,
   SessionInfo,
   UsageRecord
 } from '../../shared/types'
@@ -27,17 +28,21 @@ export interface ElectronAPI {
   getSessionsData(): Promise<SessionInfo[]>
   getApprovalHistory(): Promise<ApprovalRecord[]>
   getConfig(): Promise<AppConfig>
-  saveConfig(partial: Partial<AppConfig>): Promise<void>
+  saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>
   manualRefresh(): Promise<void>
   jumpToTerminal(cwd: string): Promise<boolean>
   terminateSession(pid: number): Promise<boolean>
   respondApproval(id: string, allowed: boolean): Promise<boolean>
   togglePin(pinned: boolean): Promise<void>
+  /** 退出应用（M10 Settings Quit，app:quit → will-quit 清理链） */
+  quitApp(): Promise<void>
 
   // ── 窗口控制子集（M4 建立，§7 未列；TrafficLights 红绿灯调用） ──
   windowHide(): Promise<void>
   windowMinimize(): Promise<void>
   windowToggleMaximize(): Promise<void>
+  /** 查询当前置顶状态（M10 Settings "Always on Top" 初始勾选） */
+  getAlwaysOnTop(): Promise<boolean>
 
   // ── Push events → 返回 unsubscribe 函数（§7 逐字） ──
   onUsageUpdated(cb: (data: UsageRecord[]) => void): () => void

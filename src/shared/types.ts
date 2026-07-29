@@ -9,6 +9,20 @@
  * M5 引入：ApprovalPayload / PendingApproval / ApprovalResponse / SessionStatus / SessionInfo（§6.12 / §5.3 / §6.8）。
  */
 
+// ─── 通用工具类型 ───
+
+/**
+ * 递归部分覆盖类型：对象逐层可选，**数组整体保留**（不做元素级可选），标量可选。
+ * config:save / saveConfig 的入参语义（§6.1 / §8.2 深合并写回）——允许只传需要覆盖的
+ * 嵌套子集（如 `{ providers: { deepseek: { balance_warn_threshold: 5 } } }`）。
+ * 放此作为 IPC 两端单一真源（§6.12），主进程 config.ts 自此 import 并再导出。
+ */
+export type DeepPartial<T> = T extends unknown[]
+  ? T
+  : T extends object
+    ? { [K in keyof T]?: DeepPartial<T[K]> }
+    : T
+
 // ─── 配置（AppConfig，DESIGN §6.1） ───
 
 export interface ServerConfig {

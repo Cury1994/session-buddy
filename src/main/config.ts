@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml'
 
-import type { AppConfig } from '../shared/types'
+import type { AppConfig, DeepPartial } from '../shared/types'
 
 /**
  * M2 — 配置管理（DESIGN §6.1 / §8.1 / §8.2）
@@ -16,12 +16,11 @@ import type { AppConfig } from '../shared/types'
  *   - 打包后资源路径（process.resourcesPath 等）是 M15 的事，届时再适配
  */
 
-/** 递归深拷贝 / 部分覆盖用的工具类型：数组整体保留，对象逐层可选 */
-export type DeepPartial<T> = T extends unknown[]
-  ? T
-  : T extends object
-    ? { [K in keyof T]?: DeepPartial<T[K]> }
-    : T
+/**
+ * 递归深拷贝 / 部分覆盖用的工具类型：单一真源在 shared/types.ts（§6.12），
+ * 此处再导出，保持 ipc-handlers 等既有 `import { DeepPartial } from './config'` 不破。
+ */
+export type { DeepPartial }
 
 // ─── 路径 ───
 
@@ -181,7 +180,11 @@ export function loadConfig(): AppConfig {
  * 保存用户配置：把 partial 深合并进现有用户文件（保留其它已覆盖 key），
  * 写回 `~/.config/harness-monitor/config.yaml`（目录不存在则创建）。
  * 仅写入用户显式覆盖的 key，不把默认值烘焙进用户文件（DESIGN §8.2）。
- * 写入失败仅 warn 降级，不抛出（TASKS §18.4）；返回保存后的完整生效配置。
+ *
+ * 契约（M10 收窄，主对话决策）：写入失败**抛出异常**（rename / 写盘失败均 throw，
+ * 不再静默 warn 降级）。理由：保存是前台用户动作，静默降级＝假成功真丢失，比报错更糟；
+ * 抛出后经 IPC 转 reject、UI 显错误，应用不崩，仍合 §18.4 "降级不崩溃" 精神。
+ * 读取侧（loadConfig）的降级保留不变。成功返回合并后的完整生效配置。
  */
 export function saveConfig(partial: DeepPartial<AppConfig>): AppConfig {
   const existing = readYamlFile(USER_FILE_PRIMARY) ?? {}
@@ -196,15 +199,20 @@ export function saveConfig(partial: DeepPartial<AppConfig>): AppConfig {
   try {
     mkdirSync(USER_DIR_PRIMARY, { recursive: true })
     writeFileSync(tmpPath, yamlStringify(mergedUser), 'utf8')
-    try {
-      renameSync(tmpPath, USER_FILE_PRIMARY)
-    } catch (err) {
-      removeIfExists(tmpPath) // rename 失败：清理临时文件 + warn 降级，不抛出（TASKS §18.4）
-      console.warn(`[config] 原子重命名失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`)
-    }
   } catch (err) {
     removeIfExists(tmpPath) // 写入失败：存在性守卫清理可能残留的临时文件
-    console.warn(`[config] 写入失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`)
+    const msg = `写入配置失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`
+    console.warn(`[config] ${msg}`)
+    throw new Error(msg)
+  }
+
+  try {
+    renameSync(tmpPath, USER_FILE_PRIMARY)
+  } catch (err) {
+    removeIfExists(tmpPath) // rename 失败：清理临时文件 + 抛出（M10 契约收窄）
+    const msg = `原子重命名失败 ${USER_FILE_PRIMARY}: ${(err as Error).message}`
+    console.warn(`[config] ${msg}`)
+    throw new Error(msg)
   }
 
   return loadConfig()

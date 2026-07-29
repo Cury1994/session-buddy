@@ -109,6 +109,38 @@ if (!gotTheLock) {
         tray: managedTray
       })
 
+      // ─── M10：reschedule —— 配置保存后重调度（注入 ipc-handlers config:save）───
+      // stop 旧双调度器 → 重新 loadConfig → 按新 config 重启；同时刷新 notifications
+      // 模块配置引用（notifications.enabled 即时生效，见 notifications.ts 文件头约定）。
+      // balance_warn_threshold / check_interval_min / refresh_interval_sec 在 start* 内
+      // 按传入 config 固化，重启后即按新值轮询。const 句柄捕获：database / managedWindow /
+      // managedTray 为模块级 let（will-quit 会置 null），闭包内无法收窄，故捕获为非空 const。
+      const dbHandle = database
+      const winHandle = managedWindow
+      const trayHandle = managedTray
+      const reschedule = (): void => {
+        balanceTask?.stop()
+        sessionTask?.stop()
+        const fresh = loadConfig()
+        initNotifications(winHandle.win, fresh)
+        balanceTask = startBalanceChecker({
+          db: dbHandle,
+          provider: balanceProvider,
+          approvalQueue,
+          config: fresh,
+          win: winHandle.win,
+          tray: trayHandle
+        })
+        sessionTask = startSessionScanner({
+          scanner: sessionScanner,
+          approvalQueue,
+          db: dbHandle,
+          config: fresh,
+          win: winHandle.win,
+          tray: trayHandle
+        })
+      }
+
       // ─── M7：IPC 通道集中注册（§6.11 全量 invoke + 窗口控制子集）───
       // 薄封装委托给上面创建的各模块；window:* / app:toggle-pin 自 M4 的 index.ts
       // 临时注册迁入 ipc-handlers.ts 统一管理。app:refresh 委托双调度器的 tick()
@@ -121,7 +153,8 @@ if (!gotTheLock) {
         window: managedWindow,
         triggerRefresh: async () => {
           await Promise.all([balanceTask?.tick(), sessionTask?.tick()])
-        }
+        },
+        reschedule
       })
     } catch (err) {
       console.error(`[main] 后端启动失败（致命）: ${(err as Error).message}`)

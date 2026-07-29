@@ -6,6 +6,7 @@ import type {
   ApprovalPayload,
   ApprovalRecord,
   BalanceDailySnapshot,
+  DeepPartial,
   SessionInfo,
   UsageRecord
 } from '../shared/types'
@@ -51,8 +52,11 @@ const api = {
   /** 当前生效配置（config:get → loadConfig） */
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
 
-  /** 深合并保存用户配置（config:save → saveConfig） */
-  saveConfig: (partial: Partial<AppConfig>): Promise<void> =>
+  /**
+   * 深合并保存用户配置（config:save → saveConfig）。入参支持嵌套子集（DeepPartial）。
+   * resolve → 合并后的完整生效配置；写盘失败 → reject（M10 契约收窄，UI 据此显错误）。
+   */
+  saveConfig: (partial: DeepPartial<AppConfig>): Promise<AppConfig> =>
     ipcRenderer.invoke('config:save', partial),
 
   /** 手动刷新一轮（app:refresh → balanceChecker + sessionScanner 各一轮） */
@@ -73,6 +77,9 @@ const api = {
   /** Pin 切换（app:toggle-pin → alwaysOnTop + blur 不隐藏） */
   togglePin: (pinned: boolean): Promise<void> => ipcRenderer.invoke('app:toggle-pin', pinned),
 
+  /** 退出应用（app:quit → app.quit()，经 will-quit 清理链，FR-6.5） */
+  quitApp: (): Promise<void> => ipcRenderer.invoke('app:quit'),
+
   // ── 窗口控制子集（M4 建立，§7 未列；TrafficLights.tsx 红绿灯调用） ──
 
   /** 隐藏窗口（红绿灯 Close 同语义：hide 不 quit） */
@@ -83,6 +90,9 @@ const api = {
 
   /** 最大化 / 还原 toggle */
   windowToggleMaximize: (): Promise<void> => ipcRenderer.invoke('window:toggle-maximize'),
+
+  /** 查询当前置顶状态（window:get-always-on-top → ManagedWindow.isPinned，M10 设置页） */
+  getAlwaysOnTop: (): Promise<boolean> => ipcRenderer.invoke('window:get-always-on-top'),
 
   // ── Push events（§7，返回 unsubscribe 函数） ──
 

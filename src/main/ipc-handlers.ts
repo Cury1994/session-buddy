@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 
 import { loadConfig, saveConfig } from './config'
 
@@ -25,9 +25,10 @@ import type { AppConfig, ApprovalResponse } from '../shared/types'
  *
  * 通道一览（§6.11）：
  *   invoke: usage:get / usage:history / sessions:get / history:get /
- *           config:get / config:save / app:refresh / session:jump-terminal /
- *           session:terminate / approval:respond / app:toggle-pin
- *   window:hide / window:minimize / window:toggle-maximize
+ *           config:get / config:save / app:refresh / app:quit /
+ *           session:jump-terminal / session:terminate / approval:respond /
+ *           app:toggle-pin
+ *   window:hide / window:minimize / window:toggle-maximize / window:get-always-on-top
  *           （M4 建立的窗口控制子集，§6.11 未列但 TrafficLights 必需，
  *            自 index.ts 临时注册迁入统一管理）
  *   push（他模块发出）: usage:updated / sessions:updated / approval:pending /
@@ -44,6 +45,13 @@ export interface IpcHandlerDeps {
   window: ManagedWindow
   /** app:refresh → 手动触发一轮 balanceChecker + sessionScanner（services 暴露的 tick） */
   triggerRefresh: () => Promise<void>
+  /**
+   * config:save 成功后按新配置重调度双定时器（index.ts 实现并注入）：
+   * stop 旧 balanceChecker/sessionScanner → 重新 loadConfig → 按新 config 重启。
+   * 使 check_interval_min / refresh_interval_sec / balance_warn_threshold /
+   * notifications.enabled 变更即时生效（M10）。
+   */
+  reschedule: () => void
 }
 
 /** 纯对象守卫：config:save 入参校验（拒绝 null / 数组 / 标量） */
@@ -80,17 +88,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle('config:get', () => loadConfig())
 
   /**
-   * 深合并写回用户配置文件（saveConfig，§8.2）。
-   * ⚠ M10 扩展点：保存成功后需重调度定时器（check_interval_min / refresh_interval_sec /
-   *   balance_warn_threshold 变更生效）。本模块只落盘，运行中的 services 仍持启动时
-   *   config 实例，重调度随 M10 设置视图一并实现。
+   * 深合并写回用户配置文件（saveConfig，§8.2），成功后重调度双定时器。
+   * - 入参非对象 → warn + 返回当前生效配置（loadConfig），不落盘。
+   * - saveConfig 写失败会**抛异常**（M10 契约收窄，见 config.ts）→ invoke 转 reject，
+   *   渲染端据此显 "保存失败"。成功返回合并后完整 AppConfig 供 UI 确认，并经
+   *   deps.reschedule() 让 check_interval_min / balance_warn_threshold /
+   *   notifications.enabled 等变更即时生效。
    */
   ipcMain.handle('config:save', (_event, partial: unknown) => {
     if (!isPlainObject(partial)) {
       console.warn('[ipc] config:save 入参非对象，已忽略')
-      return
+      return loadConfig()
     }
-    saveConfig(partial as DeepPartial<AppConfig>)
+    const merged = saveConfig(partial as DeepPartial<AppConfig>) // 失败抛 → invoke reject
+    deps.reschedule() // 成功后按新 config 重调度定时器
+    return merged // 返回生效配置供 UI 确认
   })
 
   // ─── 应用级 ───
@@ -98,6 +110,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   /** 手动刷新一轮（余额查询 + session 扫描，FR-1.5） */
   ipcMain.handle('app:refresh', async () => {
     await deps.triggerRefresh()
+  })
+
+  /**
+   * 退出应用（M10 Settings Quit 按钮，FR-6.5）：走 app.quit() → before-quit
+   * (markQuitting) → will-quit 清理链（双调度器 stop / server.stop / tray.destroy /
+   * db.close），与托盘菜单 Quit / SIGTERM 同一退出路径，无残留进程。
+   */
+  ipcMain.handle('app:quit', () => {
+    app.quit()
   })
 
   /** Pin 切换 → alwaysOnTop + blur 不隐藏（M4 已有，统一到 handlers） */
@@ -177,4 +198,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       }
     }
   })
+
+  /**
+   * 查询当前置顶状态（M10 Settings "Always on Top" 复选框初始勾选）。
+   * 返回 window.ts 的 pin 状态——togglePin 是 alwaysOnTop 的唯一切换点，
+   * 与 WidgetHeader 📌 按钮共享同一状态，设置页打开时据此反映窗口真实置顶态。
+   */
+  ipcMain.handle('window:get-always-on-top', () => managedWindow.isPinned())
 }
