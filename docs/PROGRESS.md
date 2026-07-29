@@ -13,7 +13,7 @@
 | M4 系统托盘 + 窗口管理 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit 681d23a；PNG 图标（SVG 不可行，蓝图已更正）；3 项 GUI 确认待用户 |
 | M5 HTTP Server + 审批队列 + 审批联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eee9196；橙绿联动 IconPixmap 实测；electron-rebuild（见日志） |
 | M6 数据服务 + 调度 + 余额联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eb2361e；ctxPct 与 statusline.py 3/3 一致；/proc rss field 24（蓝图已勘误） |
-| M7 IPC + 挂件壳 | P0 | ⏳ 未开始 | — | — | | 旧 M9+M10；时区已在 M3r 解决，非决策点 |
+| M7 IPC + 挂件壳 | P0 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit ab25b3e；14 IPC 1:1 / 毛玻璃挂件壳 / 分段导航 / CSP meta / sandbox 决策 |
 | M8 用量视图 | P0 | ⏳ 未开始 | — | — | | 旧 M11；裁剪版：余额卡 + 余额趋势线（原生 SVG，删 recharts） |
 | M9 Sessions 视图 | P0 | ⏳ 未开始 | — | — | | 旧 M12；SessionCard/ApprovalBlock |
 | M10 设置视图 | P1 | ⏳ 未开始 | — | — | | 旧 M13；无开机自启项 + save 反馈设计 |
@@ -21,9 +21,9 @@
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 0/4 ｜ Phase 4 集成 0/1 ｜ 总体 6/11 (55%)
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 1/4 ｜ Phase 4 集成 0/1 ｜ 总体 7/11 (64%)
 
-**当前阶段**：第三阶段（模块化开发）— M1~M6 完成，后端批量 Code Review 进行中（审毕起常驻实例交用户 → M7）
+**当前阶段**：第三阶段（模块化开发）— M7 完成，前端阶段启动；M8（用量视图）+ approve.sh 并行派发中
 
 ---
 
@@ -285,6 +285,31 @@
 - 环境：用户 shell 配置与当前环境均无 DEEPSEEK_API_KEY → 余额数据暂空（用量卡 M8 才做，当前窗口仍为 M1 占位）；待用户告知 key 提供方式
 - 交接约定：用户反馈托盘三件事（右键菜单/左键 toggle/绿点）+ 审批试玩结果后回收实例再派发 M7（单实例锁冲突，M7 开发验证需起应用，实例须先下线）
 
+### 2026-07-28 ｜ 用户反馈 ｜ 托盘三件事通过 + API key 配置
+- 用户确认：托盘绿点 / 右键菜单 / 左键 toggle 均正常（"其他都没问题"）——M4 遗留的 3 项 GUI 确认核销
+- DEEPSEEK_API_KEY 已写入 ~/.bashrc（600 权限，**不入 git、不入任何项目文档**，本日志亦不记录明文）
+- 真实余额验证：裸 node 调 DeepSeekProvider.checkBalance() → **¥10.77 CNY** ✅（直连可用，node fetch 无需代理）。注意：余额距默认告警线 ¥10 仅 0.77，低余额红点 + 通知功能预计很快真实触发
+- 蓝图小修：DESIGN §6.11 补 `usage:history` 通道、§7 补 `getBalanceHistory()`（v2.3 裁剪引入 get30DayBalance 时漏补 IPC 面）
+- 实例已回收（端口释放、无残留），放行 M7 开发
+
+### 2026-07-28 ｜ 第三阶段 ｜ M7 开始（前端阶段启动）
+- 注入上下文：TASKS §8（M7 任务 + 验收）/ DESIGN §4（组件树）/ §2（视觉 token，基准原型 harness_monitor.html）/ §6.11（IPC 通道全表，含新增 usage:history）/ §7（preload API 全量）/ §6.12（共享类型）
+- 范围：ipc-handlers.ts（全量 ipcMain.handle，薄封装委托）/ preload 全量 electronAPI（11 invoke + 5 on-push，返回 unsubscribe）/ electron.d.ts 类型声明 / 挂件壳（App.tsx widget-window 毛玻璃 + WidgetHeader 44px 拖拽区 + TrafficLights 红绿灯接 M4 窗口 IPC + PinIcon + SegmentedControl 分段导航含 pending badge + 三视图占位）/ M1 遗留（sandbox 决策 + CSP meta）
+- 关键约定：approval:respond IPC 只做 queue.respond + 补发 approval:resolved push，recordApproval 唯一落库点仍在 server POST /approve 恢复处（审查整改后的不变量，不得破坏）；tray:color-changed push 在本模块接通
+- 验证需 DEEPSEEK_API_KEY（source ~/.bashrc 获取，不得写入代码/文档/提交）
+- 派发：开发+测试合并 subagent（高速模式续进）
+
+### 2026-07-29 ｜ M7 ｜ 中断与恢复
+- subagent 在收尾验证阶段被 API 错误（response stalled）中断：代码全部完成未提交、验证实例孤儿驻留（18456 在听）
+- 处置：SendMessage 原 agent 续接（上下文完整保留）——完成剩余验证（segment 切换复验 / 截图 / 拖拽区）、补齐回归、提交、清理实例
+
+### 2026-07-29 15:38 ｜ M7 ｜ 完成（commit ab25b3e）
+- 产出：ipc-handlers.ts（14 通道 ipcMain.handle，薄封装委托）/ preload 全量 electronAPI（14 invoke + 5 on-push，返回 unsubscribe）/ electron.d.ts 类型声明 / 挂件壳（App.tsx widget-window 毛玻璃 + WidgetHeader 44px 拖拽区 + TrafficLights 红绿灯 + PinIcon 置顶 + SegmentedControl 分段导航含 pending badge + 三视图占位）/ M1 遗留收口（sandbox:false 决策 + CSP meta）
+- 验证全绿：npm run build 三入口零错误 + 双 typecheck ✅；截图 /tmp/hm_m7.png（segment 切换 / 拖拽区确认）✅；实例清理（18456 空闲、无残留）✅
+- 偏差：14 通道较 TASKS §8 原定「10 invoke」多 4 条（M4 窗口控制 IPC 4 条 + M8 前置 usage:history，均属 DESIGN §6.11 全表范围，非越权）
+- 遗留：无（sandbox / CSP 随本模块关闭，跨模块遗留项登记表两项核销）
+- 交接：M8 接 usage:get/usage:history IPC；M9 接 sessions:get/approval:respond/history:get IPC；M10 接 config:get/config:save IPC
+
 ---
 
-**下一步**：等用户试玩反馈 → 回收实例 → 派发 M7（IPC + 挂件壳，前端阶段开始）。
+**下一步**：M7 完成 → 按 C 方案并行派发 Agent A（M8 用量视图）+ Agent B（approve.sh 独立开发）；M7~M10 全部完成后触发前端批量 Code Review。

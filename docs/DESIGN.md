@@ -795,6 +795,7 @@ function notifyBalanceLow(balance, currency): void  // 余额告警通知
 | Channel | 方向 | Payload | 返回 |
 |---------|------|---------|------|
 | `usage:get` | renderer→main | 无 | `UsageRecord[]` |
+| `usage:history` | renderer→main | 无 | `BalanceDailySnapshot[]`（db.get30DayBalance，v2.3 裁剪后补入，供 TrendSparkline） |
 | `sessions:get` | renderer→main | 无 | `SessionInfo[]` |
 | `history:get` | renderer→main | `limit?: number` | `ApprovalRecord[]` |
 | `config:get` | renderer→main | 无 | `AppConfig` |
@@ -1033,6 +1034,7 @@ fi
 interface ElectronAPI {
   // Request/Response
   getUsageData(): Promise<UsageRecord[]>
+  getBalanceHistory(): Promise<BalanceDailySnapshot[]>
   getSessionsData(): Promise<SessionInfo[]>
   getApprovalHistory(): Promise<ApprovalRecord[]>
   getConfig(): Promise<AppConfig>
