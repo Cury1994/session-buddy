@@ -6,24 +6,24 @@
 
 | 模块 | 优先级 | 状态 | 单测 | Code Review | 完成时间 | 备注 |
 |------|--------|------|------|-------------|---------|------|
-| M1 项目骨骼 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-24 | commit 4e30d2f + 5783a5d（review 整改） |
-| M2 配置管理 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-27 | commit 9a277be；P2 小修随 M3 提交 |
-| M3 数据库 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-27 | commit 54b20d0 + b5908e4；**v2.3 schema 返工见下条** |
-| M3r Schema 精简返工 | P0 | ✅ 完成 | 通过 | 通过(轻量) | 2026-07-27 | commit a1a7f82；主对话 diff 审查 |
-| M4 系统托盘 + 窗口管理 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit 681d23a；PNG 图标（SVG 不可行，蓝图已更正）；3 项 GUI 确认待用户 |
-| M5 HTTP Server + 审批队列 + 审批联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eee9196；橙绿联动 IconPixmap 实测；electron-rebuild（见日志） |
-| M6 数据服务 + 调度 + 余额联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eb2361e；ctxPct 与 statusline.py 3/3 一致；/proc rss field 24（蓝图已勘误） |
-| M7 IPC + 挂件壳 | P0 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit ab25b3e；14 IPC 1:1 / 毛玻璃挂件壳 / 分段导航 / CSP meta / sandbox 决策 |
-| M8 用量视图 | P0 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit 690bd24；余额卡 + TrendSparkline 原生 SVG + 删 recharts；GUI 实测（¥10.77 / 低余额红字 / 30 点折线 hover）；曾停滞经 SendMessage 恢复 |
-| M9 Sessions 视图 | P0 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit 2c0b99a；SessionCard/ApprovalBlock/ApprovalHistory + 状态灯；GUI 延后并入批量审；globals.css 提交含 M8 段（归属串，无碍） |
-| M10 设置视图 | P1 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit a722e3b；saveConfig 抛出 + 重调度 / General+Limits / Quit；GUI 全项实测通过 |
+| M1 项目骨骼 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-24 01:08 | commit 4e30d2f + 5783a5d（review 整改） |
+| M2 配置管理 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-27 12:46 | commit 9a277be；P2 小修随 M3 提交 |
+| M3 数据库 | P0 | ✅ 完成 | 通过 | 通过 | 2026-07-27 14:11 | commit 54b20d0 + b5908e4；**v2.3 schema 返工见下条** |
+| M3r Schema 精简返工 | P0 | ✅ 完成 | 通过 | 通过(轻量) | 2026-07-27 15:34 | commit a1a7f82；主对话 diff 审查 |
+| M4 系统托盘 + 窗口管理 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 09:16 | commit 681d23a；PNG 图标（SVG 不可行，蓝图已更正）；3 项 GUI 确认待用户 |
+| M5 HTTP Server + 审批队列 + 审批联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 14:58 | commit eee9196；橙绿联动 IconPixmap 实测；electron-rebuild（见日志） |
+| M6 数据服务 + 调度 + 余额联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 15:49 | commit eb2361e；ctxPct 与 statusline.py 3/3 一致；/proc rss field 24（蓝图已勘误） |
+| M7 IPC + 挂件壳 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 15:38 | commit ab25b3e；14 IPC 1:1 / 毛玻璃挂件壳 / 分段导航 / CSP meta / sandbox 决策 |
+| M8 用量视图 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 17:52 | commit 690bd24；余额卡 + TrendSparkline 原生 SVG + 删 recharts；GUI 实测（¥10.77 / 低余额红字 / 30 点折线 hover）；曾停滞经 SendMessage 恢复 |
+| M9 Sessions 视图 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 16:09 | commit 2c0b99a；SessionCard/ApprovalBlock/ApprovalHistory + 状态灯；GUI 延后并入批量审；globals.css 提交含 M8 段（归属串，无碍） |
+| M10 设置视图 | P1 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 17:33 | commit a722e3b；saveConfig 抛出 + 重调度 / General+Limits / Quit；GUI 全项实测通过 |
 | M11 端到端测试 + approve.sh | P0 | 🔄 进行中 | — | — | | approve.sh 已预完成（d4264c6，8/8 自测）；剩端到端清单执行 |
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
 **阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 0/1 ｜ 总体 10/11 (91%)
 
-**当前阶段**：第三阶段（模块化开发）— M7~M10 全部完成（10/11），前端批量 Code Review 派发中；approve.sh 预完成，M11 仅剩端到端清单
+**当前阶段**：第三阶段（模块化开发）— M7~M10 完成且前端批量审**通过**（10/11）；整改 d63fe60 落地 + 轻量复核过；approve.sh 预完成，**下一步 M11 端到端清单执行**
 
 ---
 
@@ -32,7 +32,7 @@
 ### 2026-07-21 ｜ 第一阶段 ｜ 需求澄清 + 蓝图启动
 - 旧版 Python 实现（main.py / server.py / tray.py / panels/）作为参照，决定 Electron 全量重写
 
-### 2026-07-22 ｜ 第一阶段 ｜ 蓝图产出
+### 2026-07-22 17:08:31 ｜ 第一阶段 ｜ 蓝图产出
 - REQUIREMENTS v2.0 / DESIGN v3.0 / TASKS v2.0 初版完成
 
 ### 2026-07-23 ｜ 第一阶段 ｜ 蓝图审查（REVIEW.md）
@@ -79,7 +79,7 @@
 - npm install dev deps 时 ECONNRESET（疑似 electron 二进制从 GitHub 下载被重置），subagent 被停止
 - 处置：恢复原 subagent，指示先配代理（127.0.0.1:7897）+ electron 淘宝镜像 / registry 换源后重试
 
-### 2026-07-24 ｜ M1 ｜ 开发完成（commit 4e30d2f）
+### 2026-07-24 00:44:25 ｜ M1 ｜ 开发完成（commit 4e30d2f）
 - 依赖：electron 32.3.3 / electron-vite 2.3.0 / react 19.2.8 / tailwindcss 3.4.19 / better-sqlite3 11.10.0（native 编译 OK）/ typescript 5.9.3
 - 验证：npm run build 三入口零错误 + tsc strict 双 project 通过；真实启动（DISPLAY=:0）+ 截图确认 "Hello harness-monitor" + 浅色毛玻璃卡片（/tmp/hm_window.png）
 - 解决的关键问题：@vitejs/plugin-react 锁 v4（v6 需 vite 8 与 electron-vite2 冲突）；chrome-sandbox SUID 4755（sudo chown/chmod，未入代码，建议 M15 postinstall 固化）；dev GPU 崩溃 → 构建产物 --disable-gpu 验证
@@ -95,13 +95,13 @@
 - 【观察】docs/ 蓝图与基准原型 html 尚未入库 → 主对话补 docs commit
 - 处置：派发修复（P1+P2 顺修项），复验后 M1 关闭
 
-### 2026-07-24 ｜ M1 ｜ review 整改完成（commit 5783a5d），M1 关闭
+### 2026-07-24 01:08:29 ｜ M1 ｜ review 整改完成（commit 5783a5d），M1 关闭
 - P1：6 个构建期依赖移入 devDependencies（dependencies 仅剩 better-sqlite3/express/react/react-dom/recharts/yaml），lockfile 刷新
 - P2：preload 占位名 → electronAPI；滚动条 → @layer base
 - 复验：npm install + npm run build 零错误（三入口 + 双 typecheck）
 - 遗留决策（已排期）：sandbox→M9 / CSP→M4-M10 / externalizeDeps→M3 前必加 / chrome-sandbox SUID→M15 postinstall
 
-### 2026-07-24 ｜ 文档 ｜ 蓝图入库
+### 2026-07-24 01:09:24 ｜ 文档 ｜ 蓝图入库
 - docs/（REQUIREMENTS/DESIGN/TASKS/PROGRESS/REVIEW/plan）+ 基准原型 harness_monitor.html + 设计资料两份 txt 提交入库（审查基准需版本化）
 
 ### 2026-07-27 ｜ 第三阶段 ｜ M2 开始
@@ -109,13 +109,13 @@
 - 范围：src/main/config.ts — loadConfig 多路径优先级 + deepMerge + saveConfig + AppConfig 类型化
 - 派发：开发+测试合并 subagent（续用 M1 agent，环境上下文复用）
 
-### 2026-07-27 ｜ M2 ｜ 开发完成（commit 9a277be）
+### 2026-07-27 12:46:58 ｜ M2 ｜ 开发完成（commit 9a277be）
 - 产出：src/main/config.ts（loadConfig/saveConfig/deepMerge/DeepPartial）+ src/shared/types.ts（AppConfig 及子接口，对齐 §6.1/§8.1）+ electron.vite.config.ts 多入口（out/main/config.js 独立产出供裸 node 验收）
 - 验收：默认 port=18456 ✅；用户覆盖 port=9999 ✅；saveConfig 深合并写回（HOME=/tmp 隔离测试）✅；数组整体替换 ✅；npm run dev 多入口下窗口正常 ✅
 - 蓝图缺陷发现并修正：DESIGN §8.2 合并顺序与 §6.1 优先级表矛盾（compat 会覆盖主配置）→ 实现遵循 §6.1+TASKS §3（正确），主对话已出 §8.2 v3.1.1 勘误
 - 中途网关 502 两次（无工作丢失，重试恢复）
 
-### 2026-07-27 ｜ M2 ｜ Code Review 通过（无 P0/P1）
+### 2026-07-27 12:59:48 ｜ M2 ｜ Code Review 通过（无 P0/P1）
 - 审查方实测全过：优先级双文件（harness 胜 compat、compat 独有键保留）✅、--config 最高优先 ✅、deepMerge 不 mutate + 数组整体替换 ✅、损坏/非对象/无权限 YAML 降级不抛 ✅、saveConfig 目录自建 + 仅写覆盖 key ✅、裸 node require ✅、strict 无 any 逃逸 ✅
 - AppConfig 与 §6.1 逐项比对全一致（含 'claude-code' 连字符 key）
 - P2 处置：
@@ -123,7 +123,7 @@
   - 延后：save 成功标志 → M13 一并设计；路径 import 期常量（记录备查）；写入权限收紧（config 引入 token 字段时）
 - 文档修正：TASKS §3 验收命令 echo→printf（bash echo 不展开 \n）
 
-### 2026-07-27 ｜ M3 ｜ 开发完成（commit abdc604 + 54b20d0）
+### 2026-07-27 13:40:21 ｜ M3 ｜ 开发完成（commit abdc604 + 54b20d0）
 - fix(M2) abdc604：saveConfig 原子写（tmp+rename）+ deepMerge 死代码清理
 - feat(M3) 54b20d0：src/main/db.ts AppDatabase（WAL + 建表幂等 + 5 DAO + close）；shared/types.ts 增 UsageRecord/ApprovalRecord（§6.12 映射）；electron.vite.config 加 externalizeDepsPlugin + db 入口
 - 验收：TASKS §4 node 脚本全通过（两表读写、多 provider/model MAX(id) 分组正确、get30DayUsage 当日聚合、WAL 双重证明、initDB 幂等）；M2 回归从项目根通过（config.js 226kB→4.07kB）；npm run dev 三入口窗口正常
@@ -138,7 +138,7 @@
   - 【时区专项·定级 P2 但有时限】datetime('now') UTC 存储 → UTC+8 凌晨 0-8 点数据按天聚合归"昨天"；v3.0 today_tokens 恒 0 故无可观测影响；**M9/M11 上线前必须解决**（含 §6.12 时间戳无时区标识、渲染端 new Date 误读问题）。修复方向待定：(a) 全链路 localtime（单机工具最简）(b) epoch 存储。决策点在 M9
 - 遗留：UsageDailyAggregate 暂随 db.ts 导出，M11 需要时迁入 shared
 
-### 2026-07-27 ｜ M3 ｜ P2 小修完成（commit b5908e4）
+### 2026-07-27 14:11:41 ｜ M3 ｜ P2 小修完成（commit b5908e4）
 - getRecentApprovals 同秒 tie-break（ORDER BY timestamp DESC, id DESC，实测同秒 3 条取最新 2 条 ✅）
 - 5 条 DAO 语句惰性 prepare 私有字段复用（高频轮询不再每次重编译）
 - config 原子写 tmp 文件名随机后缀 + 双路径清理残留（实测无 .tmp 残留）
@@ -169,7 +169,7 @@
 - 编号说明：本日志此条之前的"M5~M16"字样均为旧编号，新旧对照见上及 TASKS v2.2 §1
 - M4 编号与内容不变，任务书（2026-07-27 拟）继续有效
 
-### 2026-07-27 ｜ 工作流 ｜ 蓝图裁剪（REQUIREMENTS v2.2 / DESIGN v3.2 / TASKS v2.3）
+### 2026-07-27 15:11:09 ｜ 工作流 ｜ 蓝图裁剪（REQUIREMENTS v2.2 / DESIGN v3.2 / TASKS v2.3）
 - 背景：用户指出合并后开发测试时间仍然太长（"本来功能也不复杂"），要求主对话自评蓝图复杂度。评估结论：核心功能复杂度合理，蓝图膨胀在三层——假功能 / 想象的规模 / 仪式感流程
 - 裁剪（用户逐项过目确认，8 项）：
   - 砍统计卡今日 token / 本月用量 / 千 token 均价（DeepSeek API 不返回 token 消耗，原数据只能是 0 或估算假值）
@@ -192,7 +192,7 @@
 - 处置：~/.config/harness-monitor/monitor.db 为开发期旧 schema，无真实数据，直接删重建
 - 派发：独立 subagent（新会话，/clear 后旧 agent 已不可续）；变更小，完成后走轻量审查
 
-### 2026-07-27 ｜ M3r ｜ 完成（commit a1a7f82）
+### 2026-07-27 15:34:22 ｜ M3r ｜ 完成（commit a1a7f82）
 - 产出：db.ts 删三列 + localtime（两表）+ recordUsage(4 参) + get30DayBalance（每日 MAX(id) 余额快照，WHERE id IN 子查询沿用 getLatestUsage 风格）；types.ts 精简 UsageRecord / 新增 BalanceInfo + BalanceDailySnapshot / 删 AutostartConfig；config.ts DEFAULT_CONFIG 联动（阈值 10、删 autostart）；config.yaml 同步
 - 偏差（均合理）：get30DayBalance 30 天窗口改 `date('now','localtime','-30 days')`（与 localtime 存储基准一致，避免 UTC+8 凌晨跨日错位，代码已注释）；config.ts 随类型联动修改（typecheck 必然要求）
 - 验收：npm run build 三入口零错误 + 双 typecheck ✅；DB 全项 ✅（timestamp 实测本地时间 15:33 ≠ UTC 07:33，WAL ✅，同双快照取当日最后一条 ✅）；M2 回归 ✅（port=18456、无 autostart、阈值 10）；全仓 grep 删净字段零残留 ✅
@@ -209,7 +209,7 @@
 - 环境：GNOME 托盘需 appindicator 扩展；已指示 subagent 不重启 gnome-shell / 不注销用户，受阻则报告待用户协助
 - 派发：开发+测试合并 subagent（高速模式首轮，M3r 完成后直接续进，未经确认门）
 
-### 2026-07-28 ｜ M4 ｜ 完成（commit 681d23a）
+### 2026-07-28 09:16:51 ｜ M4 ｜ 完成（commit 681d23a）
 - 产出：tray.ts（四色 PNG 图标 + 右键动态菜单 + setSessionSnapshot 注入口 + 左键 toggle）/ window.ts（340×650 frame:false + blur→hide + pin 豁免 + close→hide）/ index.ts 重写（单实例锁 + 生命周期 + SIGTERM/SIGINT + 4 条窗口控制 IPC）/ preload 最小 electronAPI
 - 验证全绿：xwininfo 340×650 ✅；托盘 SNI 注册 Status=Active、IconPixmap (22,22) 非空 ✅（扩展 ubuntu-appindicators 已 ACTIVE，无需用户装扩展）；IPC 四项经 CDP 实测（pin→_NET_WM_STATE_ABOVE / maximize / minimize→Iconic / hide→Withdrawn）✅；blur→hide 真实焦点回收实测 + pin 豁免 ✅；close 不 quit ✅；单实例第二进程 exit 0 ✅；SIGTERM exit 0 无残留 ✅；截图 /tmp/hm_m4_renderer.png
 - 偏差与蓝图更正：
@@ -225,7 +225,7 @@
 - 验证手段：curl 全流程 + D-Bus StatusNotifierItem IconPixmap 像素色验证橙→绿 + dbus-monitor 捕获桌面通知 + 临时改 approve_timeout_sec 测自动 deny（验完恢复）
 - 派发：开发+测试合并 subagent（高速模式，M4 完成直接续进）
 
-### 2026-07-28 ｜ M5 ｜ 完成（commit eee9196）
+### 2026-07-28 14:58:56 ｜ M5 ｜ 完成（commit eee9196）
 - 产出：approval-queue.ts（UUID + auto-deny）/ notifications.ts（两通知 + 开关 + 点击唤起）/ server.ts（六路由 + computeTrayColor 优先级协议导出 + EADDRINUSE 简化版）/ index.ts 接线（db 生命周期 + server 启停 + 后端失败灰灯 exit 1）/ shared 补 Approval* + Session* 类型
 - 验证全绿：health/sessions/approvals/usage ✅；阻塞审批全流程——dbus 抓到 Notify、**IconPixmap 取色橙 #ffab00 → respond 13ms 返回 → 回绿 #00e576**（像素级实测联动）✅；自动 deny（临时 timeout=3s）3.04s 返回 allowed:false ✅；端口占用 exit 1 + 旧实例探测 exit 0 ✅；单实例 + SIGTERM 回归 ✅
 - 偏差与蓝图更正：
@@ -241,7 +241,7 @@
 - 验收亮点：本机有真实 claude sessions（含本开发会话），用真实数据验收 ctxPct/memoryMB；无 DEEPSEEK_API_KEY 时 mock balance 端点验证解析
 - 派发：开发+测试合并 subagent（高速模式续进）；**M6 完成后触发后端批量 Code Review（M4+M5+M6）**，再起常驻实例交用户试玩（承诺顺延：带真实余额+会话数据的实例比裸 M5 更值得玩）
 
-### 2026-07-28 ｜ M6 ｜ 完成（commit eb2361e）
+### 2026-07-28 15:49:09 ｜ M6 ｜ 完成（commit eb2361e）
 - 产出：deepseek.ts（checkBalance，全失败态→null）/ claude-sessions.ts（简化扫描器 328 行：进程存活判定 + /proc 内存 + provider 解析 + ctxPct + 审批合并 + 缓存）/ services.ts（双定时器 + 余额联动复用 computeTrayColor + 低余额通知去抖）/ index.ts 接线 / electron.vite.config 加深seek+claude-sessions 独立入口（裸 node 验收）
 - 验证全绿：
   - **ctxPct 与 statusline.py 逐字同源对照：本机 3 个真实 session 3/3 MATCH**（8% / 21% / 5%，1M 窗口判定一致），内存与 VmRSS 逐字节一致（411/575/500 MB）
@@ -275,7 +275,7 @@
 - 验收：build + ctxPct 3/3 复验（尾部读不改变结果）+ 审批流回归 + 非法 JSON → {"ok":false} 无路径泄露 + EADDRINUSE exitCode=1 + SIGTERM 回归
 - 完成后：主对话 diff 轻量复核 → 起常驻实例交用户 → 派发 M7
 
-### 2026-07-28 ｜ 审查整改包 ｜ 完成（commit bf5e90d）
+### 2026-07-28 17:22:21 ｜ 审查整改包 ｜ 完成（commit bf5e90d）
 - 5 项全修 + 验证绿：JSON 错误中间件（400 + 路径泄露计数 0）／ transcript 尾部 256KB 读（ctxPct 3/3 MATCH 不变 8/23/5 + 300KB 假文件 decoy 测试命中尾部 usage、忽略头部诱饵）／ 灰灯死代码删除 ／ 退出清理链（EADDRINUSE exitCode=1 实测）／ getLatestUsage 单轮复用
 - 偏差（agent 发现）：Electron app.quit() 不保留 process.exitCode（最小复现证实）→ will-quit 清理完成后补 `app.exit(Number(exitCode))` 兜底非零码，清理链与退出码两全
 - 主对话 diff 轻量复核：scanUsageFromTail 尾→头扫描语义与原正向扫描取末条一致 ✅
@@ -303,7 +303,7 @@
 - subagent 在收尾验证阶段被 API 错误（response stalled）中断：代码全部完成未提交、验证实例孤儿驻留（18456 在听）
 - 处置：SendMessage 原 agent 续接（上下文完整保留）——完成剩余验证（segment 切换复验 / 截图 / 拖拽区）、补齐回归、提交、清理实例
 
-### 2026-07-29 15:38 ｜ M7 ｜ 完成（commit ab25b3e）
+### 2026-07-29 15:38:48 ｜ M7 ｜ 完成（commit ab25b3e）
 - 产出：ipc-handlers.ts（14 通道 ipcMain.handle，薄封装委托）/ preload 全量 electronAPI（14 invoke + 5 on-push，返回 unsubscribe）/ electron.d.ts 类型声明 / 挂件壳（App.tsx widget-window 毛玻璃 + WidgetHeader 44px 拖拽区 + TrafficLights 红绿灯 + PinIcon 置顶 + SegmentedControl 分段导航含 pending badge + 三视图占位）/ M1 遗留收口（sandbox:false 决策 + CSP meta）
 - 验证全绿：npm run build 三入口零错误 + 双 typecheck ✅；截图 /tmp/hm_m7.png（segment 切换 / 拖拽区确认）✅；实例清理（18456 空闲、无残留）✅
 - 偏差：14 通道较 TASKS §8 原定「10 invoke」多 4 条（M4 窗口控制 IPC 4 条 + M8 前置 usage:history，均属 DESIGN §6.11 全表范围，非越权）
@@ -322,18 +322,18 @@
 - UI：行内反馈，成功"已保存 ✓"（绿，2s 淡出）/ 失败"保存失败：msg"（红，留到下次操作），不用 toast 库
 - 重调度：save 后 stop 双调度器→loadConfig→重启（check_interval_min/refresh_interval_sec/threshold/notifications.enabled 即时生效）
 
-### 2026-07-29 ｜ approve.sh ｜ 预完成（commit d4264c6）
+### 2026-07-29 15:52:35 ｜ approve.sh ｜ 预完成（commit d4264c6）
 - 从 M11 拆出独立并行（仅依赖 M5 HTTP API，HARNESS_MONITOR_PORT 可覆盖端口→stub 19999 自测，零冲突）
 - stdin→jq 解析 command/session/cwd→curl -m 65 POST :18456/approve→allowed:true exit 0 / allowed:false exit 2（hook 拦截规范）/ 连接拒绝·超时 fail-open exit 0
 - 8/8 stub 自测通过；agent 主动补 harness/tool 字段（否则审批历史 harness 列恒 unknown）——采纳
 - M11 自此仅剩端到端清单执行
 
-### 2026-07-29 ｜ M9 ｜ 完成（commit 2c0b99a）
+### 2026-07-29 16:09:43 ｜ M9 ｜ 完成（commit 2c0b99a）
 - 产出：useSessionsData + StatusDot/ContextGauge/SessionCard/ApprovalBlock/ApprovalHistory/SessionsView（6 组件）
 - 验证：tsc 绿 + 数据源联通（GET /api/sessions 返真实 session，字段逐一对齐）+ 审批链路静态走查；**GUI 被 M8 实例挡（两轮等待超时，按约未强杀）→ 延后并入批量审**
 - 偏差：① Model→Tool（SessionInfo 无 model 字段，据实显示 tool）② 新增 orphan 审批兜底卡（curl 测试 session 不匹配真实 session 的必要超集）③ globals.css 一并提交 M8 未提交的用量段（单文件无法拆分，归属串但 CSS 全在，类名前缀隔离）④ 倒计时 cast PendingApproval（d.ts 声明 ApprovalPayload、运行时 PendingApproval）⑤ 挂载前已 pending 审批无 getPendingApprovals IPC 补拉（push 主流程不受影响，留审裁定）
 
-### 2026-07-29 ｜ M10 ｜ 完成（commit a722e3b）
+### 2026-07-29 17:33:36 ｜ M10 ｜ 完成（commit a722e3b）
 - 产出：config.ts（saveConfig 写失败抛出）/ ipc-handlers.ts（config:save 返回+reschedule+app:quit+window:get-always-on-top）/ index.ts（reschedule 注入）/ preload+electron.d.ts+shared/types.ts（DeepPartial 归位 §6.12）/ SettingsView
 - saveConfig 契约收窄**零回归面**：仓库无 TS 测试框架，无"save 失败不抛"既有断言
 - **GUI 全项实测通过**（唯一全过的前端模块）：CDP 驱动真实 React→IPC→主进程→磁盘——写盘（config.yaml 实测）/ 重调度（usagePushDelta=2 证即时 tick）/ 置顶（getAlwaysOnTop 真源）/ Quit 无残留 / save 失败（config.yaml 变目录注入 EISDIR，应用不崩）
@@ -345,7 +345,7 @@
 - 诊断：实例仅 8 分钟新（非报告称 30 分钟）+ 多次重启 dev server＝活着非死；SendMessage 续接原 agent，返回"at its next tool round"证实存活
 - 主机空闲后补做 GUI 全验并收尾
 
-### 2026-07-29 ｜ M8 ｜ 完成（commit 690bd24）
+### 2026-07-29 17:52:17 ｜ M8 ｜ 完成（commit 690bd24）
 - 产出：useUsageData + UsageView（余额卡）+ TrendSparkline（原生 SVG 面积折线）；删 recharts（npm ls 空）；globals.css 用量段已由 M9 提交（未重复 add）
 - GUI 实测：余额卡 ¥10.77 + Live 徽章 / 低余额红字（threshold 20 注入，删除恢复）/ 30 点面积折线 + hover Tooltip（2026-07-18 ¥22.05）/ 空数据 return null（代码级）
 - 清理：注入测试快照全删（346→317 真实行，remaining_injected=0）；EmptyState 分支 typecheck 过未运行时截图（需清空 api_usage 会毁真实余额，留批量审兜底）
@@ -356,6 +356,43 @@
 - CDP Page.captureScreenshot 软件渲染偶发挂死 → 用 import -window
 - server.ts:81 createServer 闭包捕获 balance_warn_threshold → 审批侧托盘色用旧阈值至重启；reschedule 已覆盖主消费方（余额告警 + services 余额侧托盘色 + 双调度器间隔），未重建 server（风险更高，超约定）
 
+### 2026-07-30 ｜ 前端批量 Code Review ｜ 派发（M7~M10）
+- 背景：07-29 M10 完成后日志停在"下一步：派发"，会话中断致派发未执行；07-30 用户询问进度时核实（无 review commit / src 无改动 / 18456 空闲 / 任务列表空）确认**未启动**，当场补派
+- 审查方：独立 subagent（sonnet 交叉验证，高速模式两轮的最后一轮）；范围 commits ab25b3e/690bd24/2c0b99a/a722e3b 全量 diff + DESIGN §2/§4/§5.3/§6.11/§6.12/§7 符合度 + CDP 实测三视图
+- 已预披露偏差（不重复计）：M7 14 通道 / M8 删 recharts / M9 Model→Tool + orphan 卡 + globals 串段 + cast + 无补拉 / M10 AlwaysOnTop 不持久化 + 超软边界
+
+### 2026-07-30 ｜ 前端批量 Code Review ｜ 未通过（3×P1，严格口径）
+- 实测全绿项：M7 挂件壳（分段/红绿灯/拖拽/badge）/ M8 余额卡 + Live + ¥10.77 + 折线 hover + 低余额红字 / M9 会话卡 + 审批 happy path + 历史 + orphan / M10 保存 + 重调度 + save 失败 + Quit；安全面（CSP 实证拦 http / sandbox+contextIsolation / contextBridge 冻结）+ strict 零 any 均优
+- **不变量确认完好**：recordApproval 唯一落库点仍在 server.ts POST /approve 恢复处；approval:respond IPC 只 queue.respond + push，不落库
+- **P1×3**（2 条在审批 P0 面）：
+  - P1-1 FR-2.7 跳转终端是静默空桩（ipc-handlers `return false // M9 实现`，全仓无 spawn；P1 需求未延后，M11 验收 #521 必挂）
+  - P1-2 审批**超时路径不 push** approval:resolved → 卡 zombie（"Wait Approval (0s)" 冻结、按钮可点但返回 false）+ badge 永久卡住
+  - P1-3（预披露 #5 升级）**无 pending 补拉 + `key={activeView}` 重挂载** → 离标签页/启动前到达的审批 widget 内不可见不可操作，badge 却亮红
+- P3×8：置顶双控件去同步 / 紧急红 #ff5252≠#ff3b30 / save 文案泄露路径 / DESIGN 文档陈旧 / server 阈值捕获 / onTrayColorChanged 无订阅 / EmptyState 无法注入 / 切 tab 闪烁
+- EmptyState 兜底未竟：contextBridge 冻结 + 无 DB 空路径，无法运行时注入，静态确认正确（测试性限制非缺陷）
+
+### 2026-07-30 ｜ 审查裁定（主对话）+ 用户拍板
+- 用户选定：P1-3 用「补拉 seed」方案（非三视图常驻）；P1-1 **并入本轮整改包**（非拆分/延后）
+- P3 裁定：修 P3-1/2/3；P3-4 文档主对话自改；P3-5 延后；P3-6 文档注明预留；P3-7 接受静态验证；P3-8 随 P1-3 顺解
+
+### 2026-07-30 16:35:55 ｜ 整改包 ｜ 完成（commit d63fe60，9 文件 +189/-37）
+- 开发+测试合并 subagent；6/6 全修 + build 三入口 + 双 strict typecheck 零错误 + CDP 实测全绿：
+  - P1-2：POST /approve await 恢复处补 `sendToRenderer('approval:resolved',{id,allowed})`，落库点不动；超时 60s 卡正确淡出移除 + badge→null + 历史 allowed:false
+  - P1-3：新增 `approval:get` invoke（approvalQueue.getAll 只读）接线 ipc/preload/d.ts；useSessionsData `Promise.all([sessions:get, approval:get.catch(→[])])` 挂载 seed + id 去重幂等；离页 POST 切回即见可批 + 启动前 pending 首屏即显（顺解 P3-8）
+  - P1-1：session:jump-terminal 实装 §6.8.4 回退链 kgx→gnome-terminal→xterm（--working-directory / xterm spawn cwd）+ 入参守卫 + 全链失败 false + SessionCard 行内"无可用终端"提示；实测弹出 gnome-terminal cwd 命中
+  - P3-1 置顶态上提 App 单一真源（getAlwaysOnTop 播种）双向同步 / P3-2 红统一 var(--danger-red)（color-mix 浅红）/ P3-3 UI 脱敏「保存失败：请检查配置目录权限（错误类型）」路径/pid/tmp 只留 main 日志
+- 清理：7 测试行删除（approval_history 11→4 真实行不动）、api_usage 未碰、config.yaml 复原、gnome-terminal/chmod 复原、端口释放无残留
+
+### 2026-07-30 ｜ 整改 ｜ 主对话轻量复核 通过
+- diff 复核 P0 面：P1-2 push 位于落库点之后 res.json 之前（recordApproval 不动）；respond 路径双发 push（IPC + POST 恢复）经 `App.tsx:39 Math.max(0,c-1)` 下限 + fading-by-id 幂等吸收，badge 不变负；P1-3 seed Promise.all + catch 回退 + id 去重 + disposed 守卫健全
+- 结论：M7~M10 放行（前端批量审闭环）
+
+### 2026-07-30 ｜ 文档 ｜ DESIGN 陈旧同步（P3-4 + P1-3 新通道）
+- §4：Model 徽章→Tool（SessionInfo 无 model）；删 Start at Login（autostart 已裁剪）
+- §6.11：config:save 签名 `Partial→void` 改 `DeepPartial→AppConfig`（M10 决策）；新增 `approval:get` 行（PendingApproval[]，P1-3 补入）
+- §7：saveConfig 签名同步；新增 `getPendingApprovals()`
+- 遗留（延后/备查）：P3-5 server warnThreshold 捕获（收敛延迟低风险）；onTrayColorChanged 无订阅（预留）
+
 ---
 
-**下一步**：派发前端批量 Code Review（M7~M10，独立 agent + sonnet 交叉 + 实测复现全部视图，兜底 M9 GUI 与 M8 EmptyState）→ 整改裁定 → M11 端到端清单执行（approve.sh 已就绪）。
+**下一步**：M11 端到端清单执行（approve.sh d4264c6 已 8/8 就绪 + 前端已放行）→ 对照 REQUIREMENTS 逐项验收（含 #521 跳转终端、#530 超时 auto-deny，整改后均已实装）→ 第四阶段集成测试收口。

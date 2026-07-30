@@ -318,7 +318,7 @@ harness-monitor/
 <SessionsView>
 ├── <SessionCard> × N
 │   ├── Header: <StatusDot /> (脉冲/静止) + name + [Terminal] 图标按钮
-│   ├── Badges: provider 徽章 + "Model: xxx" 工具徽章
+│   ├── Badges: provider 徽章 + "Tool: xxx" 工具徽章（SessionInfo 无 model 字段，据实显示 tool，M9 实现校正）
 │   ├── <ContextGauge /> (Ctx: NN% + cyan 进度条)  …  Mem: NNM
 │   └── <ApprovalBlock /> (条件渲染: 有 pending 审批时展开, 红边紧急卡片)
 │       ├── "Wait Approval (45s)" 红色警告头 + 警告图标
@@ -339,9 +339,9 @@ harness-monitor/
 
 <SettingsView>
 ├── <Card> General
-│   ├── Start at Login (checkbox)
 │   ├── Always on Top (checkbox)
 │   └── Desktop Notifications (checkbox)
+│   （v3.2 裁剪：Start at Login 已删——autostart/FR-6.6 延后，M3r 已从 AppConfig 删 autostart 字段）
 ├── <Card> Limits & Alerts
 │   └── Balance Warning (¥) (number input)
 └── [Quit Harness Monitor] (红色全宽按钮)
@@ -798,8 +798,9 @@ function notifyBalanceLow(balance, currency): void  // 余额告警通知
 | `usage:history` | renderer→main | 无 | `BalanceDailySnapshot[]`（db.get30DayBalance，v2.3 裁剪后补入，供 TrendSparkline） |
 | `sessions:get` | renderer→main | 无 | `SessionInfo[]` |
 | `history:get` | renderer→main | `limit?: number` | `ApprovalRecord[]` |
+| `approval:get` | renderer→main | 无 | `PendingApproval[]`（approvalQueue.getAll 只读快照；前端批量审 P1-3 整改补入，供 useSessionsData 挂载 seed，覆盖离标签页/启动前到达的审批） |
 | `config:get` | renderer→main | 无 | `AppConfig` |
-| `config:save` | renderer→main | `Partial<AppConfig>` | `void` |
+| `config:save` | renderer→main | `DeepPartial<AppConfig>` | `AppConfig`（M10 决策：返回合并后完整配置 + 触发重调度；写失败抛出 → invoke reject，不再静默降级） |
 | `app:refresh` | renderer→main | 无 | `void` |
 | `session:jump-terminal` | renderer→main | `cwd: string` | `boolean` |
 | `session:terminate` | renderer→main | `pid: number` | `boolean` |
@@ -1037,8 +1038,9 @@ interface ElectronAPI {
   getBalanceHistory(): Promise<BalanceDailySnapshot[]>
   getSessionsData(): Promise<SessionInfo[]>
   getApprovalHistory(): Promise<ApprovalRecord[]>
+  getPendingApprovals(): Promise<PendingApproval[]>  // P1-3 整改补入：approval:get，挂载 seed
   getConfig(): Promise<AppConfig>
-  saveConfig(partial: Partial<AppConfig>): Promise<void>
+  saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>  // M10：返回合并后配置 + 重调度，写失败 reject
   manualRefresh(): Promise<void>
   jumpToTerminal(cwd: string): Promise<boolean>
   terminateSession(pid: number): Promise<boolean>
