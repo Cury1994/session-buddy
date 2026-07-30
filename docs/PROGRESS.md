@@ -17,13 +17,13 @@
 | M8 用量视图 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 17:52 | commit 690bd24；余额卡 + TrendSparkline 原生 SVG + 删 recharts；GUI 实测（¥10.77 / 低余额红字 / 30 点折线 hover）；曾停滞经 SendMessage 恢复 |
 | M9 Sessions 视图 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 16:09 | commit 2c0b99a；SessionCard/ApprovalBlock/ApprovalHistory + 状态灯；GUI 延后并入批量审；globals.css 提交含 M8 段（归属串，无碍） |
 | M10 设置视图 | P1 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 17:33 | commit a722e3b；saveConfig 抛出 + 重调度 / General+Limits / Quit；GUI 全项实测通过 |
-| M11 端到端测试 + approve.sh | P0 | 🔄 进行中 | — | — | | approve.sh 已预完成（d4264c6，8/8 自测）；剩端到端清单执行 |
+| M11 端到端测试 + approve.sh | P0 | ✅ 完成 | 通过(42项) | E2E 即验收 | 2026-07-30 17:57 | approve.sh d4264c6；E2E 42 项通过/0 失败/4 肉眼项用户确认 |
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 0/1 ｜ 总体 10/11 (91%)
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉
 
-**当前阶段**：第三阶段（模块化开发）— M7~M10 完成且前端批量审**通过**（10/11）；整改 d63fe60 落地 + 轻量复核过；approve.sh 预完成，**下一步 M11 端到端清单执行**
+**当前阶段**：**项目完成（11/11，100%）** — 第四阶段 M11 端到端验收通过（42 项 / 0 失败 / 4 肉眼项用户确认）；待办：第五阶段总结与知识蒸馏 + 延后项 D1/D2/D3 另评估
 
 ---
 
@@ -393,6 +393,26 @@
 - §7：saveConfig 签名同步；新增 `getPendingApprovals()`
 - 遗留（延后/备查）：P3-5 server warnThreshold 捕获（收敛延迟低风险）；onTrayColorChanged 无订阅（预留）
 
+### 2026-07-30 17:11:12 ｜ 第四阶段 ｜ M11 端到端验收 开始
+- 基线：d8af845（DESIGN 同步 + PROGRESS 时间戳回填），工作树干净，18456 空闲、无孤儿实例
+- 注入上下文：REQUIREMENTS v2.2（FR-1~FR-6 / NFR / US 全表）/ TASKS §12（M11 验证清单）/ DESIGN §6.13（approve.sh）
+- 范围：approve.sh 已 8/8 预完成（d4264c6）→ 本模块仅剩**端到端清单逐项执行**，对照 REQUIREMENTS 核销（含 FR-2.7 跳转终端、FR-3.2 超时 auto-deny，整改后均已实装）
+- 安全边界（任务书已约束）：不得 SIGTERM 真实 claude session（FR-2.8 仅对 dummy 进程验证）；阈值/间隔/config.yaml 改后必复原；注入测试数据必清空；验证用实例结束即清理
+- 派发：开发+测试合并 subagent（高速档，M10 收尾后直接续进）；需用户肉眼确认项（托盘圆点/桌面通知/弹出终端）由 subagent 标注、主对话转交用户
+
+### 2026-07-30 17:57:57 ｜ 第四阶段 ｜ M11 端到端验收 通过（项目 11/11 收口）
+- 验收方：开发+测试合并 subagent（真实运行实例，构建产物 `electron . --disable-gpu --in-process-gpu`）；主对话独立复核清理与安全
+- **结果：42 项通过 / 0 失败 / 4 肉眼项**（FR/NFR/US 全核销）
+  - FR-1 余额：余额卡 ¥10.77+Live、低余额注入 threshold=20→红点 #ff5252+桌面通知+卡内警示、30 天趋势线 hover、持久化 660 行真实数据
+  - FR-2 Sessions：2 真实卡片 / ctx% 11%·27%（cyan 进度条）/ 内存 / provider 解析（glm-5.2）/ 状态灯脉冲；**跳转终端 IPC true + gnome-terminal spawn 成功**；终止仅 dummy 进程验证（**未触碰真实 session**）
+  - FR-3 审批：approve.sh 真实实例 exit 0/2 + fail-open；**60s 超时 auto-deny 实测**（临时 3s→3019ms allowed:false + 落库）；sudo rm 高亮 #ff6b6b；Approve/Deny→HTTP 返回→tray 橙→绿；历史折叠 8 条
+  - FR-4 托盘：像素级四色 绿 #00e676→橙 #ffab00→红 #ff5252，优先级 红>橙>绿
+  - FR-5 设置：改阈值/间隔→config.yaml 写入→重调度→已复原；FR-6 基础设施：单实例锁 / 端口占用 exit 1 / SIGTERM 零残留 / 127.0.0.1 / 全链路本地时间（17:47:50≠UTC）
+  - NFR：sandbox+contextIsolation+nodeIntegration:false、API 7 态降级；US-1~6 全核销
+- 4 肉眼项：FR-2.7 跳转终端（**用户确认看到 gnome-terminal 弹出**）/ FR-4.3 右键 / FR-4.4 左键 / blur+pin（后三项 07-28 已确认）→ 全部核销
+- 清理复核（主对话独立验证）：工作树干净、18456 空闲、无孤儿进程；用户配置复原（无残留用户 config.yaml，仓库默认 threshold=10/interval=1/timeout=60 完好）；DB 无 M11 残留（测试审批 id≥29 全删 10→4，剩 4 条为今早前端 review 历史行；api_usage 660 行未动）
+- 代码产出：本模块无新代码（approve.sh d4264c6 预完成）；验收记录见本 commit
+
 ---
 
-**下一步**：M11 端到端清单执行（approve.sh d4264c6 已 8/8 就绪 + 前端已放行）→ 对照 REQUIREMENTS 逐项验收（含 #521 跳转终端、#530 超时 auto-deny，整改后均已实装）→ 第四阶段集成测试收口。
+**下一步**：项目主体完成（11/11，100%）→ 第五阶段：复盘总结 + 知识蒸馏（工作流已依本项目实战整改 ~/CLAUDE.md + vibe-coding-workflow 记忆，见 07-30 工作流条目）→ 延后项 D1 打包+自启 / D2 终端并行审批 / D3 审批超时配置 另评估。
