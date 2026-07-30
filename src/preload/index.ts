@@ -7,6 +7,7 @@ import type {
   ApprovalRecord,
   BalanceDailySnapshot,
   DeepPartial,
+  PendingApproval,
   SessionInfo,
   UsageRecord
 } from '../shared/types'
@@ -15,7 +16,8 @@ import type {
  * M7 — Preload：完整 electronAPI（DESIGN §7 / §6.11）
  *
  * contextBridge.exposeInMainWorld('electronAPI', {...})：
- *   - 11 个 invoke 方法（Request/Response，薄封装 ipcRenderer.invoke）
+ *   - 13 个 invoke 方法（Request/Response，薄封装 ipcRenderer.invoke；
+ *     含 M10 quitApp 与 P1-3 getPendingApprovals(approval:get)）
  *   - 3 个窗口控制 invoke（M4 建立的 window:* 子集，TrafficLights.tsx 必需；
  *     §7 ElectronAPI 未列，属 M4 既有通道的延续）
  *   - 5 个 on-push 监听（返回 unsubscribe 函数，组件 useEffect 清理）
@@ -73,6 +75,12 @@ const api = {
   /** 响应审批（approval:respond → queue.respond + approval:resolved push） */
   respondApproval: (id: string, allowed: boolean): Promise<boolean> =>
     ipcRenderer.invoke('approval:respond', { id, allowed }),
+
+  /**
+   * 当前待审批列表（approval:get → approvalQueue.getAll，P1-3 挂载补拉 seed）。
+   * useSessionsData 挂载时与 sessions:get 一并调用，补上离标签页 / 启动前到达的审批。
+   */
+  getPendingApprovals: (): Promise<PendingApproval[]> => ipcRenderer.invoke('approval:get'),
 
   /** Pin 切换（app:toggle-pin → alwaysOnTop + blur 不隐藏） */
   togglePin: (pinned: boolean): Promise<void> => ipcRenderer.invoke('app:toggle-pin', pinned),

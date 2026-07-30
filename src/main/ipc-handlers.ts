@@ -1,4 +1,6 @@
 import { app, ipcMain } from 'electron'
+import { spawn } from 'node:child_process'
+import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 
 import { loadConfig, saveConfig } from './config'
 
@@ -27,7 +29,7 @@ import type { AppConfig, ApprovalResponse } from '../shared/types'
  *   invoke: usage:get / usage:history / sessions:get / history:get /
  *           config:get / config:save / app:refresh / app:quit /
  *           session:jump-terminal / session:terminate / approval:respond /
- *           app:toggle-pin
+ *           approval:get（P1-3 挂载补拉 seed）/ app:toggle-pin
  *   window:hide / window:minimize / window:toggle-maximize / window:get-always-on-top
  *           （M4 建立的窗口控制子集，§6.11 未列但 TrafficLights 必需，
  *            自 index.ts 临时注册迁入统一管理）
@@ -57,6 +59,51 @@ export interface IpcHandlerDeps {
 /** 纯对象守卫：config:save 入参校验（拒绝 null / 数组 / 标量） */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** 命令是否存在于 PATH 且可执行（等价 `which`：逐目录 X_OK + isFile 检查） */
+function commandExists(cmd: string): boolean {
+  const pathEnv = process.env['PATH'] ?? ''
+  for (const dir of pathEnv.split(':')) {
+    if (dir === '') continue
+    const full = `${dir}/${cmd}`
+    try {
+      accessSync(full, fsConstants.X_OK)
+      if (statSync(full).isFile()) return true
+    } catch {
+      // 不存在 / 不可执行 → 继续下一个目录
+    }
+  }
+  return false
+}
+
+/**
+ * 打开终端（FR-2.7，DESIGN §6.8.4）：回退链 kgx → gnome-terminal → xterm。
+ * kgx / gnome-terminal 用 `--working-directory=<cwd>`；xterm 不支持该参数，改由
+ * spawn 的 cwd 选项让子进程（及其拉起的 shell）继承工作目录。detached + stdio
+ * ignore + unref：终端独立于本应用存活，不阻塞退出。链中全失败 → false + warn。
+ */
+function openTerminal(cwd: string): boolean {
+  const candidates: Array<[string, string[]]> = [
+    ['kgx', [`--working-directory=${cwd}`]],
+    ['gnome-terminal', [`--working-directory=${cwd}`]],
+    ['xterm', []] // cwd 由下方 spawn 选项承载
+  ]
+  for (const [cmd, args] of candidates) {
+    if (!commandExists(cmd)) continue
+    try {
+      const child = spawn(cmd, args, { cwd, detached: true, stdio: 'ignore' })
+      child.on('error', (err) => {
+        console.warn(`[ipc] 终端 ${cmd} 启动失败: ${err.message}`)
+      })
+      child.unref()
+      return true
+    } catch (err) {
+      console.warn(`[ipc] 终端 ${cmd} 启动失败: ${(err as Error).message}`)
+    }
+  }
+  console.warn('[ipc] jump-terminal: 终端链（kgx / gnome-terminal / xterm）全不可用')
+  return false
 }
 
 export function registerIpcHandlers(deps: IpcHandlerDeps): void {
@@ -129,12 +176,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // ─── Session 操作 ───
 
   /**
-   * 跳转终端（FR-2.7）。
-   * ⚠ M9 桩：通道先行注册齐全（§6.11），实际 kgx/gnome-terminal 直起逻辑
-   *   在 M9 Sessions 视图实现（DESIGN §6.8.4）。当前恒返回 false。
+   * 跳转终端（FR-2.7，DESIGN §6.8.4）：回退链 kgx → gnome-terminal → xterm，
+   * --working-directory=<cwd>（xterm 经 spawn cwd 选项承载）。入参非法 / cwd 非目录 /
+   * 链中全失败 → false，UI 侧据此给一次性行内提示（SessionCard）。
    */
-  ipcMain.handle('session:jump-terminal', (_event, _cwd: string) => {
-    return false // M9 实现
+  ipcMain.handle('session:jump-terminal', (_event, cwd: unknown) => {
+    if (typeof cwd !== 'string' || cwd === '') return false
+    try {
+      if (!statSync(cwd).isDirectory()) {
+        console.warn(`[ipc] jump-terminal cwd 非目录: ${cwd}`)
+        return false
+      }
+    } catch (err) {
+      console.warn(`[ipc] jump-terminal cwd 无效: ${(err as Error).message}`)
+      return false
+    }
+    return openTerminal(cwd)
   })
 
   /** 终止 session 进程（FR-2.8）：SIGTERM，任何失败 → false */
@@ -151,6 +208,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   })
 
   // ─── 审批 ───
+
+  /**
+   * 当前待审批列表（P1-3 整改，§6.6 getAll）：渲染端 useSessionsData 挂载时与
+   * sessions:get 一并 seed，覆盖「离标签页 / 启动前到达的审批在 widget 内不可见」
+   * 缺陷。App.tsx key={activeView} 切回 Sessions 即重挂载 → 重新 seed，天然覆盖
+   * 「离标签页期间到达」+「启动前已 pending」两种情形。只读队列快照，不落库不改队列。
+   */
+  ipcMain.handle('approval:get', () => approvalQueue.getAll())
 
   /**
    * 响应审批（§5.3）：queue.respond 成功后**补发 approval:resolved push**，

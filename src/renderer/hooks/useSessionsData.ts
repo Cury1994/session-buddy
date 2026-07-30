@@ -2,7 +2,8 @@
  * M9 — Sessions 视图数据 hook（DESIGN §4 / §5.3 / TASKS §10）
  *
  * 职责：
- *   1. 初始加载 sessions:get + 订阅 onSessionsUpdated（§7），维护 sessions 列表。
+ *   1. 初始加载 sessions:get + approval:get（P1-3 挂载 seed）+ 订阅 onSessionsUpdated
+ *      （§7），维护 sessions 列表与审批视图项初值。
  *   2. 订阅 onApprovalPending / onApprovalResolved，维护审批视图项 approvals：
  *      - pending push 的运行时负载实为 PendingApproval（含 id/createdAt/timeoutSec，
  *        electron.d.ts 已注明类型按 §7 声明为 ApprovalPayload，此处按运行时形状取用）。
@@ -61,12 +62,27 @@ export function useSessionsData(): SessionsData {
     let disposed = false
     const timers = new Set<ReturnType<typeof setTimeout>>()
 
-    // 初始加载（§7 getSessionsData）
-    window.electronAPI
-      .getSessionsData()
-      .then((list) => {
+    // 初始加载（§7 getSessionsData）+ 审批 seed（P1-3 整改）：
+    // 与 sessions:get 一并 invoke approval:get，把当前 pending 审批初始化进 state，
+    // 覆盖「在其他标签页 / 启动前到达」而错过 approval:pending push 的审批。
+    // App.tsx key={activeView} 切离即卸载、切回即重挂载 → 每次回到 Sessions 重新
+    // seed，天然覆盖两种情形；seed 同时消除首屏空等（顺解 P3-8 loading 闪烁）。
+    // 审批侧 catch 回退 [] —— seed 失败不阻塞 sessions 加载；id 去重使随后的
+    // approval:pending push 对已 seed 项幂等。
+    void Promise.all([
+      window.electronAPI.getSessionsData(),
+      window.electronAPI.getPendingApprovals().catch((): PendingApproval[] => [])
+    ])
+      .then(([list, pending]) => {
         if (disposed) return
         setSessions(list)
+        setApprovals((prev) => {
+          const known = new Set(prev.map((a) => a.data.id))
+          const seeded = pending
+            .filter((p) => !known.has(p.id))
+            .map((p) => ({ data: p, fading: false }))
+          return seeded.length === 0 ? prev : [...prev, ...seeded]
+        })
         setLoading(false)
       })
       .catch((err: unknown) => {

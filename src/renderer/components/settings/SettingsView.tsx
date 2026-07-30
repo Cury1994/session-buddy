@@ -16,9 +16,10 @@ import type { AppConfig, DeepPartial } from '../../../shared/types'
  * reject → "保存失败：<msg>"（红，保留到下次操作）。无 toast/modal 库。
  *
  * Always on Top 取舍：窗口置顶态唯一真源是 window.ts 的 pin 状态（togglePin 同时驱动
- * alwaysOnTop 与 blur-不隐藏），WidgetHeader 📌 与本复选框共享之。打开设置时经只读
- * window:get-always-on-top 查询 isPinned() 反映当前真实状态，勾选即 togglePin 生效、
- * 不写 config（WindowConfig 无 alwaysOnTop 字段，本就不持久化）。
+ * alwaysOnTop 与 blur-不隐藏）。P3-1 整改后该真源上提到 App：pinned / onPinChange 经
+ * props 注入（与 WidgetHeader 📌 订阅同一 state），本复选框不再自持状态 —— 勾选即
+ * togglePin 生效 + 回写真源，header 图钉同步高亮；不写 config（WindowConfig 无
+ * alwaysOnTop 字段，本就不持久化）。
  */
 
 /** 行内保存反馈：ok=绿 2s 淡出；err=红保留到下次操作 */
@@ -34,14 +35,20 @@ function Row({ label, children }: { label: string; children: React.ReactNode }):
   )
 }
 
+interface SettingsViewProps {
+  /** 置顶态真源（App 持有，与 WidgetHeader 📌 共享，P3-1） */
+  pinned: boolean
+  /** 回写真源（App.setPinned）；本组件另调 togglePin 驱动窗口 */
+  onPinChange: (pinned: boolean) => void
+}
+
 /** number 输入框样式（原型逐字：50px 宽、4px 圆角、半透明白底、细边框） */
 const numberInputClass =
   'electron-no-drag w-[50px] px-1 py-0.5 text-xs rounded border border-black/10 bg-white/50 ' +
   'focus:outline-none focus:border-accent-blue'
 
-function SettingsView(): React.JSX.Element {
+function SettingsView({ pinned, onPinChange }: SettingsViewProps): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig | null>(null)
-  const [alwaysOnTop, setAlwaysOnTop] = useState(false)
   // number 输入以字符串承载键入，失焦/回车时校验并提交；无效或无变更则回填权威值
   const [thresholdStr, setThresholdStr] = useState('')
   const [intervalStr, setIntervalStr] = useState('')
@@ -54,7 +61,7 @@ function SettingsView(): React.JSX.Element {
     timersRef.current = []
   }
 
-  // 初始加载：拉取生效配置 + 当前置顶态
+  // 初始加载：拉取生效配置（置顶态经 props 由 App 真源供给，P3-1）
   useEffect(() => {
     let alive = true
     void window.electronAPI.getConfig().then((c) => {
@@ -62,9 +69,6 @@ function SettingsView(): React.JSX.Element {
       setConfig(c)
       setThresholdStr(String(c.providers.deepseek.balance_warn_threshold))
       setIntervalStr(String(c.providers.deepseek.check_interval_min))
-    })
-    void window.electronAPI.getAlwaysOnTop().then((v) => {
-      if (alive) setAlwaysOnTop(v)
     })
     return () => {
       alive = false
@@ -104,15 +108,19 @@ function SettingsView(): React.JSX.Element {
       showOk()
     } catch (err) {
       onFail?.()
-      showErr((err as Error).message)
+      // P3-3 整改：UI 仅展示脱敏文案 —— 绝对路径 / pid / .tmp 文件名等细节只留
+      // main 进程日志（config.ts console.warn），口径与 server.ts 错误中间件一致。
+      // 错误类型（err.name）保留供排障，不含任何路径信息。
+      const kind = err instanceof Error && err.name !== '' ? err.name : 'Error'
+      showErr(`请检查配置目录权限（${kind}）`)
     }
   }
 
   // ── General ──
 
   const onAlwaysOnTopChange = (next: boolean): void => {
-    setAlwaysOnTop(next)
-    void window.electronAPI.togglePin(next) // 不持久化，与 WidgetHeader 📌 同源
+    onPinChange(next) // 回写 App 真源 → header 📌 同步高亮（P3-1）
+    void window.electronAPI.togglePin(next) // 驱动窗口 alwaysOnTop，不持久化
   }
 
   const onNotificationsChange = (next: boolean): void => {
@@ -180,7 +188,7 @@ function SettingsView(): React.JSX.Element {
           <input
             type="checkbox"
             className="electron-no-drag cursor-pointer"
-            checked={alwaysOnTop}
+            checked={pinned}
             onChange={(e) => onAlwaysOnTopChange(e.target.checked)}
           />
         </Row>

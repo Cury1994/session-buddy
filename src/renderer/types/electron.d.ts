@@ -17,6 +17,7 @@ import type {
   ApprovalRecord,
   BalanceDailySnapshot,
   DeepPartial,
+  PendingApproval,
   SessionInfo,
   UsageRecord
 } from '../../shared/types'
@@ -33,6 +34,8 @@ export interface ElectronAPI {
   jumpToTerminal(cwd: string): Promise<boolean>
   terminateSession(pid: number): Promise<boolean>
   respondApproval(id: string, allowed: boolean): Promise<boolean>
+  /** 当前待审批列表（P1-3 挂载补拉 seed，approval:get → approvalQueue.getAll） */
+  getPendingApprovals(): Promise<PendingApproval[]>
   togglePin(pinned: boolean): Promise<void>
   /** 退出应用（M10 Settings Quit，app:quit → will-quit 清理链） */
   quitApp(): Promise<void>

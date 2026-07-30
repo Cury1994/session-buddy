@@ -162,6 +162,13 @@ export function createServer(deps: ServerDeps): ManagedServer {
     // 超时路径不会经过 /respond，必须在此复位，否则托盘滞留橙色。
     refreshTrayColor()
 
+    // approval:resolved push（P1-2 整改）：补发以覆盖**超时 auto-deny 路径**。
+    // 超时不经过 /respond 路由，原先只有 respond 路径 push → 渲染端卡片 zombie +
+    // badge 永久卡住。此处统一在 await 恢复后补发，与 /respond 路由 / approval:respond
+    // IPC 既有的同语义 push 重复也幂等无害（渲染端 useSessionsData 对同 id 标记
+    // fading 幂等；badge 计数 Math.max(0, c-1) 有下限）。
+    sendToRenderer('approval:resolved', { id, allowed })
+
     res.json({ id, allowed })
   })
 

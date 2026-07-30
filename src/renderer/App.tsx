@@ -17,6 +17,9 @@ import type { ViewId } from './components/SegmentedControl'
  *   └── .content-area  可滚动内容区（4px 隐藏滚动条，§2.8）
  *
  * 状态：activeView（三视图切换）/ pinned（置顶）/ pendingCount（Sessions badge）。
+ * pinned 是置顶态的**单一真源**（P3-1 整改）：挂载时经 window:get-always-on-top
+ * 读窗口真实态播种，WidgetHeader 📌 与 SettingsView 复选框共享同一 state 并经
+ * togglePin 驱动窗口 —— 两控件永不再失同步。
  * pendingCount 由 approval:pending / approval:resolved push 事件维护（§5.3）：
  *   pending +1、resolved -1（下限 0）。落库与托盘色由 server.ts 单落库点 +
  *   颜色优先级协议负责，此处只做 UI 计数收敛。M9 视图内部会经 sessions push
@@ -41,6 +44,18 @@ function App(): React.JSX.Element {
     }
   }, [])
 
+  // 置顶态播种（P3-1 整改）：窗口真实 alwaysOnTop 是唯一权威（window.ts isPinned），
+  // 挂载时读一次，使 header 📌 与设置复选框从同一真源起步。
+  useEffect(() => {
+    let alive = true
+    void window.electronAPI.getAlwaysOnTop().then((v) => {
+      if (alive) setPinned(v)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+
   return (
     <div className="widget-window electron-no-select">
       <WidgetHeader pinned={pinned} onPinChange={setPinned} />
@@ -54,7 +69,9 @@ function App(): React.JSX.Element {
         <div key={activeView} className="view-fade">
           {activeView === 'sessions' && <SessionsView />}
           {activeView === 'usage' && <UsageView />}
-          {activeView === 'settings' && <SettingsView />}
+          {activeView === 'settings' && (
+            <SettingsView pinned={pinned} onPinChange={setPinned} />
+          )}
         </div>
       </div>
     </div>

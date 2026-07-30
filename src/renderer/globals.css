@@ -416,7 +416,8 @@
  * M9 — Sessions 视图（SessionCard / ApprovalBlock / ApprovalHistory）
  * 色值以 TASKS §10 视觉规范为准（与 :root 语义色刻意区分）：
  *   busy 绿 #00e676 / idle 灰 rgba(0,0,0,0.3) / ctx cyan #00bcd4
- *   审批红边 #ff5252 / 警告头浅红 rgba(255,82,82,0.1)
+ *   审批紧急红统一走 var(--danger-red)（= #ff3b30，§2.5；P3-2 整改：原 #ff5252
+ *   漂移已校正，浅红底 / 边框经 color-mix 派生）
  *   命令黑底 #1e1e1e、文字 #e0e0e0、危险词 #ff6b6b / 微文字 rgba(0,0,0,0.4)
  * 命名刻意带 session/approval/history 前缀，避免与 M8 用量段冲突；
  * 通用 .btn / .mini-badge 沿用基准原型命名（M8 段未占用）。
@@ -459,10 +460,10 @@
   .session-card-body {
     padding: 12px;
   }
-  /* 命中 pending 审批：红边 + 红色投影（基准原型紧急卡） */
+  /* 命中 pending 审批：红边 + 红色投影（基准原型紧急卡；紧急红走 §2.5 token） */
   .session-card.has-approval {
-    border-color: rgba(255, 82, 82, 0.4);
-    box-shadow: 0 4px 12px rgba(255, 82, 82, 0.1);
+    border-color: color-mix(in srgb, var(--danger-red) 40%, transparent);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--danger-red) 10%, transparent);
   }
 
   /* Header：左 id 行（灯 + 名），右动作组 */
@@ -616,6 +617,13 @@
     color: rgba(0, 0, 0, 0.4);
   }
 
+  /* 跳转终端失败的一次性行内提示（P1-1，FR-2.7 全链失败不静默） */
+  .jump-hint {
+    font-size: 10px;
+    color: var(--danger-red);
+    margin-left: 8px;
+  }
+
   /* cwd 单行截断 + title tooltip */
   .session-cwd {
     margin-top: 6px;
@@ -626,10 +634,10 @@
     text-overflow: ellipsis;
   }
 
-  /* ── 审批紧急块 ── */
+  /* ── 审批紧急块（紧急红统一 var(--danger-red)，P3-2） ── */
   .approval-block {
-    background-color: rgba(255, 82, 82, 0.1);
-    border-top: 1px solid rgba(255, 82, 82, 0.15);
+    background-color: color-mix(in srgb, var(--danger-red) 10%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--danger-red) 15%, transparent);
     padding: 12px;
   }
   .approval-fade {
@@ -639,7 +647,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    color: #ff5252;
+    color: var(--danger-red);
     font-size: 11px;
     font-weight: 600;
     margin-bottom: 6px;
@@ -648,7 +656,7 @@
     color: #00a854;
   }
   .approval-header.resolved-deny {
-    color: #ff5252;
+    color: var(--danger-red);
   }
   .approval-mark {
     font-weight: 700;

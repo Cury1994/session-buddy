@@ -12,7 +12,7 @@
  * hover 才显现，不占常驻版面。
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { SessionInfo } from '../../../shared/types'
 import type { ApprovalViewItem } from '../../hooks/useSessionsData'
@@ -25,6 +25,9 @@ interface SessionCardProps {
   approval?: ApprovalViewItem
 }
 
+/** 跳转终端失败提示的驻留时长（ms） */
+const JUMP_HINT_MS = 2500
+
 /** uptimeSec → "12m" / "1h 05m" */
 function formatUptime(sec: number): string {
   const total = Math.max(0, Math.floor(sec))
@@ -35,10 +38,26 @@ function formatUptime(sec: number): string {
 
 function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element {
   const [confirmTerm, setConfirmTerm] = useState(false)
+  const [jumpHint, setJumpHint] = useState<string | null>(null)
+  const jumpTimerRef = useRef<number | null>(null)
   const hasApproval = approval !== undefined
 
+  // 卸载时清理跳转提示定时器
+  useEffect(
+    () => () => {
+      if (jumpTimerRef.current !== null) window.clearTimeout(jumpTimerRef.current)
+    },
+    []
+  )
+
   const jump = (): void => {
-    void window.electronAPI.jumpToTerminal(session.cwd)
+    void window.electronAPI.jumpToTerminal(session.cwd).then((ok) => {
+      // FR-2.7：链中全失败（无可用终端）→ 一次性行内提示，不再静默（P1-1 整改）
+      if (ok) return
+      setJumpHint('无可用终端')
+      if (jumpTimerRef.current !== null) window.clearTimeout(jumpTimerRef.current)
+      jumpTimerRef.current = window.setTimeout(() => setJumpHint(null), JUMP_HINT_MS)
+    })
   }
 
   const terminate = (): void => {
@@ -119,6 +138,7 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
 
         <div className="micro-row">
           <span className="micro-text">Up {formatUptime(session.uptimeSec)}</span>
+          {jumpHint !== null && <span className="jump-hint">{jumpHint}</span>}
         </div>
 
         <div className="session-cwd" title={session.cwd}>
