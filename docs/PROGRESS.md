@@ -14,16 +14,16 @@
 | M5 HTTP Server + 审批队列 + 审批联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eee9196；橙绿联动 IconPixmap 实测；electron-rebuild（见日志） |
 | M6 数据服务 + 调度 + 余额联动 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-28 | commit eb2361e；ctxPct 与 statusline.py 3/3 一致；/proc rss field 24（蓝图已勘误） |
 | M7 IPC + 挂件壳 | P0 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit ab25b3e；14 IPC 1:1 / 毛玻璃挂件壳 / 分段导航 / CSP meta / sandbox 决策 |
-| M8 用量视图 | P0 | ⏳ 未开始 | — | — | | 旧 M11；裁剪版：余额卡 + 余额趋势线（原生 SVG，删 recharts） |
-| M9 Sessions 视图 | P0 | ⏳ 未开始 | — | — | | 旧 M12；SessionCard/ApprovalBlock |
-| M10 设置视图 | P1 | ⏳ 未开始 | — | — | | 旧 M13；无开机自启项 + save 反馈设计 |
-| M11 端到端测试 + approve.sh | P0 | ⏳ 未开始 | — | — | | 旧 M16 + approve.sh 开发落位；固定端口 |
+| M8 用量视图 | P0 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit 690bd24；余额卡 + TrendSparkline 原生 SVG + 删 recharts；GUI 实测（¥10.77 / 低余额红字 / 30 点折线 hover）；曾停滞经 SendMessage 恢复 |
+| M9 Sessions 视图 | P0 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit 2c0b99a；SessionCard/ApprovalBlock/ApprovalHistory + 状态灯；GUI 延后并入批量审；globals.css 提交含 M8 段（归属串，无碍） |
+| M10 设置视图 | P1 | ✅ 完成 | 通过 | 待前端批量审 | 2026-07-29 | commit a722e3b；saveConfig 抛出 + 重调度 / General+Limits / Quit；GUI 全项实测通过 |
+| M11 端到端测试 + approve.sh | P0 | 🔄 进行中 | — | — | | approve.sh 已预完成（d4264c6，8/8 自测）；剩端到端清单执行 |
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 1/4 ｜ Phase 4 集成 0/1 ｜ 总体 7/11 (64%)
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 0/1 ｜ 总体 10/11 (91%)
 
-**当前阶段**：第三阶段（模块化开发）— M7 完成，前端阶段启动；M8（用量视图）+ approve.sh 并行派发中
+**当前阶段**：第三阶段（模块化开发）— M7~M10 全部完成（10/11），前端批量 Code Review 派发中；approve.sh 预完成，M11 仅剩端到端清单
 
 ---
 
@@ -310,6 +310,52 @@
 - 遗留：无（sandbox / CSP 随本模块关闭，跨模块遗留项登记表两项核销）
 - 交接：M8 接 usage:get/usage:history IPC；M9 接 sessions:get/approval:respond/history:get IPC；M10 接 config:get/config:save IPC
 
+### 2026-07-29 ｜ 工作流 ｜ C 方案四线并行派发
+- 背景：M7 完成后，按前序 B/C 配置与并行化分析，将剩余前端模块改并行——B approve.sh（从 M11 拆出）/ A M8 / C M9 / D M10 同时派发
+- 冲突隔离规则（实测有效）：文件域划分（M8 占 usage/、M9 占 sessions/、M10 占 main/+settings/）；PROGRESS.md 与 package.json 单一写方（主对话 / 仅 M8）；globals.css 令 M10 绕开用 Tailwind；GUI 验证轮询等实例空闲、不强杀他人实例
+- 代价（符合预期）：同机单实例锁 + 固定 18456 → GUI 验证天然串行，M9/M10 均等待 M8 实例释放；代码开发（build/typecheck/写组件）并行，串行仅占各模块收尾 ~10%
+- 结论：零文件冲突的模块可放心并行；验证串行是唯一硬约束
+
+### 2026-07-29 ｜ 关键决策 ｜ saveConfig 反馈设计（M2 遗留收口）
+- load 降级保留（§18.4，损坏/无权限→默认值不抛）；**save 降级取消**——保存是前台用户动作，静默降级＝假成功真丢失，改抛异常
+- IPC：config:save 返回合并后完整 AppConfig（原返回 undefined）+ 成功后 reschedule；写失败抛出→invoke reject
+- UI：行内反馈，成功"已保存 ✓"（绿，2s 淡出）/ 失败"保存失败：msg"（红，留到下次操作），不用 toast 库
+- 重调度：save 后 stop 双调度器→loadConfig→重启（check_interval_min/refresh_interval_sec/threshold/notifications.enabled 即时生效）
+
+### 2026-07-29 ｜ approve.sh ｜ 预完成（commit d4264c6）
+- 从 M11 拆出独立并行（仅依赖 M5 HTTP API，HARNESS_MONITOR_PORT 可覆盖端口→stub 19999 自测，零冲突）
+- stdin→jq 解析 command/session/cwd→curl -m 65 POST :18456/approve→allowed:true exit 0 / allowed:false exit 2（hook 拦截规范）/ 连接拒绝·超时 fail-open exit 0
+- 8/8 stub 自测通过；agent 主动补 harness/tool 字段（否则审批历史 harness 列恒 unknown）——采纳
+- M11 自此仅剩端到端清单执行
+
+### 2026-07-29 ｜ M9 ｜ 完成（commit 2c0b99a）
+- 产出：useSessionsData + StatusDot/ContextGauge/SessionCard/ApprovalBlock/ApprovalHistory/SessionsView（6 组件）
+- 验证：tsc 绿 + 数据源联通（GET /api/sessions 返真实 session，字段逐一对齐）+ 审批链路静态走查；**GUI 被 M8 实例挡（两轮等待超时，按约未强杀）→ 延后并入批量审**
+- 偏差：① Model→Tool（SessionInfo 无 model 字段，据实显示 tool）② 新增 orphan 审批兜底卡（curl 测试 session 不匹配真实 session 的必要超集）③ globals.css 一并提交 M8 未提交的用量段（单文件无法拆分，归属串但 CSS 全在，类名前缀隔离）④ 倒计时 cast PendingApproval（d.ts 声明 ApprovalPayload、运行时 PendingApproval）⑤ 挂载前已 pending 审批无 getPendingApprovals IPC 补拉（push 主流程不受影响，留审裁定）
+
+### 2026-07-29 ｜ M10 ｜ 完成（commit a722e3b）
+- 产出：config.ts（saveConfig 写失败抛出）/ ipc-handlers.ts（config:save 返回+reschedule+app:quit+window:get-always-on-top）/ index.ts（reschedule 注入）/ preload+electron.d.ts+shared/types.ts（DeepPartial 归位 §6.12）/ SettingsView
+- saveConfig 契约收窄**零回归面**：仓库无 TS 测试框架，无"save 失败不抛"既有断言
+- **GUI 全项实测通过**（唯一全过的前端模块）：CDP 驱动真实 React→IPC→主进程→磁盘——写盘（config.yaml 实测）/ 重调度（usagePushDelta=2 证即时 tick）/ 置顶（getAlwaysOnTop 真源）/ Quit 无残留 / save 失败（config.yaml 变目录注入 EISDIR，应用不崩）
+- AlwaysOnTop 取舍：复用 pin 机制不持久化（WindowConfig 无该字段）+ 只读 IPC 反映窗口真源，与 header 📌 同源一致
+- 提交超"main+settings"软边界含 preload/d.ts/types.ts（新 IPC 必须接线，M8/M9 不触碰，无冲突）
+
+### 2026-07-29 ｜ M8 ｜ 停滞与恢复
+- 代码写完未提交即停滞（同 M7 response-stalled 模式：换 3 实例后卡在提交前，无完成通知）；M10 后启动却先完成
+- 诊断：实例仅 8 分钟新（非报告称 30 分钟）+ 多次重启 dev server＝活着非死；SendMessage 续接原 agent，返回"at its next tool round"证实存活
+- 主机空闲后补做 GUI 全验并收尾
+
+### 2026-07-29 ｜ M8 ｜ 完成（commit 690bd24）
+- 产出：useUsageData + UsageView（余额卡）+ TrendSparkline（原生 SVG 面积折线）；删 recharts（npm ls 空）；globals.css 用量段已由 M9 提交（未重复 add）
+- GUI 实测：余额卡 ¥10.77 + Live 徽章 / 低余额红字（threshold 20 注入，删除恢复）/ 30 点面积折线 + hover Tooltip（2026-07-18 ¥22.05）/ 空数据 return null（代码级）
+- 清理：注入测试快照全删（346→317 真实行，remaining_injected=0）；EmptyState 分支 typecheck 过未运行时截图（需清空 api_usage 会毁真实余额，留批量审兜底）
+
+### 2026-07-29 ｜ 环境坑汇总（供批量 Review / M11 复用）
+- electron-vite dev 本机 GPU 进程 FATAL（error 1002）且拒收 --disable-gpu → 用构建产物 `electron . --disable-gpu --in-process-gpu`
+- Wayland 下 xprop/wmctrl 看不到 Electron 窗口 → 用 CDP 做 DOM 读写/点击 + xwininfo/import 取像素；blur 自动隐藏需 togglePin+maximize 强制 IsViewable 再截图
+- CDP Page.captureScreenshot 软件渲染偶发挂死 → 用 import -window
+- server.ts:81 createServer 闭包捕获 balance_warn_threshold → 审批侧托盘色用旧阈值至重启；reschedule 已覆盖主消费方（余额告警 + services 余额侧托盘色 + 双调度器间隔），未重建 server（风险更高，超约定）
+
 ---
 
-**下一步**：M7 完成 → 按 C 方案并行派发 Agent A（M8 用量视图）+ Agent B（approve.sh 独立开发）；M7~M10 全部完成后触发前端批量 Code Review。
+**下一步**：派发前端批量 Code Review（M7~M10，独立 agent + sonnet 交叉 + 实测复现全部视图，兜底 M9 GUI 与 M8 EmptyState）→ 整改裁定 → M11 端到端清单执行（approve.sh 已就绪）。
