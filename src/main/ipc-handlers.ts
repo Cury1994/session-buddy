@@ -2,7 +2,7 @@ import { app, ipcMain } from 'electron'
 import { spawn } from 'node:child_process'
 import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 
-import { closeTerminalOfPid } from './claude-sessions'
+import { closeTerminalOfPid, focusExistingTerminal } from './claude-sessions'
 import { loadConfig, saveConfig } from './config'
 
 import type { ApprovalQueue } from './approval-queue'
@@ -177,11 +177,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // ─── Session 操作 ───
 
   /**
-   * 跳转终端（FR-2.7，DESIGN §6.8.4）：回退链 kgx → gnome-terminal → xterm，
-   * --working-directory=<cwd>（xterm 经 spawn cwd 选项承载）。入参非法 / cwd 非目录 /
-   * 链中全失败 → false，UI 侧据此给一次性行内提示（SessionCard）。
+   * 跳转终端（FR-2.7，DESIGN §6.8.4，#5 聚焦优先 + 开窗降级）：
+   * ① **聚焦优先**：pid 有效（typeof 守卫，非有限数按无 pid 处理）且
+   *    focusExistingTerminal(pid, cwd) 成功 → return true，直接跳到会话所在的那个
+   *    终端窗口（X11：xdotool 按终端祖先 pid 搜窗口 → 多窗口按标题含 basename(cwd)
+   *    筛选 → windowactivate），不开新窗口；
+   * ② **开窗降级**：聚焦失败（原生 Wayland 窗口对 xdotool 不可见 / xdotool 未安装 /
+   *    无终端祖先 / 无窗口）→ 落入既有 spawn 回退链 kgx → gnome-terminal → xterm，
+   *    --working-directory=<cwd>（xterm 经 spawn cwd 选项承载），新窗口落会话真实
+   *    项目路径（F2 transcript 尾读 cwd 真值）。Wayland 环境下 ② 是主路径。
+   * 入参非法 / cwd 非目录 / 链中全失败 → false，UI 侧据此给一次性行内提示（SessionCard）。
    */
-  ipcMain.handle('session:jump-terminal', (_event, cwd: unknown) => {
+  ipcMain.handle('session:jump-terminal', (_event, cwd: unknown, pid?: unknown) => {
     if (typeof cwd !== 'string' || cwd === '') return false
     try {
       if (!statSync(cwd).isDirectory()) {
@@ -192,6 +199,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       console.warn(`[ipc] jump-terminal cwd 无效: ${(err as Error).message}`)
       return false
     }
+    // ① 聚焦既有窗口（X11 主路径；pid 守卫：非有限数 → 按无 pid 处理走 ②）
+    const safePid = typeof pid === 'number' && Number.isFinite(pid) ? pid : 0
+    if (safePid > 0 && focusExistingTerminal(safePid, cwd)) return true
+    // ② 降级：spawn 链开新窗口（P1-1 原实现，逐字不动）
     return openTerminal(cwd)
   })
 

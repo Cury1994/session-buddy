@@ -53,7 +53,9 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
   )
 
   const jump = (): void => {
-    void window.electronAPI.jumpToTerminal(session.cwd).then((ok) => {
+    // #5：传 session.pid 供主进程优先聚焦会话所在终端窗口（X11）；
+    // Wayland / 聚焦失败由主进程自动降级 spawn 开新窗口（cwd 落真实项目路径）
+    void window.electronAPI.jumpToTerminal(session.cwd, session.pid).then((ok) => {
       // FR-2.7：链中全失败（无可用终端）→ 一次性行内提示，不再静默（P1-1 整改）
       if (ok) return
       showHint('无可用终端')

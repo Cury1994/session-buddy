@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execSync, spawnSync } from 'node:child_process'
 import { closeSync, existsSync, openSync, readFileSync, readlinkSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -59,6 +59,15 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *     集合内的根进程（pts 上的根 shell）→ SIGTERM 根 shell → 终端模拟器关闭该窗口/标签
  *     → claude 随 pty hangup（SIGHUP）退出 ＝ "真的关掉那一个终端窗口"。
  *   无控制终端的后台会话（fd/0 不指向 /dev/pts/）→ false（UI 提示"无终端窗口"）。
+ *
+ * 跳转终端聚焦（#5，findTerminalAncestor / focusExistingTerminal）：
+ *   「打开会话终端」优先**跳到会话所在的那个终端窗口**而不是开新窗口。
+ *   X11 精确聚焦链路：claude pid 沿 ppid 上行找终端模拟器祖先进程（comm ∈ TERMINAL_COMMS）→
+ *   xdotool search --pid <祖先 pid> 取窗口 id → 多窗口时按标题含 basename(cwd) 筛选 →
+ *   xdotool windowactivate 聚焦。原生 Wayland 窗口对 xdotool（X11 工具）不可见 →
+ *   search 空 → false → 调用方（ipc-handlers session:jump-terminal）自动降级既有 spawn 链
+ *   开新窗口，cwd 落会话真实项目路径（F2 transcript 尾读真值）——Wayland 下这是主路径。
+ *   xdotool 为**可选依赖**：不随项目安装，运行时 `command -v` 检测，缺失即降级，不报错。
  */
 
 // ─── 系统页大小（/proc stat rss 以页为单位，缓存一次） ───
@@ -453,6 +462,155 @@ export function closeTerminalOfPid(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+// ─── 跳转终端聚焦（#5，X11 xdotool 按 pid 定位；Wayland 降级开窗） ───
+
+/**
+ * 终端模拟器进程 comm 白名单（/proc/<pid>/stat field 2）。
+ *
+ * ⚠ Linux comm 受 TASK_COMM_LEN 限制仅 15 字符（不含 NUL）：实测本机
+ *   gnome-terminal-server（21 字符）在 stat 中截断为 "gnome-terminal-"，
+ *   故清单同时收录全名与截断形（蓝图原清单仅全名，实测勘误补入截断形）。
+ */
+export const TERMINAL_COMMS = new Set<string>([
+  'gnome-terminal-server',
+  'gnome-terminal-', // "gnome-terminal-server" 的 15 字符截断形（本机实测值）
+  'gnome-terminal',
+  'kgx',
+  'gnome-console',
+  'xterm',
+  'konsole',
+  'xfce4-terminal',
+  'tilix',
+  'terminator',
+  'wezterm',
+  'wezterm-gui',
+  'alacritty',
+  'kitty',
+  'foot',
+  'st'
+])
+
+/**
+ * 从 pid 沿 ppid 上行（最多 10 跳防环），找 comm ∈ TERMINAL_COMMS 的终端祖先。
+ *
+ * 进程树实测：claude(pid, pts/N) ← bash(pts/N) ← gnome-terminal-server。
+ * /proc/<p>/stat 解析沿用项目既有风格：comm = 首个 '(' 与末个 ')' 之间
+ * （可含空格/括号）；ppid = lastIndexOf(')') 后切分的 arr[1]（field 4）。
+ * pid<=0 / pid===1 / stat 不可读 / 10 跳内未命中 → null。
+ * 纯函数（无 electron 依赖），导出供裸 node 验收与 ipc-handlers 复用。
+ */
+export function findTerminalAncestor(pid: number): { pid: number; comm: string } | null {
+  if (!Number.isFinite(pid) || pid <= 0 || pid === 1) return null
+  let p = Math.trunc(pid)
+  for (let hop = 0; hop < 10; hop++) {
+    if (p <= 1) return null
+    let raw: string
+    try {
+      raw = readFileSync(`/proc/${p}/stat`, 'utf8')
+    } catch {
+      return null // 进程恰在间隙退出 / 无权限 → 链断
+    }
+    const open = raw.indexOf('(')
+    const close = raw.lastIndexOf(')')
+    if (open < 0 || close <= open) return null
+    const comm = raw.slice(open + 1, close)
+    if (TERMINAL_COMMS.has(comm)) return { pid: p, comm }
+    // ppid = field 4 = ')' 后 arr[1]（同 closeTerminalOfPid / readMemoryMB 切分法）
+    const arr = raw.slice(close + 2).split(' ')
+    const ppid = parseInt(arr[1] ?? '', 10)
+    if (!Number.isFinite(ppid) || ppid <= 0) return null
+    p = ppid
+  }
+  return null // 10 跳防环上限
+}
+
+/**
+ * 尝试聚焦会话进程所在的既有终端窗口（#5 主函数）。成功 true → 调用方不再开窗。
+ *
+ * 链路：
+ *   1. xdotool 可用性检测（`command -v`，可选依赖、运行时检测、缺失即 false 降级）
+ *   2. findTerminalAncestor(pid) 定位终端模拟器祖先（如 gnome-terminal-server）
+ *   3. xdotool search --pid <祖先 pid> → 窗口 id 列表。**原生 Wayland 窗口对
+ *      xdotool 不可见（XWayland 仅见 X11 客户端）→ 输出为空 → false → 调用方降级
+ *      spawn 开新窗口（Wayland 主路径）**。注意 search 无结果时 exit code 非 0，
+ *      故判据用 stdout 是否含窗口号，不用 exit code。
+ *   4. 多窗口选择：优先标题含 basename(cwd) 者（大小写不敏感；gnome-terminal-server
+ *      是共享进程、一个 pid 跨多窗口，标题通常含 cwd/shell 信息）；全不匹配 → 第一个
+ *   5. windowactivate --sync（best-effort 追加 windowfocus，后者失败忽略）→ true
+ *
+ * 所有 execSync/spawnSync 带 timeout；任何抛错/超时/生成失败 → false。
+ */
+export function focusExistingTerminal(pid: number, cwd: string): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false
+
+  // 1. xdotool 可用性（可选依赖：不随项目安装，缺失 → false → 降级 spawn 链）
+  try {
+    execSync('command -v xdotool', { timeout: 2000, stdio: 'ignore' })
+  } catch {
+    return false
+  }
+
+  // 2. 终端祖先（无 → 后台会话/非终端拉起的进程 → false）
+  const anc = findTerminalAncestor(Math.trunc(pid))
+  if (anc === null) return false
+
+  // 3. 按祖先 pid 搜窗口（Wayland 原生窗口不可见 → 空 → false）
+  let wids: string[] = []
+  try {
+    const res = spawnSync('xdotool', ['search', '--pid', String(anc.pid)], {
+      encoding: 'utf8',
+      timeout: 3000
+    })
+    if (!res.error) {
+      wids = (res.stdout ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => /^\d+$/.test(l))
+    }
+  } catch {
+    return false
+  }
+  if (wids.length === 0) return false
+
+  // 4. 多窗口按标题筛（单窗口直取）
+  let best = wids[0]
+  if (best === undefined) return false // 理论不可达（wids 非空已保证）；noUncheckedIndexedAccess 守卫
+  if (wids.length > 1) {
+    const needle = basename(cwd || '').toLowerCase()
+    if (needle !== '') {
+      for (const wid of wids) {
+        let title = ''
+        try {
+          const res = spawnSync('xdotool', ['getwindowname', wid], {
+            encoding: 'utf8',
+            timeout: 3000
+          })
+          if (!res.error) title = (res.stdout ?? '').trim()
+        } catch {
+          // 取名失败 → 视为不匹配，继续下一个
+        }
+        if (title.toLowerCase().includes(needle)) {
+          best = wid
+          break
+        }
+      }
+    }
+  }
+
+  // 5. 聚焦（windowactivate 主：提升窗口并切 WM 焦点；windowfocus 辅：best-effort 忽略失败）
+  try {
+    const act = spawnSync('xdotool', ['windowactivate', '--sync', best], {
+      encoding: 'utf8',
+      timeout: 3000
+    })
+    if (act.error) return false // spawn 失败/超时 → 交给降级链
+    spawnSync('xdotool', ['windowfocus', best], { encoding: 'utf8', timeout: 3000 })
+  } catch {
+    return false
+  }
+  return true
 }
 
 // ─── transcript 定位（§6.8.2e，glob projects/*/<id>.jsonl，不引入 glob 库） ───

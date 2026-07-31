@@ -64,9 +64,14 @@ const api = {
   /** 手动刷新一轮（app:refresh → balanceChecker + sessionScanner 各一轮） */
   manualRefresh: (): Promise<void> => ipcRenderer.invoke('app:refresh'),
 
-  /** 跳转终端（session:jump-terminal，M9 实现，当前桩返回 false） */
-  jumpToTerminal: (cwd: string): Promise<boolean> =>
-    ipcRenderer.invoke('session:jump-terminal', cwd),
+  /**
+   * 跳转终端（session:jump-terminal，#5 聚焦优先 + 开窗降级）：
+   * pid 有效且 X11 聚焦成功（xdotool 按终端祖先 pid 定位窗口）→ 跳到会话所在窗口；
+   * Wayland 窗口不可见 / xdotool 缺失 → 降级 spawn 链开新窗口，cwd 落会话真实项目路径。
+   * 全链失败 → false（UI 一次性行内提示"无可用终端"）。
+   */
+  jumpToTerminal: (cwd: string, pid?: number): Promise<boolean> =>
+    ipcRenderer.invoke('session:jump-terminal', cwd, pid),
 
   /**
    * 关闭会话所在终端窗口（session:terminate → closeTerminalOfPid，F3）：
