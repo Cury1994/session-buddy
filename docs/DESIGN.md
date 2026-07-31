@@ -408,7 +408,12 @@ renderer:
   → curl -X POST http://127.0.0.1:18456/approve -d @- (阻塞)
 
 [Express POST /approve]
-  → parse body → {harness, session, command, cwd}
+  → parse body → {harness, session, command, cwd, tool, description}
+      // description：命令的人类可读摘要（Bash hook 输入自带 .tool_use.input.description，
+      // approve.sh 透传，2026-07-31 增），仅用于审批卡实时展示，不落历史库（可空）
+  → 【F3 自动审批早退，2026-07-31 增】若模块级 autoApprove flag 为 true：
+      db.recordApproval(..., true)（复用唯一落库点记 allowed=1）→ 返回 {"id":"", "allowed":true}
+      → 不入队 / 不通知 / 不置橙 / 不 push（渲染端从没有这张卡）。开关见 §6.11 approval:set-auto-approve
   → approvalQueue.enqueue(payload) → {id, promise}
   → win.webContents.send("approval:pending", {id, ...payload})
   → notifications.notifyApproval(payload)
@@ -748,6 +753,12 @@ v3.2（简化）: 仅扫描 config.harnesses['claude-code'].config_dirs
       说明: 与本机 `~/.claude/statusline.py` 状态栏的算法一致，直接反映真实上下文占用；
             早期"行数 × 5"的粗估已弃用（误差大且与终端指示条不符）。
             transcript 无 usage 字段时回退为 0。
+      【F2 增，2026-07-31】同一次 256KB 尾部逆扫（tailFacts）并列提取第四事 lastActivity：
+            首条（逆序=最近）message.content 清洗非空的可读文本（剥 system-reminder /
+            local-command-caveat 整段与斜杠命令标签、空白折叠为单行、截断 120+"…"；
+            tool_result 无 text 块跳过）。**尽力而为**：不参与早退门槛（门槛仍为
+            usedTokens/lastCwd/lastModel 三事，扫不到随窗口扫尽为 null），usedTokens 提取
+            逻辑逐字不动 → ctxPct 不回归。供 SessionCard 单行 ellipsis 展示"最近在做什么"。
 
    f. API Provider 解析 (参考 abtop ClaudeCollector):
       【2026-07-31 勘误】真源改为 transcript 尾读的末条 message.model（API 实际
@@ -835,6 +846,8 @@ function notifyBalanceLow(balance, currency): void  // 余额告警通知
 | `session:jump-terminal` | renderer→main | `cwd: string, pid?: number` | `boolean`（2026-07-31：pid 供聚焦已有窗口，§6.8.4） |
 | `session:terminate` | renderer→main | `pid: number` | `boolean`（2026-07-31 语义变更：关闭会话所在终端窗口＝SIGTERM tty 根 shell，非直杀 claude 进程） |
 | `approval:respond` | renderer→main | `{id, allowed}` | `boolean` |
+| `approval:set-auto-approve` | renderer→main | `boolean` | `void`（F3，2026-07-31：置 server.ts 模块级 autoApprove flag；非 boolean 归一 false。开启后 POST /approve 立即放行，会话级、重启复位） |
+| `approval:get-auto-approve` | renderer→main | 无 | `boolean`（F3：SessionsView 挂载播种真源，避免 key={activeView} 重挂载后前端 state 与主进程 flag 失配） |
 | `app:toggle-pin` | renderer→main | `pinned: boolean` | `void` |
 | `usage:updated` | main→renderer | `UsageRecord[]` | (push) |
 | `sessions:updated` | main→renderer | `SessionInfo[]` | (push) |
@@ -866,6 +879,7 @@ export interface SessionInfo {
   cwd: string                 // 实际工作目录（transcript 尾读 → json cwd 降级，截断 4096，§6.8.2b，2026-07-31 勘误）
   startedAt: number           // Unix ms
   hasPendingApproval: boolean // approvalQueue 中存在匹配项
+  lastActivity: string        // 最近一条可读对话/任务内容（transcript 尾读，截断 120，无则空串；F2，2026-07-31 增）
 }
 
 // ─── API 用量 ───
@@ -912,6 +926,7 @@ export interface ApprovalPayload {
   command: string             // 待审批命令全文
   cwd: string                 // 工作目录
   tool: string                // "Bash"
+  description: string         // 命令的人类可读摘要（Bash hook 输入 .tool_use.input.description；approve.sh 透传，仅实时展示不落库，可空；F1，2026-07-31 增）
 }
 
 /** 队列内审批项 = payload + 运行时字段（§6.6 getAll()） */
@@ -1075,6 +1090,8 @@ interface ElectronAPI {
   getSessionsData(): Promise<SessionInfo[]>
   getApprovalHistory(): Promise<ApprovalRecord[]>
   getPendingApprovals(): Promise<PendingApproval[]>  // P1-3 整改补入：approval:get，挂载 seed
+  setAutoApprove(v: boolean): Promise<void>          // F3，2026-07-31 增：approval:set-auto-approve
+  getAutoApprove(): Promise<boolean>                 // F3，2026-07-31 增：approval:get-auto-approve，挂载播种真源
   getConfig(): Promise<AppConfig>
   saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>  // M10：返回合并后配置 + 重调度，写失败 reject
   manualRefresh(): Promise<void>

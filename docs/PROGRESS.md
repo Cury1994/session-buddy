@@ -27,6 +27,7 @@
 **归档后修订**：
 - 2026-07-31 上午 session 显示名修复（3b0693e，transcript 首条用户消息优先）
 - 2026-07-31 下午 会话卡片 6 项反馈修复轮（cdf4130 + a0086b0 + hook 注册）——详见日志末条
+- 2026-07-31 傍晚 Sessions/审批四项体验增强轮（ee9f436：审批描述 / 卡片最近任务 / 自动审批开关 / 动效提速）——详见日志末条
 
 ---
 
@@ -473,6 +474,22 @@
 - 清理（随本条收尾命令）：今日 E2E 测试审批行（session: e2e-test/e2e-diag/headless-proof + 本会话探针行，timestamp ≥ 2026-07-31）从 approval_history 删除（07-30 及以前的 4 条真实历史行不动）；/tmp 诊断文件（hm-hook-*.sh/log/json、hm-notify-capture.txt、hm-approve-response.txt）全删
 - 待办移交：用户实例（436959，10:27 启动 = 修复前构建）审批 UI 正常（M5 代代码）但 #1~#5 修复未载——重启后全量生效（D1 打包前最后一次手动重启）
 
+### 2026-07-31 16:12:42 ｜ 归档后修订 ｜ Sessions/审批四项体验增强轮 完成（commit ee9f436）
+- 背景：用户实测反馈 4 项——① 审批弹到界面时应描述请求内容 ② 每卡片放最近对话/任务内容（短）③ 加开关：打开后自动同意所有审批 ④ 审批同意/拒绝对动效太慢
+- 需求澄清（主对话 AskUserQuestion，用户拍板两项分叉）：F3 开关 = **会话级快捷开关（Sessions 视图、重启复位 OFF 的安全默认）**；启用 = **两步确认**
+- 只读调查定方案（关键发现）：Claude Code 的 Bash hook 输入**自带** `.tool_use.input.description`（命令人类可读摘要），approve.sh 一直丢弃 → F1 即透传它；claude-sessions.ts 已有单次 256KB 尾读（三事）→ F2 零新增 IO 扩成四事；淡出 2s 由 `FADE_HOLD_MS=2000` + CSS `approval-fade-out 2s` 两处共同决定 → F4 同降
+- 实现（单个开发+测试合并 subagent，共享文件多故串行单 agent；主对话 diff 复核）：
+  - **F1** approve.sh 提取 description 入 BODY → server /approve payload 解析 → ApprovalBlock cmd-box 上方 `.approval-desc`（非空显摘要，空回退"Claude Code 请求执行 ${tool} 命令"）；**不落库**（db schema 不动）
+  - **F2** tailFacts 并列第四事 lastActivity（逆扫首条 message.content 清洗截断 120，尽力而为**不参与早退门槛**；usedTokens/lastCwd/lastModel 逐字不动）→ SessionInfo.lastActivity → SessionCard badge 与 meta 间单行 ellipsis（title 全文 tooltip）
+  - **F3** server.ts 模块级 autoApprove flag + setAutoApprove/getAutoApprove 导出；POST /approve 构造 payload 后、enqueue 前**早退分支**（复用 `recordApproval(...,true)` 唯一落库点记 allowed=1，不入队/不通知/不置橙/不 push）；IPC `approval:set/get-auto-approve` + preload + d.ts；SessionsView `AutoApproveBar`（挂载 getAutoApprove 播种真源、两步 armed "Sure?"、点别处 disarm、ON 常驻警示横幅）；纯前端 state 不持久化
+  - **F4** `.approval-fade` 2s→0.5s + `FADE_HOLD_MS` 2000→600（≥CSS 时长）
+- 验收（subagent + 主对话 diff 复核）：build 三入口 + 双 strict typecheck 零错误；裸 node 真实会话 ctxPct 9/21 非零（**不变量 B 不回归**，usedTokens 代码 diff 字节一致）+ lastActivity 各 121 字符；approve.sh stub（19999）description 透传断言过（带/无 description 两态）；全仓无占位桩
+- **不变量复核（主对话 diff）全过**：A recordApproval 仍唯一落库点（早退分支复用同一 DAO，return 前不重复，每请求恰一条历史）；B 早退门槛仍三事不含 lastActivity（不可能过扫/死等）；F3 IPC 非 boolean 归一 false、挂载播种 + disarm 一帧延迟防自解除均正确
+- 蓝图勘误（本次已回写 DESIGN v3.2+）：§5.3 增 description 解析 + F3 自动审批早退分支；§6.8.2e 尾读四事（lastActivity 尽力而为）；§6.11 增 approval:set/get-auto-approve 两通道；§6.12 SessionInfo.lastActivity + ApprovalPayload.description；§7 preload 增 setAutoApprove/getAutoApprove
+- 约束遵守：用户实例（pid 456964，18456）全程未触碰；~/.claude 只读；无孤儿进程（19999 stub 已关）
+- 收尾三件套：① commit ee9f436（12 文件 +336/−22）✅ ② 无新起实例/无孤儿 ✅ ③ 本日志 ✅
+- 遗留（待用户重启实例加载新构建后 E2E）：F3 实机自动放行（开关 ON → approve.sh 请求立即 allowed:true + 历史 allowed=1 + 托盘不闪橙 + 无卡片）／ F4 0.5s 淡出观感 ／ F1 审批卡描述行与 F2 卡片任务行渲染观感——受单实例锁 + 不动 18456 约束，本轮 GUI 验证跳过（用户实例本为旧构建，看到任何新功能都需重启）
+
 ---
 
-**下一步**：① 用户重启实例加载全量修复（#1~#5 + 审批闭环已就位）；② 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（timeout 70000ms）+ xdotool 声明可选依赖）；D2 暂缓。
+**下一步**：① 用户重启实例加载全量修复（#1~#5 + 四项增强；重启后顺带核销 F1/F2/F3/F4 的 GUI E2E 遗留项）；② 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（timeout 70000ms）+ xdotool 声明可选依赖）；D2 暂缓。
