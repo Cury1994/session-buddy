@@ -24,6 +24,7 @@
 **阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉
 
 **当前阶段**：**项目归档完成（11/11 + 第五阶段总结）** — 全流程五阶段走完；RETROSPECTIVE.md 产出 + 工作流整改已入 ~/CLAUDE.md；后续仅延后项 D1+D3 另评估（D2 缓）
+**归档后修订**：2026-07-31 session 显示名修复（3b0693e，transcript 首条用户消息优先），GUI 效果待用户重启实例确认
 
 ---
 
@@ -422,6 +423,20 @@
 - **知识沉淀**：工作流已依本项目实战整改 `~/CLAUDE.md`（11 条：反膨胀审查 / 开局定档 / 合并启发式 / 批量审 / 集成左移 / 禁空桩 / 蓝图活文档 / 并行派发 / 收尾三件套 / 参考资料外移 / 日志强化）+ `vibe-coding-workflow` 记忆同步 + HH:MM:SS 时间戳规范
 - **对话保留**：全过程对话不删除，留作知识资产（工作流第五阶段要求）
 
+### 2026-07-31 10:25:19 ｜ 归档后修订 ｜ session 显示名修复 完成（commit 3b0693e）
+- 背景：用户反馈"sessions 里的会话名称不能全是 cury，得以实际为主"。根因：claude-sessions.ts `name = basename(cwd)`，本机会话 cwd 全为 /home/cury → 全显 "cury"（M6 完成日志已记录该现象，当时按 §6.8.2a 字面实现）
+- 数据源调查（主对话实测）：① transcript JSONL 首条 user 记录即会话真实主题（string 或 text block 数组；tool_result 回传 type 亦为 "user" 但无 text 块须跳过；首条常被 `<system-reminder>` 追加包装）② session json 自带 name 字段（interactive 会话为 "cury-49" 类派生名，区分度有限，作回退）
+- 实现（开发+测试合并 subagent，S 档不单开 review，主对话 diff 复核）：
+  - 命名优先级链：**transcript 首条可读用户消息 → json name → basename(cwd) → 'unknown'**
+  - `firstUserText()`：openSync+readSync **头部限读 64KB**（首条消息必在头部几 KB；transcript 可达数十 MB，绝不全文读）逐行 parse
+  - `toTitle()` 共用清洗：整段剥除 `<system-reminder>` 与 `<local-command-caveat>`、剥斜杠命令 4 标签留内部文本（`<command-name>/loop</command-name>` → "/loop"）、取首个非空行、空白折叠、超 60 字符截断 + "…"
+  - parseSessionFile 重构：findTranscript 一次定位，头读（取名）与尾读（ctxPct）共用路径
+  - 审批匹配改 name / basename(cwd) / sessionId 三者任一（旧语义超集，approve.sh 主路径仍走 session_id）
+- 验收全绿：build 三入口 + 双 typecheck 零错误；裸 node 真实数据——3 会话名互不相同（"/home/cury/harness-monitor"（本会话首条消息）/ "当前开了全局代理，浏览器访问网址出问题" / "/clear"），全唯一、≤61 字符；**主对话独立复跑确认 + ctxPct 8/5/27 非零（尾读链路重构无回归）**；7 组边界用例 PASS（tool_result 跳过 / reminder 剥后空跳过 / 截断 / 双级回退 / 多行取首行 / json name 截断 / 三路审批匹配）
+- 蓝图勘误（已回写 DESIGN）：§6.8.2a name 字段规则改为命名链；§6.12 SessionInfo.name 注释同步。**实现期新发现**：`<local-command-caveat>` 整段占据首条 user 记录（原始调查 4 标签清单未覆盖），与 system-reminder 同列整段剥除
+- 约束遵守：用户常驻实例（pid 427464，18456）全程未触碰，验收仅走裸 node；GUI 肉眼确认待用户重启实例
+- 收尾三件套：① commit 3b0693e ✅ ② 无新起实例、无孤儿 ✅ ③ 本日志 ✅
+
 ---
 
-**下一步**：项目归档完成。后续按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配，约 3~5h）；D2 暂缓。新项目从 ~/CLAUDE.md 工作流第一阶段起。
+**下一步**：① 用户重启常驻实例确认会话名 GUI 显示效果；② 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配，约 3~5h）；D2 暂缓。新项目从 ~/CLAUDE.md 工作流第一阶段起。

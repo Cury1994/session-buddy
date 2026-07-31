@@ -706,7 +706,10 @@ v3.2（简化）: 仅扫描 config.harnesses['claude-code'].config_dirs
       - sessionId: string    (唯一标识)
       - cwd: string          (工作目录)
       - startedAt: number    (Unix ms)
-      - name: string         (项目名，从 cwd basename 取)
+      - name: string         (显示名，优先级链：transcript 首条可读用户消息【头部限读 64KB，
+                              剥 system-reminder / local-command-caveat 整段与斜杠命令标签、
+                              取首个非空行、超 60 字符截断】→ 本 json name 字段 → cwd basename → 'unknown'。
+                              2026-07-31 勘误：原"恒取 cwd basename"在所有会话同 cwd 时全显 "cury"，无区分度)
    
    b. 字段清理 (参考 abtop SessionFile::sanitize):
       - sessionId 截断到 256 字符
@@ -826,7 +829,7 @@ export type SessionStatus = 'busy' | 'idle'
 export interface SessionInfo {
   sessionId: string           // Claude session 唯一 id（截断 256，§6.8.2b）
   pid: number                 // 进程 id
-  name: string                // 项目名（cwd basename）
+  name: string                // 显示名（transcript 首条用户消息 → json name → cwd basename，§6.8.2a）
   status: SessionStatus
   tool: string                // 当前工具，如 "Bash"（卡片 tool badge）
   apiProvider: string         // 解析后的 provider 名（§6.8.2f）
