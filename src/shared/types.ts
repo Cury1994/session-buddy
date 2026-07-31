@@ -146,7 +146,7 @@ export type SessionStatus = 'busy' | 'idle'
 export interface SessionInfo {
   sessionId: string // Claude session 唯一 id（截断 256，§6.8.2b）
   pid: number
-  name: string // 项目名（cwd basename）
+  name: string // 显示名：transcript 首条用户消息 → json name → cwd basename → 'unknown'（命名链见 claude-sessions.ts 头注）
   status: SessionStatus
   tool: string // 当前工具，如 "Bash"
   apiProvider: string // 解析后的 provider 名（§6.8.2f）
