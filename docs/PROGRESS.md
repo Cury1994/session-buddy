@@ -462,6 +462,17 @@
 - 收尾三件套：① commit cdf4130 + a0086b0 ✅ ② 无新起实例/无孤儿 ✅ ③ 本日志 ✅
 - 遗留：#6 hook 注册 + 端到端 / 用户实例重启载新构建（10:27 实例为修复前构建）——随下条日志收口
 
+### 2026-07-31 13:31:16 ｜ 归档后修订 ｜ #6 hook 注册 + 审批全链路闭环
+- 注册：~/.claude/settings.json 增 `hooks.PreToolUse`（matcher Bash → `/home/cury/harness-monitor/resources/hooks/approve.sh`，**timeout 70000**）；原 settings.json 备份为 `settings.json.bak-20260731`
+- **排障实录（两个叠加坑，均已入蓝图）**：
+  - 坑 1：timeout 写 `70` → hook 被 70ms 即杀、报 "hook error: No stderr output"——**2.1.207 的 hook timeout 单位为毫秒**（二进制日志串 `with timeout ${c}ms` 实锤）→ 改 70000
+  - 坑 2：改对后仍"报错"——实为 **exit 2 拦截被 Claude Code 显示成 "hook error: No stderr output"**（60s 无人审批 → auto-deny → exit 2 → stderr 空 → 展示文案误导）。诊断包装器（/tmp 临时，记 PATH/stdin/exit）证实脚本 exit=2 完全正常；直测端点 `time curl POST /approve` = **real 1m0.011s + allowed:false**，server 行为完全正确
+  - 结论：全程无代码 bug，纯粹"60s 内无人点批准"+ 展示文案误导
+- **闭环证据链**：① 无头验证——POST /approve 挂起 60s、/api/approvals 见 pending 条目（timeoutSec 60）**用户在应用内点击批准 → 响应 allowed:true** ② 真实 hook 链路——本对话 Bash 命令经 PreToolUse → approve.sh → 审批卡 → 用户批准 → 命令执行（13:31:16 实测，输出打印成功）
+- 副作用说明：注册后**本机所有 Claude Code 会话**的 Bash 命令经审批管控（app 未运行 fail-open / 60s 超时 auto-deny）；新会话即时生效，已运行会话按 Claude Code 配置热载行为
+- 清理（随本条收尾命令）：今日 E2E 测试审批行（session: e2e-test/e2e-diag/headless-proof + 本会话探针行，timestamp ≥ 2026-07-31）从 approval_history 删除（07-30 及以前的 4 条真实历史行不动）；/tmp 诊断文件（hm-hook-*.sh/log/json、hm-notify-capture.txt、hm-approve-response.txt）全删
+- 待办移交：用户实例（436959，10:27 启动 = 修复前构建）审批 UI 正常（M5 代代码）但 #1~#5 修复未载——重启后全量生效（D1 打包前最后一次手动重启）
+
 ---
 
-**下一步**：① #6 hook 注册 + 真实审批端到端收口；② 用户重启实例加载全量修复；③ 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + xdotool 声明可选依赖）；D2 暂缓。
+**下一步**：① 用户重启实例加载全量修复（#1~#5 + 审批闭环已就位）；② 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（timeout 70000ms）+ xdotool 声明可选依赖）；D2 暂缓。

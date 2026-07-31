@@ -1049,7 +1049,7 @@ fi
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "/path/to/resources/hooks/approve.sh", "timeout": 70 }
+          { "type": "command", "command": "/path/to/resources/hooks/approve.sh", "timeout": 70000 }
         ]
       }
     ]
@@ -1057,9 +1057,10 @@ fi
 }
 ```
 
-> **【2026-07-31 补全】`timeout: 70`**：hook 超时须大于 server 60s auto-deny，确保
-> 正常情况下 server 先返回 `allowed:false` 而非 hook 先被 Claude Code 超时杀掉
-> （approve.sh curl -m 65 同理留 5s 余量）。本机实际注册路径为
+> **【2026-07-31 补全】`timeout` 单位为毫秒**（2.1.207 二进制实测日志 `with timeout ${c}ms`）：
+> 写 `70` 会被 70ms 即杀（实测 hook error 无 stderr，极易误判为脚本故障）。取
+> **70000**（70s）＞ curl -m 65 ＞ server 60s auto-deny，确保正常情况下 server 先
+> 返回 `allowed:false` 而非 hook 先超时。本机实际注册路径为
 > `/home/cury/harness-monitor/resources/hooks/approve.sh`（D1 打包后改为安装路径）。
 
 ---
