@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readlinkSync, readSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
@@ -33,6 +33,32 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *   实测 field 22 = starttime（进程启动时刻），**rss 实为 field 24**（Linux proc(5)）。
  *   用 field 22 会得到几十 GB 的荒谬值（与 VmRSS 相差百倍）。本实现取 field 24，
  *   与 /proc/{pid}/status 的 VmRSS 交叉验证一致（几百 MB 级，符合预期）。
+ *
+ * ─── 用户反馈四修（fix(M6-M9)）追加说明 ───
+ *
+ * kind 过滤（F1）：
+ *   session json 的 `kind` 字段存在且 !== 'interactive'（如 "bg"——/clear 等后台任务会话，
+ *   常带 jobId 且长期驻留 sessions 目录）→ 整条跳过，不展示。旧版 Claude Code 可能无
+ *   kind 字段 → 按 interactive 放行（兼容策略：宁可多显示，不误杀旧版会话）。
+ *
+ * 尾窗一次读取、同时提取三事（F2，tailFacts）：
+ *   单次 256KB 尾部窗口读同时逆扫提取（不增加 IO）：
+ *     ① usedTokens —— 末条 usage 三项和（ctxPct 计算源，语义与原 usedTokens 逐字一致）
+ *     ② lastCwd —— 最后一条含 cwd 记录的 cwd（Claude Code 随实际工作目录动态更新，
+ *        是"当前真实项目路径"真源；session json 的 cwd 恒为启动目录，仅作降级）
+ *     ③ lastModel —— 最后一条 message.model（API 实际返回的模型 id 真源；本机经代理
+ *        cc-switch 转发后 settings 的 *_MODEL_NAME 是陈旧别名，故 transcript 优先）
+ *   接线：显示 cwd = lastCwd → json cwd 降级；apiProvider = lastModel → settings 解析降级。
+ *   ⚠ contextWindowForModel **继续由 settings 的 modelId 驱动**：transcript 的模型 id
+ *     经代理改写后不含 [1m] 标记，不可用于窗口判定（判定错则 ctxPct 偏差 5 倍）。
+ *
+ * 关闭终端语义（F3，closeTerminalOfPid）：
+ *   不再直接 SIGTERM claude 进程（旧 FR-2.8，终端窗口仍残留）。新链路：
+ *     /proc/<pid>/fd/0（stdin）readlink → /dev/pts/N（控制终端）→ 取其设备号（rdev）→
+ *     枚举 /proc/[0-9]+/stat 收集 tty_nr（field 7）相同的全部进程 → 取其中 ppid 不在
+ *     集合内的根进程（pts 上的根 shell）→ SIGTERM 根 shell → 终端模拟器关闭该窗口/标签
+ *     → claude 随 pty hangup（SIGHUP）退出 ＝ "真的关掉那一个终端窗口"。
+ *   无控制终端的后台会话（fd/0 不指向 /dev/pts/）→ false（UI 提示"无终端窗口"）。
  */
 
 // ─── 系统页大小（/proc stat rss 以页为单位，缓存一次） ───
@@ -68,22 +94,36 @@ function contextWindowForModel(modelId: string): number {
   return 200_000
 }
 
-/** 尾部读取窗口：256KB。末条 usage 记录总在此范围内 */
+/** 尾部读取窗口：256KB。末条 usage / cwd / model 记录总在此范围内 */
 const TAIL_BYTES = 262144
 
 /**
- * 与 statusline.py `used_tokens()` 一致：末条 usage 的三项之和。
+ * 单次尾窗读同时提取的三件事（F2，见文件头说明）：
+ *   usedTokens —— ctxPct 计算源（末条 usage 三项和）
+ *   lastCwd    —— 实际工作目录（最后一条含 cwd 的记录；Claude Code 随 cd 动态更新）
+ *   lastModel  —— API 实际返回的模型 id（最后一条 message.model）
+ */
+export interface TailFacts {
+  usedTokens: number
+  lastCwd: string | null
+  lastModel: string | null
+}
+
+const ZERO_TAIL: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null }
+
+/**
+ * 尾读 transcript 一次，逆扫同时提取三件事（不增加 IO）。
  *
- * 审查 P2-2：transcript 可达数十 MB，整份 readFileSync 会同步阻塞主进程事件循环
- * （discoverSessions 3s 一轮）。改为尾部增量读——最后一条含 usage 的记录总在文件
- * 末尾附近，故只读最后 256KB：
+ * 审查 P2-2（原 usedTokens 同款手法继承）：transcript 可达数十 MB，整份 readFileSync
+ * 会同步阻塞主进程事件循环（discoverSessions 3s 一轮）。三项事实所需的**最后**一条
+ * 记录均在文件末尾附近，故只读最后 256KB：
  *   size ≤ 256KB → 全读；
  *   size  > 256KB → openSync + readSync 读尾部 256KB → 丢弃可能被截断的首段 →
- *                   从尾向前扫描第一条 parse 成功且含 usage 的记录。
- * 语义不变：尾读结果与全读一致（末条 usage 必在尾部窗口内）。文件不可读/不存在 → 0。
+ *                   从尾向前扫描，三个量各自独立累积。
+ * 文件不可读/不存在 → 零值对象（调用方按降级链处理）。
  */
-function usedTokens(transcriptPath: string): number {
-  if (!transcriptPath || !existsSync(transcriptPath)) return 0
+function tailFacts(transcriptPath: string): TailFacts {
+  if (!transcriptPath || !existsSync(transcriptPath)) return ZERO_TAIL
 
   let lines: string[]
   try {
@@ -103,21 +143,29 @@ function usedTokens(transcriptPath: string): number {
       // 尾读首行可能被截断为非法 JSON，丢弃（全读路径无需丢弃，故仅此分支执行）
       lines = content.split('\n')
       lines.shift()
-      return scanUsageFromTail(lines)
+      return scanTailFacts(lines)
     }
     lines = content.split('\n')
   } catch {
-    return 0
+    return ZERO_TAIL
   }
-  return scanUsageFromTail(lines)
+  return scanTailFacts(lines)
 }
 
 /**
- * 从尾向前扫描第一条 parse 成功且含 usage 的记录（兼容 message.usage 与顶层 usage
- * 两种位置，与原全读实现一致），返回 input + cache_read + cache_creation 之和。
+ * 从尾向前扫描，三件事各自独立累积：某项已找到即不再覆盖（逆序首命中＝正序"最末"），
+ * 三项齐备即提前退出。
+ *   ① usedTokens：首条含 usage 记录（兼容 message.usage 与顶层 usage 两位置）的
+ *      input + cache_read + cache_creation 之和（与 statusline.py used_tokens() 逐字同源）
+ *   ② lastCwd：首条（逆序）cwd 为 string 的记录之 cwd
+ *   ③ lastModel：首条（逆序）message.model 为 string 的记录之模型 id
  */
-function scanUsageFromTail(lines: string[]): number {
+function scanTailFacts(lines: string[]): TailFacts {
+  const facts: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null }
+  let tokensFound = false
+
   for (let i = lines.length - 1; i >= 0; i--) {
+    if (tokensFound && facts.lastCwd !== null && facts.lastModel !== null) break // 三项齐备
     const line = (lines[i] ?? '').trim()
     if (!line) continue
     let obj: unknown
@@ -129,24 +177,43 @@ function scanUsageFromTail(lines: string[]): number {
     if (typeof obj !== 'object' || obj === null) continue
     const record = obj as Record<string, unknown>
 
-    let usage: unknown
-    const msg = record['message']
-    if (typeof msg === 'object' && msg !== null) {
-      usage = (msg as Record<string, unknown>)['usage']
-    }
-    if (!(typeof usage === 'object' && usage !== null)) {
-      usage = record['usage']
-    }
-    if (typeof usage === 'object' && usage !== null) {
-      const last = usage as Record<string, unknown>
-      const num = (k: string): number => {
-        const v = last[k]
-        return typeof v === 'number' && Number.isFinite(v) ? v : 0
+    // ① usage（兼容 message.usage 与顶层 usage 两种位置，与原全读实现一致）
+    if (!tokensFound) {
+      let usage: unknown
+      const msg = record['message']
+      if (typeof msg === 'object' && msg !== null) {
+        usage = (msg as Record<string, unknown>)['usage']
       }
-      return num('input_tokens') + num('cache_read_input_tokens') + num('cache_creation_input_tokens')
+      if (!(typeof usage === 'object' && usage !== null)) {
+        usage = record['usage']
+      }
+      if (typeof usage === 'object' && usage !== null) {
+        const last = usage as Record<string, unknown>
+        const num = (k: string): number => {
+          const v = last[k]
+          return typeof v === 'number' && Number.isFinite(v) ? v : 0
+        }
+        facts.usedTokens =
+          num('input_tokens') + num('cache_read_input_tokens') + num('cache_creation_input_tokens')
+        tokensFound = true
+      }
+    }
+
+    // ② cwd（每条记录自带 cwd 字段，Claude Code 随实际工作目录更新）
+    if (facts.lastCwd === null && typeof record['cwd'] === 'string') {
+      facts.lastCwd = record['cwd'] as string
+    }
+
+    // ③ message.model（assistant 记录的 API 实际返回模型）
+    if (facts.lastModel === null) {
+      const msg = record['message']
+      if (typeof msg === 'object' && msg !== null) {
+        const m = (msg as Record<string, unknown>)['model']
+        if (typeof m === 'string' && m !== '') facts.lastModel = m
+      }
     }
   }
-  return 0
+  return facts
 }
 
 // ─── 会话显示名（transcript 首条用户消息 → json name → cwd basename） ───
@@ -306,6 +373,88 @@ function readMemoryMB(pid: number): number {
   }
 }
 
+// ─── 关闭终端（F3，session:terminate 新语义） ───
+
+/**
+ * "关闭该会话所在的那一个终端窗口"（取代旧 FR-2.8 直杀 claude 进程）。
+ *
+ * 进程树实测：claude(pid, pts/N) ← bash(pts/N) ← gnome-terminal-server。
+ * 链路：/proc/<pid>/fd/0（stdin）readlink → /dev/pts/N → 取 tty 设备号（statSync.rdev，
+ * pts 设备号 = major<<8|minor，与 /proc/[0-9]+/stat field 7 tty_nr 编码一致，可直接比较）→
+ * 枚举共享该 tty 的全部进程 → 取其中 ppid 不在集合内的根进程（pts 上的根 shell）→
+ * SIGTERM 根 shell → 终端模拟器关闭该窗口/标签 → claude 随 pty hangup（SIGHUP）退出。
+ *
+ * 纯函数（无 electron 依赖），导出供裸 node 验收与 ipc-handlers 复用。
+ * 任何一步失败（含无控制终端的后台会话：fd/0 不以 /dev/pts/ 开头）→ false。
+ */
+export function closeTerminalOfPid(pid: number): boolean {
+  // 安全守卫：非法 pid / 自身进程 / init 一律拒绝
+  if (pid <= 0 || pid === process.pid || pid === 1) return false
+
+  // 1. stdin 软链 → 控制终端路径（必须以 /dev/pts/ 开头；后台会话无 pty → false）
+  let ttyPath: string
+  try {
+    ttyPath = readlinkSync(`/proc/${pid}/fd/0`)
+  } catch {
+    return false
+  }
+  if (!ttyPath.startsWith('/dev/pts/')) return false
+
+  // 2. tty 设备号（pts：(major<<8)|minor，与 stat field 7 tty_nr 同编码）
+  let ttyDev: number
+  try {
+    ttyDev = statSync(ttyPath).rdev
+  } catch {
+    return false
+  }
+
+  // 3. 枚举共享同一 tty 的进程集合（pid → ppid）。
+  //    /proc/[0-9]+/stat 解析沿用 readMemoryMB：lastIndexOf(')') 后切分，field N = arr[N-3]
+  //    → arr[1]=ppid(field 4)、arr[4]=tty_nr(field 7)
+  const members = new Map<number, number>()
+  let procEntries: string[]
+  try {
+    procEntries = readdirSync('/proc')
+  } catch {
+    return false
+  }
+  for (const entry of procEntries) {
+    if (!/^\d+$/.test(entry)) continue
+    let raw: string
+    try {
+      raw = readFileSync(`/proc/${entry}/stat`, 'utf8')
+    } catch {
+      continue // 进程恰在枚举间隙退出 → 跳过
+    }
+    const closeParen = raw.lastIndexOf(')')
+    if (closeParen < 0) continue
+    const arr = raw.slice(closeParen + 2).split(' ')
+    const ttyNr = parseInt(arr[4] ?? '', 10)
+    if (!Number.isFinite(ttyNr) || ttyNr !== ttyDev) continue
+    const p = parseInt(entry, 10)
+    const ppid = parseInt(arr[1] ?? '', 10)
+    if (Number.isFinite(p)) members.set(p, Number.isFinite(ppid) ? ppid : 0)
+  }
+
+  // 4. 根进程 = 集合中 ppid 不在集合内者（取第一个）；无根 → false
+  let root = 0
+  for (const [p, ppid] of members) {
+    if (!members.has(ppid)) {
+      root = p
+      break
+    }
+  }
+  if (root === 0) return false
+
+  // 5. SIGTERM 根 shell → 模拟器关闭该窗口/标签 → claude 随 pty hangup（SIGHUP）退出
+  try {
+    process.kill(root, 'SIGTERM')
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ─── transcript 定位（§6.8.2e，glob projects/*/<id>.jsonl，不引入 glob 库） ───
 
 function findTranscript(projectsDirs: string[], sessionId: string): string | null {
@@ -413,18 +562,28 @@ export class ClaudeCodeSessionScanner {
     if (pid === process.pid) return null
     // abtop 语义（§6.8.2 step 3）：已结束的 session 不展示
     if (raw.status === 'done') return null
+    // kind 过滤（F1）：排除后台任务会话（kind 存在且非 interactive，如 "bg"——/clear 等
+    // 后台会话带 jobId 长期驻留 sessions 目录，用户明确不想看到）。旧版 Claude Code 可能
+    // 无 kind 字段 → 按 interactive 放行（兼容策略，宁多显示不误杀旧版会话）。
+    if (typeof raw.kind === 'string' && raw.kind !== 'interactive') return null
 
     const sessionId =
       typeof raw.sessionId === 'string' ? raw.sessionId.slice(0, 256) : ''
-    const cwd = typeof raw.cwd === 'string' ? raw.cwd.slice(0, 4096) : ''
+    // json cwd（启动目录）：4096 截断（§6.8.2b）；仅作为 transcript 尾读 cwd 的降级
+    const jsonCwd = typeof raw.cwd === 'string' ? raw.cwd.slice(0, 4096) : ''
     const startedAt =
       typeof raw.startedAt === 'number' && Number.isFinite(raw.startedAt) && raw.startedAt > 0
         ? raw.startedAt
         : 0
-    const cwdName = cwd ? basename(cwd) : null
-
-    // transcript 只定位一次：显示名头读（firstUserText）与 usedTokens 尾读共用路径，避免重复目录扫描
+    // transcript 只定位一次：显示名头读（firstUserText）与尾读三事（tailFacts）共用路径，避免重复目录扫描
     const transcript = sessionId ? findTranscript(this.projectsDirs, sessionId) : null
+    // F2：尾窗一次读提取三事（usedTokens / lastCwd / lastModel，见文件头与 tailFacts 注释）
+    const tail = transcript ? tailFacts(transcript) : ZERO_TAIL
+
+    // 显示 cwd（F2）：transcript 尾读的最后一条 cwd（Claude Code 随实际工作目录动态更新，
+    // 是"当前真实项目路径"真源）→ jsonCwd（启动目录）降级；两者统一 4096 截断
+    const cwd = (tail.lastCwd !== null ? tail.lastCwd : jsonCwd).slice(0, 4096)
+    const cwdName = cwd ? basename(cwd) : null
 
     // 显示名优先级链（见文件头 doc）：
     //   ① transcript 首条可读用户消息（头部限读 64KB——transcript 可达数十 MB，全文读会同步阻塞
@@ -440,11 +599,12 @@ export class ClaudeCodeSessionScanner {
     const status: SessionStatus = alive ? 'busy' : 'idle'
     const memoryMB = alive ? readMemoryMB(pid) : 0
 
-    // ctxPct：与 statusline.py 同源
+    // ctxPct：与 statusline.py 同源（usedTokens 取自尾读三事之一）。
+    // 窗口判定继续由 settings 的 modelId 驱动——transcript 的模型 id 经代理改写后
+    // 不含 [1m] 标记，不可用于窗口判定（contextWindowForModel 不动，见文件头说明）
     let ctxPct = 0
     if (transcript) {
-      const used = usedTokens(transcript)
-      ctxPct = window > 0 ? Math.min(100, Math.round((used / window) * 100)) : 0
+      ctxPct = window > 0 ? Math.min(100, Math.round((tail.usedTokens / window) * 100)) : 0
     }
 
     // uptimeSec：startedAt 异常 → 0
@@ -468,8 +628,8 @@ export class ClaudeCodeSessionScanner {
       pid,
       name,
       status,
-      tool: 'Bash', // v1 固定（审批匹配用）
-      apiProvider: model.providerName,
+      tool: 'Claude Code', // harness 身份固定值（非逐会话当前工具；审批匹配不依赖此字段）
+      apiProvider: tail.lastModel ?? model.providerName, // F2：API 实际返回模型 → settings 解析降级
       uptimeSec,
       memoryMB,
       ctxPct,

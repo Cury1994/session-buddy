@@ -2,14 +2,16 @@
  * M9 — Session 卡片（DESIGN §4 / 基准原型「Session Card」/ TASKS §10）
  *
  * 结构：
- *   Header：StatusDot + name(13px) … hover 浮层终止按钮(FR-2.8) + [Terminal](FR-2.7)
- *   徽章行：provider 徽章 + tool 徽章（§6.8 SessionInfo 无 model 字段，见完成报告偏差说明）
+ *   Header：StatusDot + name(13px) … hover 浮层关闭终端按钮(F3) + [Terminal](FR-2.7)
+ *   徽章行：provider 徽章（API 实际模型）+ tool 徽章（harness 身份，固定 Claude Code）
  *   Meta：Ctx: NN% + ContextGauge … Mem: NNM
  *   微文字：Uptime；cwd 单行截断（title 全路径 tooltip）
  *   条件渲染 ApprovalBlock（该 session 命中 pending 审批时，红边紧急卡片）
  *
- * 终止会话（FR-2.8）：两步内联确认（首点 arm "Sure?"，再点执行 terminateSession(pid)），
- * hover 才显现，不占常驻版面。
+ * 关闭终端（F3，取代旧 FR-2.8 直杀 claude 进程）：两步内联确认（首点 arm "Sure?"，
+ * 再点执行 terminateSession(pid) → 主进程 SIGTERM tty 根 shell → 模拟器关闭该窗口/标签
+ * → claude 随 pty hangup 退出）。hover 才显现，不占常驻版面。
+ * 返回 false（后台会话无终端窗口等）→ 行内提示"无终端窗口"（与跳转失败提示共用机制）。
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -54,10 +56,15 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
     void window.electronAPI.jumpToTerminal(session.cwd).then((ok) => {
       // FR-2.7：链中全失败（无可用终端）→ 一次性行内提示，不再静默（P1-1 整改）
       if (ok) return
-      setJumpHint('无可用终端')
-      if (jumpTimerRef.current !== null) window.clearTimeout(jumpTimerRef.current)
-      jumpTimerRef.current = window.setTimeout(() => setJumpHint(null), JUMP_HINT_MS)
+      showHint('无可用终端')
     })
+  }
+
+  /** 一次性行内提示（2.5s 淡出；跳转失败与关闭终端失败共用，重复触发刷新计时） */
+  const showHint = (msg: string): void => {
+    setJumpHint(msg)
+    if (jumpTimerRef.current !== null) window.clearTimeout(jumpTimerRef.current)
+    jumpTimerRef.current = window.setTimeout(() => setJumpHint(null), JUMP_HINT_MS)
   }
 
   const terminate = (): void => {
@@ -66,7 +73,11 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
       return
     }
     setConfirmTerm(false)
-    void window.electronAPI.terminateSession(session.pid)
+    void window.electronAPI.terminateSession(session.pid).then((ok) => {
+      // F3：false ＝ 无控制终端（后台会话）等失败路径 → 一次性行内提示
+      if (ok) return
+      showHint('无终端窗口')
+    })
   }
 
   return (
@@ -84,7 +95,7 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
               <button
                 type="button"
                 className={`mini-icon-btn danger electron-no-drag${confirmTerm ? ' confirm' : ''}`}
-                title={confirmTerm ? 'Click again to terminate' : 'Terminate session'}
+                title={confirmTerm ? 'Click again to close terminal' : 'Close terminal'}
                 onClick={terminate}
               >
                 {confirmTerm ? (

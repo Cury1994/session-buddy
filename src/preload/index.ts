@@ -68,7 +68,11 @@ const api = {
   jumpToTerminal: (cwd: string): Promise<boolean> =>
     ipcRenderer.invoke('session:jump-terminal', cwd),
 
-  /** 终止 session 进程（session:terminate → SIGTERM） */
+  /**
+   * 关闭会话所在终端窗口（session:terminate → closeTerminalOfPid，F3）：
+   * SIGTERM tty 根 shell → 模拟器关闭该窗口/标签 → claude 随 pty hangup 退出。
+   * 无控制终端（后台会话）等失败路径 → false（UI 一次性行内提示"无终端窗口"）。
+   */
   terminateSession: (pid: number): Promise<boolean> =>
     ipcRenderer.invoke('session:terminate', pid),
 

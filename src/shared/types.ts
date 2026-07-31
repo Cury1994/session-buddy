@@ -148,12 +148,12 @@ export interface SessionInfo {
   pid: number
   name: string // 显示名：transcript 首条用户消息 → json name → cwd basename → 'unknown'（命名链见 claude-sessions.ts 头注）
   status: SessionStatus
-  tool: string // 当前工具，如 "Bash"
-  apiProvider: string // 解析后的 provider 名（§6.8.2f）
+  tool: string // harness 身份，固定 "Claude Code"（非逐会话当前工具；审批匹配不依赖此字段）
+  apiProvider: string // API 实际返回的模型（transcript 尾读 message.model → settings 解析降级，§6.8.2f）
   uptimeSec: number // 运行时长（秒）= (now - startedAt)/1000
   memoryMB: number // 物理内存 MB（进程死亡为 0）
   ctxPct: number // 上下文消耗百分比 0-100（§6.8.2e）
-  cwd: string // 工作目录（截断 4096，§6.8.2b）
+  cwd: string // 实际工作目录（transcript 尾读 lastCwd → json cwd 降级；截断 4096，§6.8.2b）
   startedAt: number // Unix ms
   hasPendingApproval: boolean // approvalQueue 中存在匹配项
 }

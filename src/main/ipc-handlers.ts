@@ -2,6 +2,7 @@ import { app, ipcMain } from 'electron'
 import { spawn } from 'node:child_process'
 import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 
+import { closeTerminalOfPid } from './claude-sessions'
 import { loadConfig, saveConfig } from './config'
 
 import type { ApprovalQueue } from './approval-queue'
@@ -194,17 +195,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return openTerminal(cwd)
   })
 
-  /** 终止 session 进程（FR-2.8）：SIGTERM，任何失败 → false */
+  /**
+   * 关闭终端（F3，取代旧 FR-2.8 直杀 claude 进程）：
+   * 定位会话进程所在 tty（/proc/<pid>/fd/0 → /dev/pts/N）上共享该 tty 的根 shell →
+   * SIGTERM 根 shell → 终端模拟器关闭该窗口/标签 → claude 随 pty hangup（SIGHUP）退出
+   * ＝"真的关掉对应的那一个终端窗口"。closeTerminalOfPid 覆盖全部失败路径
+   * （非法 pid / 自身 / init / 无控制终端的后台会话 / 无根进程），返回 boolean，
+   * UI 侧据此给一次性行内提示（SessionCard "无终端窗口"）。
+   */
   ipcMain.handle('session:terminate', (_event, pid: number) => {
-    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false
-    if (pid === process.pid) return false // 自杀守卫：scanner 已排除自身，防御手动调用
-    try {
-      process.kill(pid, 'SIGTERM')
-      return true
-    } catch (err) {
-      console.warn(`[ipc] session:terminate pid=${pid} 失败: ${(err as Error).message}`)
-      return false
-    }
+    if (typeof pid !== 'number' || !Number.isInteger(pid)) return false
+    return closeTerminalOfPid(pid)
   })
 
   // ─── 审批 ───

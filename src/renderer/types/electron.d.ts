@@ -32,6 +32,7 @@ export interface ElectronAPI {
   saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>
   manualRefresh(): Promise<void>
   jumpToTerminal(cwd: string): Promise<boolean>
+  /** 关闭会话所在终端窗口（F3 → closeTerminalOfPid；无终端窗口 → false） */
   terminateSession(pid: number): Promise<boolean>
   respondApproval(id: string, allowed: boolean): Promise<boolean>
   /** 当前待审批列表（P1-3 挂载补拉 seed，approval:get → approvalQueue.getAll） */
