@@ -144,6 +144,12 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
           <span className="mini-badge model-badge">Tool: {session.tool}</span>
         </div>
 
+        {session.lastActivity !== '' && (
+          <div className="session-activity" title={session.lastActivity}>
+            {session.lastActivity}
+          </div>
+        )}
+
         <div className="meta-row">
           <ContextGauge pct={session.ctxPct} />
           <span className="mem-label">Mem: {Math.round(session.memoryMB)}M</span>

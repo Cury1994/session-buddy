@@ -40,6 +40,26 @@ import type {
  */
 
 /**
+ * 自动审批全局开关（F3）：会话级、重启复位、两步确认（确认在渲染端 SessionsView）。
+ *   主进程仅持有 boolean flag，由 IPC approval:set-auto-approve / get-auto-approve 读写。
+ *   开启时 POST /approve 立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙/不 push）。
+ *   模块级 flag 不持久化 —— 进程重启后天然复位为 false（用户选定的安全默认）。
+ *   注意：渲染端 SessionsView 切走重挂载（App.tsx key={activeView}）会复位前端 state，
+ *   但主进程 flag 不随之复位；SessionsView 挂载时经 getAutoApprove() 播种以对齐真源。
+ */
+let autoApprove = false
+
+/** 设置自动审批开关（IPC approval:set-auto-approve 委托） */
+export function setAutoApprove(v: boolean): void {
+  autoApprove = v
+}
+
+/** 读取自动审批开关（IPC approval:get-auto-approve 委托；渲染端挂载播种真源） */
+export function getAutoApprove(): boolean {
+  return autoApprove
+}
+
+/**
  * 按颜色优先级协议计算托盘色（纯函数，便于 M6 复用 / 单测）。
  * @param queueSize      当前待审批数量
  * @param latestUsage    db.getLatestUsage() 的最新余额快照
@@ -131,7 +151,18 @@ export function createServer(deps: ServerDeps): ManagedServer {
       session: typeof body.session === 'string' ? body.session : 'unknown',
       command: typeof body.command === 'string' ? body.command : '',
       cwd: typeof body.cwd === 'string' ? body.cwd : '',
-      tool: typeof body.tool === 'string' ? body.tool : 'Bash'
+      tool: typeof body.tool === 'string' ? body.tool : 'Bash',
+      description: typeof body.description === 'string' ? body.description : ''
+    }
+
+    // 自动审批（F3）：会话级全局开关开启时立即放行。
+    //   复用唯一落库点记一条 allowed=1 历史（不变量 A：recordApproval 唯一落库）；
+    //   不入队 / 不通知 / 不置橙 / 不 push —— 渲染端从没有这张卡（无需淡出），托盘不闪橙。
+    //   approve.sh 阻塞的 curl 直接收到 allowed:true 放行。
+    if (getAutoApprove()) {
+      db.recordApproval(payload.harness, payload.session, payload.command, payload.cwd, true)
+      res.json({ id: '', allowed: true })
+      return
     }
 
     const { id, promise } = approvalQueue.enqueue(payload)

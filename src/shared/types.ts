@@ -119,6 +119,7 @@ export interface ApprovalPayload {
   command: string // 待审批命令全文
   cwd: string // 工作目录
   tool: string // "Bash"
+  description: string // 命令的人类可读摘要（hook 提供，可空）；仅实时展示，不落库
 }
 
 /** 队列内审批项 = payload + 运行时字段（§6.6 getAll()） */
@@ -156,4 +157,5 @@ export interface SessionInfo {
   cwd: string // 实际工作目录（transcript 尾读 lastCwd → json cwd 降级；截断 4096，§6.8.2b）
   startedAt: number // Unix ms
   hasPendingApproval: boolean // approvalQueue 中存在匹配项
+  lastActivity: string // 最近一条可读对话/任务内容（transcript 尾读，截断 120；无则空串）
 }

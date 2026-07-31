@@ -107,18 +107,26 @@ function contextWindowForModel(modelId: string): number {
 const TAIL_BYTES = 262144
 
 /**
- * 单次尾窗读同时提取的三件事（F2，见文件头说明）：
- *   usedTokens —— ctxPct 计算源（末条 usage 三项和）
- *   lastCwd    —— 实际工作目录（最后一条含 cwd 的记录；Claude Code 随 cd 动态更新）
- *   lastModel  —— API 实际返回的模型 id（最后一条 message.model）
+ * 单次尾窗读同时提取的四件事（F2，见文件头说明）：
+ *   usedTokens  —— ctxPct 计算源（末条 usage 三项和）
+ *   lastCwd     —— 实际工作目录（最后一条含 cwd 的记录；Claude Code 随 cd 动态更新）
+ *   lastModel   —— API 实际返回的模型 id（最后一条 message.model）
+ *   lastActivity—— 最近一条可读对话/任务内容（message.content 清洗后截断 120；尽力而为，
+ *                  不参与早退门槛，扫不到为 null —— 见 scanTailFacts 注释）
  */
 export interface TailFacts {
   usedTokens: number
   lastCwd: string | null
   lastModel: string | null
+  lastActivity: string | null
 }
 
-const ZERO_TAIL: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null }
+const ZERO_TAIL: TailFacts = {
+  usedTokens: 0,
+  lastCwd: null,
+  lastModel: null,
+  lastActivity: null
+}
 
 /**
  * 尾读 transcript 一次，逆扫同时提取三件事（不增加 IO）。
@@ -128,7 +136,7 @@ const ZERO_TAIL: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null }
  * 记录均在文件末尾附近，故只读最后 256KB：
  *   size ≤ 256KB → 全读；
  *   size  > 256KB → openSync + readSync 读尾部 256KB → 丢弃可能被截断的首段 →
- *                   从尾向前扫描，三个量各自独立累积。
+ *                   从尾向前扫描，四个量各自独立累积。
  * 文件不可读/不存在 → 零值对象（调用方按降级链处理）。
  */
 function tailFacts(transcriptPath: string): TailFacts {
@@ -162,19 +170,24 @@ function tailFacts(transcriptPath: string): TailFacts {
 }
 
 /**
- * 从尾向前扫描，三件事各自独立累积：某项已找到即不再覆盖（逆序首命中＝正序"最末"），
- * 三项齐备即提前退出。
+ * 从尾向前扫描，四件事各自独立累积：某项已找到即不再覆盖（逆序首命中＝正序"最末"）。
  *   ① usedTokens：首条含 usage 记录（兼容 message.usage 与顶层 usage 两位置）的
  *      input + cache_read + cache_creation 之和（与 statusline.py used_tokens() 逐字同源）
  *   ② lastCwd：首条（逆序）cwd 为 string 的记录之 cwd
  *   ③ lastModel：首条（逆序）message.model 为 string 的记录之模型 id
+ *   ④ lastActivity：首条（逆序）message.content 清洗非空的记录之可读文本（截断 120）
+ *
+ * 早退门槛仅含前三事（usedTokens && lastCwd && lastModel）：lastActivity 尽力而为，
+ * 不参与门槛 —— 某些会话尾部全是 tool_result / usage 记录时可读文本难得，若将其纳入
+ * 门槛会迫使扫满整个 256KB 窗口甚至（理论上）死等，违背"窗口扫完即止"约束。
+ * 前三事齐备即提前退出；lastActivity 在同一轮扫描中顺势提取，扫不到随窗口扫尽为 null。
  */
 function scanTailFacts(lines: string[]): TailFacts {
-  const facts: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null }
+  const facts: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null, lastActivity: null }
   let tokensFound = false
 
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (tokensFound && facts.lastCwd !== null && facts.lastModel !== null) break // 三项齐备
+    if (tokensFound && facts.lastCwd !== null && facts.lastModel !== null) break // 前三事齐备（lastActivity 不参与门槛）
     const line = (lines[i] ?? '').trim()
     if (!line) continue
     let obj: unknown
@@ -221,6 +234,19 @@ function scanTailFacts(lines: string[]): TailFacts {
         if (typeof m === 'string' && m !== '') facts.lastModel = m
       }
     }
+
+    // ④ lastActivity（尽力而为）：首条（逆序）message.content 清洗非空者。
+    //    content 为 string 或 text-block 数组；tool_result 无 text 块 → extractContentText 返 null 跳过
+    if (facts.lastActivity === null) {
+      const msg = record['message']
+      if (typeof msg === 'object' && msg !== null) {
+        const rawText = extractContentText((msg as Record<string, unknown>)['content'])
+        if (rawText !== null) {
+          const activity = toActivity(rawText)
+          if (activity !== null) facts.lastActivity = activity
+        }
+      }
+    }
   }
   return facts
 }
@@ -254,6 +280,48 @@ function toTitle(text: unknown): string | null {
   for (const line of t.split('\n')) {
     const collapsed = line.replace(/\s+/g, ' ').trim()
     if (collapsed) return collapsed.length > TITLE_MAX ? `${collapsed.slice(0, TITLE_MAX)}…` : collapsed
+  }
+  return null
+}
+
+/** lastActivity 截断长度（较 toTitle 的 60 更宽，保留更长上下文供卡片单行预览） */
+const ACTIVITY_MAX = 120
+
+/**
+ * lastActivity 清洗 + 截断（F2，与 toTitle 同源思路，刻意另写以保留更长文本）。
+ *   ① 整段剥除 `<system-reminder>` / `<local-command-caveat>`（同 toTitle）
+ *   ② 剥除斜杠命令 4 标签保留内部文本（同 toTitle）
+ *   ③ 折叠全部空白（含换行）为单空格 → 单行摘要（卡片单行 ellipsis 展示）
+ *   ④ 超 ACTIVITY_MAX 字符 → 截断 + "…"
+ * 清洗后为空返回 null（调用方据此跳过该记录继续逆扫）。
+ */
+function toActivity(text: unknown): string | null {
+  if (typeof text !== 'string') return null
+  let t = text.replace(
+    /<(?:system-reminder|local-command-caveat)>[\s\S]*?<\/(?:system-reminder|local-command-caveat)>/g,
+    ''
+  )
+  t = t.replace(/<\/?(?:command-name|command-message|command-args|local-command-stdout)>/g, '')
+  const collapsed = t.replace(/\s+/g, ' ').trim()
+  if (!collapsed) return null
+  return collapsed.length > ACTIVITY_MAX ? `${collapsed.slice(0, ACTIVITY_MAX)}…` : collapsed
+}
+
+/**
+ * 从 message.content 提取可读文本（F2 lastActivity 与 firstUserText 共用取块逻辑）：
+ *   content 为 string → 直接返回；为 block 数组 → 取第一个 type==="text" 块的 text；
+ *   tool_result 等无 text 块的记录 → null（调用方跳过该记录）。
+ */
+function extractContentText(content: unknown): string | null {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    for (const b of content) {
+      if (typeof b !== 'object' || b === null) continue
+      const block = b as Record<string, unknown>
+      if (block['type'] === 'text' && typeof block['text'] === 'string') {
+        return block['text']
+      }
+    }
   }
   return null
 }
@@ -793,7 +861,8 @@ export class ClaudeCodeSessionScanner {
       ctxPct,
       cwd,
       startedAt,
-      hasPendingApproval
+      hasPendingApproval,
+      lastActivity: tail.lastActivity ?? '' // F2：最近可读任务内容（扫不到为空串，卡片据此条件渲染）
     }
   }
 }

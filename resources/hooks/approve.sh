@@ -29,16 +29,20 @@ INPUT="$(cat)"
 COMMAND="$(printf '%s' "${INPUT}" | jq -r '.tool_use.input.command // empty' 2>/dev/null || true)"
 SESSION="$(printf '%s' "${INPUT}" | jq -r '.session_id // empty' 2>/dev/null || true)"
 CWD="$(printf '%s' "${INPUT}" | jq -r '.cwd // empty' 2>/dev/null || true)"
+# 命令的人类可读摘要（Bash 工具 hook 输入自带 .tool_use.input.description；可空）。
+# 仅用于桌面端实时展示，不落审批历史库（避免 schema 迁移）。
+DESCRIPTION="$(printf '%s' "${INPUT}" | jq -r '.tool_use.input.description // empty' 2>/dev/null || true)"
 
 # 构造 /approve 请求体。
 # 三个核心字段 command/session/cwd 来自 hook 输入；harness/tool 按
 # shared/types.ts ApprovalPayload 的约定补全（server 缺省会记 'unknown'/'Bash'，
-# 显式带上让审批历史落库更准确）。
+# 显式带上让审批历史落库更准确）。description 为命令摘要，缺省空串。
 BODY="$(jq -n \
   --arg command "${COMMAND}" \
   --arg session "${SESSION}" \
   --arg cwd "${CWD}" \
-  '{harness: "claude-code", tool: "Bash", command: $command, session: $session, cwd: $cwd}')"
+  --arg description "${DESCRIPTION}" \
+  '{harness: "claude-code", tool: "Bash", command: $command, session: $session, cwd: $cwd, description: $description}')"
 
 # POST 到 server，阻塞等待审批结果。
 # curl -m 65：总超时 65s = server 60s auto-deny + 5s 网络余量，确保正常情况下

@@ -4,6 +4,7 @@ import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 
 import { closeTerminalOfPid, focusExistingTerminal } from './claude-sessions'
 import { loadConfig, saveConfig } from './config'
+import { getAutoApprove, setAutoApprove } from './server'
 
 import type { ApprovalQueue } from './approval-queue'
 import type { ClaudeCodeSessionScanner } from './claude-sessions'
@@ -30,7 +31,8 @@ import type { AppConfig, ApprovalResponse } from '../shared/types'
  *   invoke: usage:get / usage:history / sessions:get / history:get /
  *           config:get / config:save / app:refresh / app:quit /
  *           session:jump-terminal / session:terminate / approval:respond /
- *           approval:get（P1-3 挂载补拉 seed）/ app:toggle-pin
+ *           approval:get（P1-3 挂载补拉 seed）/ app:toggle-pin /
+ *           approval:set-auto-approve / approval:get-auto-approve（F3 自动审批开关）
  *   window:hide / window:minimize / window:toggle-maximize / window:get-always-on-top
  *           （M4 建立的窗口控制子集，§6.11 未列但 TrafficLights 必需，
  *            自 index.ts 临时注册迁入统一管理）
@@ -252,6 +254,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     return ok
   })
+
+  /**
+   * 设置自动审批开关（F3，会话级 / 重启复位 / 两步确认在渲染端）：
+   * 薄封装委托 server.ts 模块级 flag。入参非 boolean 一律按 false 归一。
+   * 开启后 POST /approve 立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙）。
+   */
+  ipcMain.handle('approval:set-auto-approve', (_event, v: unknown) => {
+    setAutoApprove(v === true)
+  })
+
+  /** 读取自动审批开关（F3）：渲染端 SessionsView 挂载播种真源，避免切走重挂载后与主进程 flag 失配 */
+  ipcMain.handle('approval:get-auto-approve', () => getAutoApprove())
 
   // ─── 窗口控制子集（M4 建立，TrafficLights.tsx 调用） ───
 

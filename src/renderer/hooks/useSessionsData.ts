@@ -33,8 +33,8 @@ interface SessionsData {
   error: string | null
 }
 
-/** FR-3.6 审批块淡出保留时长（ms） */
-const FADE_HOLD_MS = 2000
+/** FR-3.6 审批块淡出保留时长（ms）；F4 提速 2000→600，须 ≥ CSS approval-fade-out 动画时长（0.5s） */
+const FADE_HOLD_MS = 600
 
 /**
  * 取某 session 对应的审批视图项（同 scanner 匹配语义：

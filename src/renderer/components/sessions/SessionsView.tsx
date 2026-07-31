@@ -12,7 +12,7 @@
  * App.tsx 已 import 本占位组件，仅替换文件内容、不改 App.tsx。
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   approvalForSession,
@@ -49,6 +49,91 @@ function OrphanApprovalCard({ item }: { item: ApprovalViewItem }): React.JSX.Ele
   )
 }
 
+/**
+ * 自动审批开关区（F3，会话级 / 重启复位 / 两步确认）。
+ *
+ * 状态纯前端持有（useState），不持久化 —— 主进程模块级 flag 与前端 state 重启后各自复位，
+ * 是用户选定的安全默认。挂载时经 getAutoApprove() 播种真源：App.tsx key={activeView}
+ * 切走重挂载会复位前端 state，但主进程 flag 不随之复位，播种避免"开关显示 OFF 但主进程
+ * 仍 auto"的失配。
+ *
+ * 两步确认启用（复用 SessionCard 关闭终端 confirmTerm 模式，并额外支持点别处 disarm）：
+ *   OFF→ON 首次点击进入 armed 态显示 "Sure?"，再次点击才 setAutoApprove(true)；
+ *   armed 态点击别处（document click）→ disarm。ON→OFF 无需确认，直接 setAutoApprove(false)。
+ */
+function AutoApproveBar(): React.JSX.Element {
+  const [autoApprove, setAutoApproveState] = useState(false)
+  const [armed, setArmed] = useState(false)
+
+  // 挂载播种：拉取主进程真源对齐（见组件头注）
+  useEffect(() => {
+    let disposed = false
+    void window.electronAPI
+      .getAutoApprove()
+      .then((v) => {
+        if (!disposed) setAutoApproveState(v)
+      })
+      .catch(() => {
+        // 播种失败不阻塞 UI，保持默认 false
+      })
+    return () => {
+      disposed = true
+    }
+  }, [])
+
+  // armed 态下点击别处 → disarm。延迟一帧挂载监听，避免触发本次 arm 的那次 click 冒泡立即 disarm
+  useEffect(() => {
+    if (!armed) return
+    const onDocClick = (): void => setArmed(false)
+    const timer = window.setTimeout(() => document.addEventListener('click', onDocClick), 0)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('click', onDocClick)
+    }
+  }, [armed])
+
+  const toggle = (): void => {
+    if (autoApprove) {
+      // ON → OFF：无需确认，直接关闭
+      setArmed(false)
+      setAutoApproveState(false)
+      void window.electronAPI.setAutoApprove(false)
+      return
+    }
+    // OFF → ON：两步确认
+    if (!armed) {
+      setArmed(true)
+      return
+    }
+    // 二次点击：真正启用
+    setArmed(false)
+    setAutoApproveState(true)
+    void window.electronAPI.setAutoApprove(true)
+  }
+
+  return (
+    <div className="auto-approve-bar">
+      <div className="auto-approve-row">
+        <span className="auto-approve-label">⚡ 自动审批</span>
+        <button
+          type="button"
+          className={`auto-approve-toggle electron-no-drag${autoApprove ? ' on' : ''}${
+            armed ? ' armed' : ''
+          }`}
+          title={autoApprove ? '点击关闭自动审批' : '点击开启（需二次确认）'}
+          onClick={toggle}
+        >
+          {armed ? 'Sure?' : autoApprove ? 'ON' : 'OFF'}
+        </button>
+        <span className="auto-approve-hint">打开后所有审批立即放行</span>
+      </div>
+      {autoApprove && (
+        <div className="auto-approve-banner">⚠ 自动审批中：所有命令将不经询问直接放行</div>
+      )}
+    </div>
+  )
+}
+
 function SessionsView(): React.JSX.Element {
   const { sessions, approvals, loading, error } = useSessionsData()
 
@@ -74,6 +159,8 @@ function SessionsView(): React.JSX.Element {
 
   return (
     <>
+      <AutoApproveBar />
+
       {error !== null && (
         <div className="card">
           <p className="placeholder-text">加载失败：{error}</p>

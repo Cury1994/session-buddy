@@ -110,6 +110,12 @@ function ApprovalBlock({ item }: ApprovalBlockProps): React.JSX.Element {
         </div>
       )}
 
+      <div className="approval-desc">
+        {data.description !== ''
+          ? data.description
+          : `Claude Code 请求执行 ${data.tool} 命令`}
+      </div>
+
       <div className="cmd-box">{highlightDanger(data.command)}</div>
 
       {!fading && (
