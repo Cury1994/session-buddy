@@ -24,7 +24,9 @@
 **阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉
 
 **当前阶段**：**项目归档完成（11/11 + 第五阶段总结）** — 全流程五阶段走完；RETROSPECTIVE.md 产出 + 工作流整改已入 ~/CLAUDE.md；后续仅延后项 D1+D3 另评估（D2 缓）
-**归档后修订**：2026-07-31 session 显示名修复（3b0693e，transcript 首条用户消息优先），GUI 效果待用户重启实例确认
+**归档后修订**：
+- 2026-07-31 上午 session 显示名修复（3b0693e，transcript 首条用户消息优先）
+- 2026-07-31 下午 会话卡片 6 项反馈修复轮（cdf4130 + a0086b0 + hook 注册）——详见日志末条
 
 ---
 
@@ -437,6 +439,29 @@
 - 约束遵守：用户常驻实例（pid 427464，18456）全程未触碰，验收仅走裸 node；GUI 肉眼确认待用户重启实例
 - 收尾三件套：① commit 3b0693e ✅ ② 无新起实例、无孤儿 ✅ ③ 本日志 ✅
 
+### 2026-07-31 12:46:03 ｜ 归档后修订 ｜ 会话卡片 6 项反馈修复轮 完成（cdf4130 + a0086b0）
+- 背景：用户实测反馈 6 项——① /clear 会话常驻需去除 + 会话路径未按实际展示 ② glm-5.2 API 不对 ③ Tool 应只有 claude-code 出卡 ④ 关闭按钮应关终端窗口而非杀对话 ⑤ 打开终端应跳转已有窗口而非新开 ⑥ 终端出现 command 审批时工具未同步
+- 主对话只读调查定根因（关键发现）：
+  - /clear 会话 = `kind:"bg"` 后台任务会话（带 jobId，长期驻留 sessions 目录）
+  - session json 的 cwd 恒为启动目录（/home/cury），但 **transcript 每条记录自带 cwd 字段且随实际工作目录动态更新**——尾读真值即 /home/cury/harness-monitor
+  - 本机经本地代理 **cc-switch**（127.0.0.1:15721）转发，transcript 末条 `message.model` = **qwen3.8-max-preview**（API 实际返回）；settings 的 `ANTHROPIC_DEFAULT_SONNET_MODEL_NAME=glm-5.2` 是陈旧代理别名（旧实现真源）
+  - **#6 根因：~/.claude/settings.json 从无 hooks 配置**——approve.sh（d4264c6）只入库未注册，审批提示从未到达应用
+  - 终端环境：gnome-terminal **原生 Wayland**（X11 侧不可见），系统无公开 API 聚焦指定窗口；xdotool/wmctrl 未装
+- 实现（两轮串行 subagent，文件域隔离；主对话 diff 复核 + 裸 node 独立复跑）：
+  - **#1a** parseSessionFile 增 kind 过滤（存在且非 interactive → 跳过；缺失放行兼容旧版）
+  - **#1b/#2** `usedTokens` 重构为 `tailFacts`——单次 256KB 尾窗读逆扫**同时提取三事**（usedTokens 语义逐字不变 / lastCwd / lastModel，三量独立累积、齐备提前退出，零新增 IO）；显示 cwd = lastCwd → json cwd 降级；apiProvider = lastModel → settings 降级；ctxPct 窗口判定**仍由 settings modelId 驱动**（transcript 模型 id 经代理改写不含 [1m]，误用则偏差 5 倍）
+  - **#3** tool 徽章固定值 `'Bash'` → `'Claude Code'`（harness 身份；前端仅徽章一处引用，审批匹配不依赖）
+  - **#4** session:terminate 语义重做：`closeTerminalOfPid`（/proc/<pid>/fd/0 → /dev/pts/N → rdev → 枚举同 tty_nr 进程集 → SIGTERM 集合中 ppid 不在集内的根 shell → 模拟器关窗/标签 → claude 随 pty hangup 退出）；守卫 pid<=0/自身/init；无控制终端 → false + UI 行内"无终端窗口"；IPC 返回 boolean
+  - **#5**（用户裁决方案 A：X11 精确聚焦 + Wayland 开窗到项目路径）`focusExistingTerminal`：command -v 检测 xdotool（**可选依赖不强装**）→ ppid 上行找终端祖先（TERMINAL_COMMS 白名单）→ search --pid 取窗（多窗口按标题含 basename(cwd) 筛选）→ windowactivate；失败降级既有 spawn 链（F2 后 cwd 已是真实项目路径）；IPC 签名 (cwd, pid?)
+- 验收全绿（两 subagent + 主对话复跑）：build 三入口 + 双 typecheck 零错误；裸 node 真实数据——**仅剩 1 卡**（bg 被滤）、cwd=/home/cury/harness-monitor、apiProvider=qwen3.8-max-preview、tool=Claude Code、ctxPct 14 无回归；closeTerminalOfPid script 假终端 5/5（true+2s 全组消失 / 无 tty false / 守卫 false）；findTerminalAncestor(本会话 pid)→gnome-terminal- + shim 假 xdotool 8 组断言（多窗口标题筛选命中 222 / 单窗 / 全不匹配取首 / search 空 false / 无 xdotool false）
+- **实现期新发现（均已代码注释 + 蓝图回写）**：
+  - Linux comm 受 TASK_COMM_LEN 限 **15 字符**——gnome-terminal-server 在 /proc stat 中为截断形 `gnome-terminal-`，TERMINAL_COMMS 须含截断形（否则祖先查找必 null）
+  - `statSync().rdev` 与 stat field 7 `tty_nr` 同为 old_encode_dev 编码（pts/1 实测同值 34817），可直接 === 比较
+- **蓝图勘误（本次已同步回写 DESIGN / REQUIREMENTS）**：§6.8.2b kind 过滤 + cwd 尾读真源；§6.8.2f apiProvider 真源改 transcript message.model（settings 降级）；§6.8.4 聚焦优先 + 开窗降级二段（xdotool 可选依赖 / comm 15 字符截断）；§6.11 jump-terminal 签名 (cwd, pid?) + terminate 语义变更；§6.12 SessionInfo cwd/apiProvider/tool 注释；§7 preload 双签名；§6.13.5 hook timeout 70；REQUIREMENTS FR-2.4/2.7/2.8 修订
+- 约束遵守：两轮 subagent 全程未触碰用户实例（其间用户自行换实例 427464→436959）；~/.claude 只读（hook 注册归主对话，见下条）
+- 收尾三件套：① commit cdf4130 + a0086b0 ✅ ② 无新起实例/无孤儿 ✅ ③ 本日志 ✅
+- 遗留：#6 hook 注册 + 端到端 / 用户实例重启载新构建（10:27 实例为修复前构建）——随下条日志收口
+
 ---
 
-**下一步**：① 用户重启常驻实例确认会话名 GUI 显示效果；② 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配，约 3~5h）；D2 暂缓。新项目从 ~/CLAUDE.md 工作流第一阶段起。
+**下一步**：① #6 hook 注册 + 真实审批端到端收口；② 用户重启实例加载全量修复；③ 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + xdotool 声明可选依赖）；D2 暂缓。

@@ -56,11 +56,11 @@
 | FR-2.1 | Session 发现 | 扫描 `~/.claude/sessions/*.json`，每 3 秒自动刷新 | P0 |
 | FR-2.2 | 进程内存 | 读取 `/proc/<pid>/status` 的 VmRSS 字段获取物理内存占用 | P0 |
 | FR-2.3 | 上下文估算 | 解析 session 对应 transcript（`~/.claude/projects/*/<sessionId>.jsonl`）最后一条含 usage 的记录（不按 role 过滤），按（input + cache_read + cache_creation）tokens ÷ 上下文窗口（200K/1M）得上下文消耗百分比（上限 100%）；与 Claude Code 终端底部上下文指示条同源 | P0 |
-| FR-2.4 | API Provider 解析 | 读取 `~/.claude/settings.json` 中 `ANTHROPIC_DEFAULT_*_MODEL_NAME` 环境变量，还原真实 API provider 名称 | P0 |
+| FR-2.4 | API Provider 解析 | 取 session transcript 尾读的末条 `message.model`（API 实际返回的模型 id）为真源；`~/.claude/settings.json` 的 `ANTHROPIC_DEFAULT_*_MODEL_NAME` 仅作降级（2026-07-31 修订：NAME 可能陈旧/为代理别名） | P0 |
 | FR-2.5 | Session 卡片 | 每 session 一张卡片：脉冲状态灯（忙碌/空闲）、名称、运行时长、API provider、上下文百分比、内存 MB、工作目录、任务状态 | P0 |
 | FR-2.6 | 上下文进度条 | Cyan 色细进度条展示上下文消耗百分比 | P1 |
-| FR-2.7 | 跳转终端 | 在 session 的 cwd 目录打开系统终端（kgx → gnome-terminal → xterm 回退） | P1 |
-| FR-2.8 | 终止 Session | `SIGTERM` 信号终止对应进程 | P1 |
+| FR-2.7 | 跳转终端 | 优先聚焦会话所在的已有终端窗口（X11：xdotool 按终端祖先 pid 定位，多窗口按标题筛选）；不可用时（Wayland / 无 xdotool）在会话实际工作目录开系统终端（kgx → gnome-terminal → xterm 回退）（2026-07-31 修订） | P1 |
+| FR-2.8 | 关闭终端 | 关闭会话所在的那一个终端窗口：SIGTERM 该 tty 的根 shell → 模拟器关窗/标签 → 会话随 pty hangup 退出；无控制终端（后台会话）→ 行内提示（2026-07-31 修订，原"终止 Session：SIGTERM 直杀进程"） | P1 |
 
 ### FR-3: Bash 命令审批
 

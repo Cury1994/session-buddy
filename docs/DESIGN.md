@@ -714,6 +714,12 @@ v3.2（简化）: 仅扫描 config.harnesses['claude-code'].config_dirs
    b. 字段清理 (参考 abtop SessionFile::sanitize):
       - sessionId 截断到 256 字符
       - cwd 截断到 4096 字符
+      - 【2026-07-31 勘误】kind 过滤：字段存在且 !== 'interactive'（如 "bg" 后台任务
+        会话，常带 jobId 长期驻留 sessions 目录）→ 整条跳过不展示；kind 缺失按
+        interactive 放行（兼容旧版 Claude Code，宁多显示不误杀）
+      - 【2026-07-31 勘误】显示 cwd 真源改为 transcript 尾读的最后一条 cwd 记录
+        （Claude Code 随实际工作目录动态更新，如 cd 进项目后的真实路径）；
+        session json 的 cwd 为启动目录，仅作降级。两者统一 4096 截断
       - pid 为 0 则跳过
 
    c. 进程内存 (参考 abtop process.rs::get_process_info):
@@ -744,9 +750,16 @@ v3.2（简化）: 仅扫描 config.harnesses['claude-code'].config_dirs
             transcript 无 usage 字段时回退为 0。
 
    f. API Provider 解析 (参考 abtop ClaudeCollector):
-      读取 ~/.claude/settings.json
+      【2026-07-31 勘误】真源改为 transcript 尾读的末条 message.model（API 实际
+      返回的模型 id，如经本地代理 cc-switch 转发时返回 "qwen3.8-max-preview"）；
+      settings 解析降为 fallback。⚠ ctxPct 窗口判定（200K/1M）仍由 settings 的
+      ANTHROPIC_DEFAULT_*_MODEL id 驱动——transcript 模型 id 经代理改写后不含
+      [1m] 标记，不可用于窗口判定。
+      （fallback 路径）读取 ~/.claude/settings.json
       → 提取 ANTHROPIC_DEFAULT_*_MODEL_NAME 环境变量
       → 映射到 apiProvider 名称 (如 "deepseek-v4-pro")
+      ⚠ *_MODEL_NAME 可能陈旧或为代理别名（实测 SONNET_NAME="glm-5.2" 而实际
+      调用 qwen3.8-max-preview），故仅作降级
       (abtop 中从 /proc/<pid>/environ 读取，更可靠)
 
    g. uptime = (Date.now() - startedAt) / 1000
@@ -773,6 +786,20 @@ v3.2 仅采集原型图中展示的核心字段：name、status、uptime、memor
 2. 回退 → gnome-terminal
 3. 最终回退 → xterm
 ```
+
+**【2026-07-31 勘误】聚焦优先 + 开窗降级**（用户反馈 #5）：
+
+1. **聚焦优先**：pid → ppid 上行（≤10 跳）找终端祖先（comm ∈ TERMINAL_COMMS 白名单：
+   gnome-terminal- / gnome-terminal-server / kgx / gnome-console / xterm / konsole /
+   xfce4-terminal / tilix / terminator / wezterm / wezterm-gui / alacritty / kitty /
+   foot / st；⚠ Linux comm 受 TASK_COMM_LEN 限 15 字符，须含截断形 "gnome-terminal-"）
+   → `xdotool search --pid` 取窗口（多窗口按标题含 basename(cwd) 大小写不敏感筛选）
+   → `windowactivate --sync` 精确聚焦，**不开新窗**
+2. **降级开窗**：聚焦失败（原生 Wayland 窗口对 xdotool 不可见 / 未装 xdotool /
+   无终端祖先 / 无窗口）→ 上述 spawn 回退链开新窗，cwd 落会话真实项目路径
+   （§6.8.2b 尾读真值）。Wayland 环境下本分支为主路径
+3. xdotool 为**可选依赖**（运行时 `command -v` 检测，不强制安装）；IPC 签名相应
+   扩展为 `(cwd: string, pid?: number)`
 
 直接 `spawn(terminal, [cwd 参数])`（kgx/gnome-terminal 用 `--working-directory`），
 无适配器链架构。cmux / tmux 窗格跳转已删除（当前环境用不到）。
@@ -805,8 +832,8 @@ function notifyBalanceLow(balance, currency): void  // 余额告警通知
 | `config:get` | renderer→main | 无 | `AppConfig` |
 | `config:save` | renderer→main | `DeepPartial<AppConfig>` | `AppConfig`（M10 决策：返回合并后完整配置 + 触发重调度；写失败抛出 → invoke reject，不再静默降级） |
 | `app:refresh` | renderer→main | 无 | `void` |
-| `session:jump-terminal` | renderer→main | `cwd: string` | `boolean` |
-| `session:terminate` | renderer→main | `pid: number` | `boolean` |
+| `session:jump-terminal` | renderer→main | `cwd: string, pid?: number` | `boolean`（2026-07-31：pid 供聚焦已有窗口，§6.8.4） |
+| `session:terminate` | renderer→main | `pid: number` | `boolean`（2026-07-31 语义变更：关闭会话所在终端窗口＝SIGTERM tty 根 shell，非直杀 claude 进程） |
 | `approval:respond` | renderer→main | `{id, allowed}` | `boolean` |
 | `app:toggle-pin` | renderer→main | `pinned: boolean` | `void` |
 | `usage:updated` | main→renderer | `UsageRecord[]` | (push) |
@@ -831,12 +858,12 @@ export interface SessionInfo {
   pid: number                 // 进程 id
   name: string                // 显示名（transcript 首条用户消息 → json name → cwd basename，§6.8.2a）
   status: SessionStatus
-  tool: string                // 当前工具，如 "Bash"（卡片 tool badge）
-  apiProvider: string         // 解析后的 provider 名（§6.8.2f）
+  tool: string                // harness 身份，固定 "Claude Code"（卡片 badge；2026-07-31 勘误，原固定 "Bash" 误导）
+  apiProvider: string         // API 实际返回的模型 id（transcript 尾读 message.model → settings 降级，§6.8.2f，2026-07-31 勘误）
   uptimeSec: number           // 运行时长（秒）= (now - startedAt)/1000
   memoryMB: number            // 物理内存 MB（进程死亡为 0）
   ctxPct: number              // 上下文消耗百分比 0-100（§6.8.2e）
-  cwd: string                 // 工作目录（截断 4096，§6.8.2b）
+  cwd: string                 // 实际工作目录（transcript 尾读 → json cwd 降级，截断 4096，§6.8.2b，2026-07-31 勘误）
   startedAt: number           // Unix ms
   hasPendingApproval: boolean // approvalQueue 中存在匹配项
 }
@@ -1022,13 +1049,18 @@ fi
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "/path/to/resources/hooks/approve.sh" }
+          { "type": "command", "command": "/path/to/resources/hooks/approve.sh", "timeout": 70 }
         ]
       }
     ]
   }
 }
 ```
+
+> **【2026-07-31 补全】`timeout: 70`**：hook 超时须大于 server 60s auto-deny，确保
+> 正常情况下 server 先返回 `allowed:false` 而非 hook 先被 Claude Code 超时杀掉
+> （approve.sh curl -m 65 同理留 5s 余量）。本机实际注册路径为
+> `/home/cury/harness-monitor/resources/hooks/approve.sh`（D1 打包后改为安装路径）。
 
 ---
 
@@ -1045,8 +1077,8 @@ interface ElectronAPI {
   getConfig(): Promise<AppConfig>
   saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>  // M10：返回合并后配置 + 重调度，写失败 reject
   manualRefresh(): Promise<void>
-  jumpToTerminal(cwd: string): Promise<boolean>
-  terminateSession(pid: number): Promise<boolean>
+  jumpToTerminal(cwd: string, pid?: number): Promise<boolean>  // 2026-07-31：pid 供聚焦已有窗口（§6.8.4）
+  terminateSession(pid: number): Promise<boolean>  // 2026-07-31 语义：关闭会话所在终端窗口（非直杀进程）
   respondApproval(id: string, allowed: boolean): Promise<boolean>
   togglePin(pinned: boolean): Promise<void>
 
