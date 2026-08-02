@@ -18,6 +18,7 @@
 | M9 Sessions 视图 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 16:09 | commit 2c0b99a；SessionCard/ApprovalBlock/ApprovalHistory + 状态灯；GUI 延后并入批量审；globals.css 提交含 M8 段（归属串，无碍） |
 | M10 设置视图 | P1 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 17:33 | commit a722e3b；saveConfig 抛出 + 重调度 / General+Limits / Quit；GUI 全项实测通过 |
 | M11 端到端测试 + approve.sh | P0 | ✅ 完成 | 通过(42项) | E2E 即验收 | 2026-07-30 17:57 | approve.sh d4264c6；E2E 42 项通过/0 失败/4 肉眼项用户确认 |
+| M12 审批镜像轮（归档后修订） | P0 | 🔄 进行中 | — | — | | hook 全工具中继 + permission-mirror + 批准写规则（Plan B）；实测 hook 权限 JSON 全被 2.1.207 忽略 |
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
@@ -28,6 +29,7 @@
 - 2026-07-31 上午 session 显示名修复（3b0693e，transcript 首条用户消息优先）
 - 2026-07-31 下午 会话卡片 6 项反馈修复轮（cdf4130 + a0086b0 + hook 注册）——详见日志末条
 - 2026-07-31 傍晚 Sessions/审批四项体验增强轮（ee9f436：审批描述 / 卡片最近任务 / 自动审批开关 / 动效提速）——详见日志末条
+- 2026-08-03 凌晨 审批镜像轮启动（M12：工具审批面 ≡ 终端询问面；实测 hook 权限 JSON 三格式全被 2.1.207 忽略 → Plan B「批准 = 写 allow 规则」，用户拍板永久写入）——详见日志末条
 
 ---
 
@@ -490,6 +492,18 @@
 - 收尾三件套：① commit ee9f436（12 文件 +336/−22）✅ ② 无新起实例/无孤儿 ✅ ③ 本日志 ✅
 - 遗留（待用户重启实例加载新构建后 E2E）：F3 实机自动放行（开关 ON → approve.sh 请求立即 allowed:true + 历史 allowed=1 + 托盘不闪橙 + 无卡片）／ F4 0.5s 淡出观感 ／ F1 审批卡描述行与 F2 卡片任务行渲染观感——受单实例锁 + 不动 18456 约束，本轮 GUI 验证跳过（用户实例本为旧构建，看到任何新功能都需重启）
 
+### 2026-08-03 01:11:00 ｜ 归档后修订 ｜ 审批镜像轮（M12）开始
+- 背景：用户 2026-07-31 夜反馈——"终端界面出现的、需要我授权的请求同步弹到工具里；终端未出现的请求，则不出现在工具里"。只读调查三定根因：① approve.sh 读 `.tool_use.input`、当前 2.1.207 发**顶层 `tool_input`**（捕获实锤）→ 审批卡 command/description 恒空（F1 stub 自测用旧格式掩盖了真实漂移）② matcher 仅 Bash + 无条件拦截 → 超集（settings.local.json 580 条 allow 规则全被无视，每条 Bash 都弹空卡）+ 缺集（Edit/WebFetch 等终端询问不进工具）
+- 实测排障（临时捕获包装器 + settings.json 热替换，用完即复原、diff 验证字节一致）：
+  - hook 输入 schema 捕获：顶层 tool_input / session_id / cwd / **permission_mode**（本会话 acceptEdits）/ tool_use_id
+  - **hook stdout 权限 JSON 三轮标记命令实测（用户终端肉眼确认）**：hookSpecificOutput.permissionDecision:"allow" 单独 / legacy {"decision":"approve"} 单独 / 三格式组合——**全被忽略，终端照常弹原生询问** → "工具批准 = 终端不再问"无法靠 hook 输出声明实现
+- 用户拍板（AskUserQuestion 四轮）：双向全镜像 ／ 静默放行不落库 ／ 批准 = **永久**写入 allow 规则（Plan B，与终端"允许并不再询问"同机制）／ 开发期 approve.sh 临时直通（终端原生权限流接管，已加 TEMP exit 0 段，E2E 换新实现时删）
+- 开发期副作用说明：直通起，本机所有会话的审批闸门 = 终端原生权限流（工具不介入）；期间空卡误拒开发命令数起（根因①的直接体现）
+- 方案定稿（蓝图已回写）：DESIGN v3.3（头部变更注记 / §5.3 流程重绘 / §6.5 /approve 前置管线 / §6.12 类型勘误+toolInput/permissionMode / §6.13 hook 全工具薄中继+快速通道+schema 两路兼容+注册 matcher "" / 新 §6.14 permission-mirror 六小节）+ REQUIREMENTS FR-3 改名+FR-3.1 重写+FR-3.10/3.11 新增 + TASKS §1 注记+§15 M12 任务+验收
+- 已知缺口（登记）：会话内临时授权不可观测 → 工具可能多弹一次卡（无害）；规则匹配子集实现，偏差方向恒为多弹卡/终端兜底；enterprise settings / CLI --allowedTools 不求值（单机工具）
+- 交接：F1-F4 的 GUI E2E 遗留项随 M12 收尾的用户实例重启一并核销（都需要重启载新构建）
+- 派发：开发+测试合并 subagent（共享文件多——approve.sh/server/types/UI/config，串行单 agent；高速档），完成后主对话 diff 复核 + E2E（matcher "" 切换 + 双向保真 + 批准写规则实写 + 用户肉眼）
+
 ---
 
-**下一步**：① 用户重启实例加载全量修复（#1~#5 + 四项增强；重启后顺带核销 F1/F2/F3/F4 的 GUI E2E 遗留项）；② 按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（timeout 70000ms）+ xdotool 声明可选依赖）；D2 暂缓。
+**下一步**：M12 开发派发 → diff 复核 → E2E（settings.json matcher "" 切换 + 双向保真实测 + 批准写规则落 settings.local.json 实证 + 核销开发期直通段 + 顺带核销 F1-F4 GUI 遗留）→ 收尾三件套；其后延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（timeout 70000ms、matcher ""）+ xdotool 声明可选依赖）；D2 暂缓。

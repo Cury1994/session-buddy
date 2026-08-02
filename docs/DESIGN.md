@@ -1,6 +1,8 @@
 # harness-monitor — 设计文档
 
-> 版本 v3.2 | 2026-07-27 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
+> 版本 v3.3 | 2026-08-03 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
+>
+> **v3.3 变更**（2026-08-03 审批镜像轮，实测驱动）：① §5.3 审批流重绘——POST /approve 前置镜像过滤（passthrough/ask 二分）+ 批准写 allow 规则；② 新 §6.14 permission-mirror（四层规则合并求值 + persistAllowRule + 命令摘要单一真源）；③ §6.13 approve.sh 改全工具薄中继 + 快速通道 + hook 输入 schema 两路兼容（2.1.207 顶层 tool_input 实测勘误）；④ §6.12 ApprovalPayload + toolInput/permissionMode、tool 改实际工具名。决策依据：hook stdout 三种权限 JSON 实测全被 2.1.207 忽略 → Plan B（工具批准 = 写 allow 规则，与终端"允许并不再询问"同机制）；用户 2026-08-03 拍板永久写入。
 >
 > **v3.2 变更**（蓝图裁剪，用户逐项确认）：
 > ① 用量视图删统计卡（今日 token / 本月用量 / 千 token 均价 — DeepSeek API 不返回，原为假数据）与余额进度条（API 不返回总预算，无分母），趋势线改画 30 天**余额**走势、原生 SVG 实现（删 Recharts 依赖）；
@@ -403,17 +405,25 @@ renderer:
 ### 5.3 审批全流程
 
 ```
-[Claude Code preToolUse hook fires]
-  → approve.sh reads stdin JSON
-  → curl -X POST http://127.0.0.1:18456/approve -d @- (阻塞)
+[Claude Code PreToolUse hook 触发（matcher "" = 全工具，2026-08-03 审批镜像轮）]
+  → approve.sh 读 stdin JSON（两路兼容：顶层 tool_input（2.1.207+ 实测格式）
+    // 旧版 tool_use.input；含 permission_mode / tool_name / 原始 tool_input，§6.13.1）
+  → 【快速通道】tool_name ∈ {Glob,Grep,LS,Task,TodoWrite}（永不询问工具）→ 直接 exit 0
+    （不解析其余字段、不 curl——结构性免疫 server 故障对高频只读工具的影响，§6.13.2）
+  → 其余工具 → curl -X POST http://127.0.0.1:18456/approve -d @-（阻塞）
+    BODY: {harness, tool, session, cwd, description, toolInput(原始对象), permissionMode}
 
 [Express POST /approve]
-  → parse body → {harness, session, command, cwd, tool, description}
-      // description：命令的人类可读摘要（Bash hook 输入自带 .tool_use.input.description，
-      // approve.sh 透传，2026-07-31 增），仅用于审批卡实时展示，不落历史库（可空）
+  → parse body（command 由 server 从 toolInput 按工具构建，§6.5 前置管线）
+  → 【镜像过滤前置，2026-08-03 增】mirrorFilter(tool, toolInput, cwd, permissionMode)（§6.14）
+      判定"终端此刻会不会弹原生询问"：
+      ├─ passthrough（不会弹：permission_mode 短路 / allow 规则命中 / deny 规则命中
+      │    交还引擎原生拦截 / Read 在项目内）→ 立即返回 {"action":"passthrough"}
+      │    → 不入队 / 不落库 / 不通知 / 不置橙 / 不 push（工具完全静默）
+      └─ ask（会弹）→ 进入审批流（下）
   → 【F3 自动审批早退，2026-07-31 增】若模块级 autoApprove flag 为 true：
-      db.recordApproval(..., true)（复用唯一落库点记 allowed=1）→ 返回 {"id":"", "allowed":true}
-      → 不入队 / 不通知 / 不置橙 / 不 push（渲染端从没有这张卡）。开关见 §6.11 approval:set-auto-approve
+      persistAllowRule()（§6.14.5，镜像轮增）→ db.recordApproval(..., true)
+      → 返回 {"allowed":true}（不入队 / 不通知 / 不置橙 / 不 push）。开关见 §6.11
   → approvalQueue.enqueue(payload) → {id, promise}
   → win.webContents.send("approval:pending", {id, ...payload})
   → notifications.notifyApproval(payload)
@@ -425,7 +435,7 @@ renderer:
   → SegmentedControl Sessions 分段 badge 更新
   → SessionCard 展开 <ApprovalBlock>
 
-[User clicks Approve]
+[用户在工具里批准]
   → window.electronAPI.respondApproval(id, true)
     → IPC → ipcMain.handle("approval:respond")
       → approvalQueue.respond(id, true)
@@ -433,14 +443,24 @@ renderer:
       → win.webContents.send("approval:resolved", {id, allowed: true})
 
 [POST /approve 的 await 恢复处（唯一落库点，M5 勘误）]
+  → allowed=true 时先 persistAllowRule()（§6.14.5；响应前完成写盘 → 引擎必读到，无竞态；
+    写失败仅 log，降级为终端再问一次，无害）
   → db.recordApproval(harness, session, command, cwd, allowed)
-      // 单一落库点：approve / deny / 超时 auto-deny 三路径都经此，超时审批不漏记
+      // 单一落库点：approve / deny / 超时 auto-deny 三路径都经此；passthrough 不经此（不落库）
   → refreshTrayColor()   // 优先级协议 红>橙>绿（computeTrayColor），非字面置绿
   → Express returns {"id", "allowed"}
 
 [approve.sh]
-  → curl response {"allowed": true}
-  → grep "allowed.*true" → exit 0 → command executes
+  → {"action":"passthrough"} 或 {"allowed":true} → exit 0
+      → 权限引擎接管：allow 规则（含刚写入的）命中 → 静默执行，终端不再弹
+  → {"allowed":false} → exit 2 拦截
+
+设计依据（2026-08-03 实测，详见 §6.14.1）：本机 Claude Code 2.1.207 对 hook stdout 的三种
+权限 JSON（hookSpecificOutput.permissionDecision / 顶层 permissionDecision / legacy
+decision:approve）**全部忽略**——hook 无法以输出 JSON 压制终端原生询问。故"工具批准=完事"
+改由 Plan B 实现：批准 = 写 allow 规则 + exit 0，让权限引擎自己得出"放行且不询问"的结论
+（与终端"允许并不再询问"同机制）。镜像过滤的兜底同理：任何误判为 passthrough 而终端实际
+会问的情况，引擎仍弹原生询问——失败模式恒无害。
 ```
 
 ### 5.4 设置保存
@@ -605,6 +625,8 @@ BrowserWindow 配置:
 | GET | `/api/approvals` | `handleGetApprovals` | 当前 pending 审批 |
 | POST | `/approve` | `handleApprove` | **阻塞式**审批 |
 | POST | `/approve/:id/respond` | `handleRespond` | 解析指定审批 |
+
+**POST /approve 前置管线（2026-08-03 审批镜像轮）**：请求解析后**先过 §6.14 `mirrorFilter()`**——判定 `passthrough` 立即返回 `{"action":"passthrough"}`（不入队 / 不落库 / 不通知 / 不置橙 / 不 push）；判定 `ask` 才进入 F3 早退检查 → 入队 → 阻塞等待。批准路径（含 F3 早退）在响应前调 `persistAllowRule()` 写 allow 规则，其后才是唯一落库点 `recordApproval`（三路径不变量不破）。`command` 字段由 server 的 `buildCommandSummary(tool, toolInput)` 构建（Bash: `.command`；Edit/Write/Read: 文件路径；WebFetch: URL；WebSearch: query；其余: 截断 JSON 摘要）——审批卡内容单一真源，修复旧版 approve.sh 字段错位（读 `.tool_use.input`、实际发 `tool_input`）导致的**空卡 bug**。
 
 **端口冲突处理（v3.2 简化）**：`config.server.port` 默认 `18456`。单机单用户工具，端口被占几乎必然是旧版进程（Python 版或本应用）未退出：
 
@@ -923,10 +945,12 @@ export interface BalanceDailySnapshot {
 export interface ApprovalPayload {
   harness: string             // "claude-code"
   session: string             // session 名 / id
-  command: string             // 待审批命令全文
+  command: string             // 待审批内容摘要（server buildCommandSummary 从 toolInput 按工具构建，§6.5 前置管线；Bash 为命令全文）
   cwd: string                 // 工作目录
-  tool: string                // "Bash"
-  description: string         // 命令的人类可读摘要（Bash hook 输入 .tool_use.input.description；approve.sh 透传，仅实时展示不落库，可空；F1，2026-07-31 增）
+  tool: string                // 实际工具名（hook 输入 tool_name：Bash/Edit/Write/WebFetch/Skill/mcp__*…；2026-08-03 勘误，原固定 "Bash"）
+  description: string         // 命令的人类可读摘要（Bash hook 输入自带 description；approve.sh 透传，仅实时展示不落库，可空；F1，2026-07-31 增）
+  toolInput: Record<string, unknown>  // hook 输入原始 tool_input 对象（§6.14 规则求值 + 批准写规则用；2026-08-03 审批镜像轮增）
+  permissionMode: string      // hook 输入 permission_mode（default/acceptEdits/bypassPermissions/plan，空按 default；2026-08-03 审批镜像轮增）
 }
 
 /** 队列内审批项 = payload + 运行时字段（§6.6 getAll()） */
@@ -959,7 +983,7 @@ export interface ApprovalResponse {
 
 ### 6.13 approve.sh — Hook 脚本设计（REVIEW #2）
 
-> 对应 **FR-3.1（P0）**。脚本位于 `resources/hooks/approve.sh`，作为 Claude Code 的 **PreToolUse** hook（匹配 `tool_name == "Bash"`）注册到 `~/.claude/settings.json` 的 `hooks.PreToolUse`。
+> 对应 **FR-3.1 / FR-3.10（P0）**。脚本位于 `resources/hooks/approve.sh`，作为 Claude Code 的 **PreToolUse** hook 注册到 `~/.claude/settings.json` 的 `hooks.PreToolUse`。**matcher 为空串 = 匹配所有工具**（2026-08-03 审批镜像轮）：脚本对"永不询问"工具（Glob/Grep/LS/Task/TodoWrite）走快速通道立即 exit 0，其余工具原样薄中继到 server，由 §6.14 镜像过滤判定弹卡与否——mirror 逻辑集中在 server（TS 可测），脚本保持薄、版本漂移隔离在脚本的字段兼容层。
 
 #### 6.13.1 Claude Code hook 传入的 stdin JSON schema
 
@@ -979,15 +1003,25 @@ Claude Code 触发 PreToolUse hook 时，向脚本 **stdin** 写入如下 JSON�
 }
 ```
 
-#### 6.13.2 字段提取（command / cwd）
+**2026-08-03 实测补全**：
+- 顶层含 `permission_mode`（`default` / `acceptEdits` / `bypassPermissions` / `plan`），透传给 §6.14 模式短路；
+- 非 Bash 工具的 `tool_input` 形态各异（Edit: `{file_path, old_string, new_string}`；WebFetch: `{url, prompt}`；Read: `{file_path, …}`）——脚本整体透传原始对象，不按工具拆字段；
+- **版本漂移**：旧版 Claude Code 曾把输入嵌套在 `tool_use.input` 下（本机 2026-07-30 前实现期可用，2026-08-03 捕获实锤顶层 `tool_input`；旧版 approve.sh 只读嵌套路径 → 审批卡 command/description 恒空，F1 stub 自测用旧格式掩盖了漂移）。脚本两路兼容读取（`.tool_input.* // .tool_use.input.*`）。
+
+#### 6.13.2 字段提取与快速通道
 
 用 `jq` 从 stdin 提取（需声明 `jq` 依赖）：
 
 | 目标 | jq 表达式 | 回退 |
 |------|-----------|------|
-| command | `.tool_input.command` | 空 → 非 Bash 或无命令，直接放行 |
-| cwd | `.cwd` // `.tool_input.path` 所在目录 | 空 → `.` |
+| tool_name | `.tool_name` | 空 → 异常输入，exit 0 放行 |
+| tool_input（原始对象） | `.tool_input // .tool_use.input`（`jq -c` 整体透传） | `{}` |
+| description | `(.tool_input // .tool_use.input).description` | 空串（仅 Bash 自带） |
+| permission_mode | `.permission_mode` | 空 → server 按 `default` 处理 |
+| cwd | `.cwd` | 空 → `.` |
 | session | `.session_id` | 空 → `"unknown"` |
+
+**快速通道**（`case "$tool" in Glob|Grep|LS|Task|TodoWrite) exit 0;; esac`）：这五个工具在任何权限模式下终端都不弹询问，提前退出——不解析其余字段、不 curl，结构性免疫 server 故障/延迟对高频只读工具的影响。**不得**把会弹询问的工具（Read 越界 / Bash / Edit / Write / WebFetch / WebSearch / Skill / mcp__*）放入此列表。
 
 #### 6.13.3 请求与超时处理
 
@@ -1003,20 +1037,26 @@ SERVER="http://127.0.0.1:${PORT}"
 CURL_MAX=65
 
 input="$(cat)"
-command=$(jq -r '.tool_input.command // empty' <<<"$input")
+tool=$(jq -r '.tool_name // empty' <<<"$input")
+
+# 快速通道：永不询问工具直接放行（§6.13.2）
+case "$tool" in Glob|Grep|LS|Task|TodoWrite) exit 0 ;; esac
+
+tool_input=$(jq -c '(.tool_input // .tool_use.input // {})' <<<"$input")
+description=$(jq -r '(.tool_input // .tool_use.input).description // empty' <<<"$input")
+permission_mode=$(jq -r '.permission_mode // empty' <<<"$input")
 cwd=$(jq -r '.cwd // empty' <<<"$input")
 session=$(jq -r '.session_id // "unknown"' <<<"$input")
 
-# 非 Bash / 无 command → 放行
-[[ -z "$command" ]] && exit 0
-
-# 阻塞式 POST；-m 总超时，-sS 静默但保留错误
+# 阻塞式 POST；command 由 server 从 tool_input 构建（单一真源，§6.5/§6.14）
 response=$(curl -sS -m "$CURL_MAX" \
   -X POST "$SERVER/approve" \
   -H 'Content-Type: application/json' \
-  -d "$(jq -n --arg h claude-code --arg s "$session" \
-            --arg c "$command" --arg w "$cwd" \
-            '{harness:$h, session:$s, command:$c, cwd:$w, tool:"Bash"}')" \
+  -d "$(jq -n --arg h claude-code --arg t "$tool" --arg s "$session" \
+            --arg w "$cwd" --arg d "$description" --arg m "$permission_mode" \
+            --argjson ti "$tool_input" \
+            '{harness:$h, tool:$t, session:$s, cwd:$w, description:$d,
+              permissionMode:$m, toolInput:$ti}')" \
   2>/dev/null)
 curl_status=$?
 ```
@@ -1034,12 +1074,17 @@ curl_status=$?
 #### 6.13.4 响应解析与 exit code 约定
 
 ```bash
-# 服务端返回 {"allowed": true} 或 {"allowed": false}
-if grep -q '"allowed"[[:space:]]*:[[:space:]]*true' <<<"$response"; then
-  exit 0        # approve → 命令执行
+# 服务端响应三种（§5.3 / §6.14）：
+#   {"action":"passthrough"}  镜像过滤判定终端不会弹 → exit 0（引擎按规则放行/原生拦截）
+#   {"allowed": true}         用户在工具批准（server 已写 allow 规则）→ exit 0 → 引擎静默放行
+#   {"allowed": false}        拒绝 / 超时 auto-deny → exit 2 拦截
+action=$(jq -r '.action // empty' <<<"$response")
+allowed=$(jq -r '.allowed // empty' <<<"$response")
+if [[ "$action" == "passthrough" || "$allowed" == "true" ]]; then
+  exit 0
 else
-  echo "harness-monitor 已拒绝该命令: $command" >&2
-  exit 2        # deny → Claude Code 拦截此工具调用
+  echo "harness-monitor 已拒绝: $tool 调用" >&2
+  exit 2
 fi
 ```
 
@@ -1052,6 +1097,8 @@ fi
 | 其他非零 | error（非阻塞错误） | 命令**仍会执行**，stderr 写入 transcript |
 
 > ⚠️ 关键点：Claude Code 的 PreToolUse hook 中**只有 exit 2 能真正拦截命令**；exit 1 被视为"非阻塞错误"，命令照常执行。因此拒绝必须用 `exit 2`（配合 stderr 说明原因），这也是 §5.3 数据流 "deny → 命令不执行" 的唯一正确实现。本节约定与 REVIEW #2 建议的 `0/1/2` 的差异正源于此。
+>
+> **为何放行不输出权限 JSON**：2026-08-03 实测本机 2.1.207 忽略 hook stdout 的全部三种权限控制 JSON（`hookSpecificOutput.permissionDecision` / 顶层 `permissionDecision` / legacy `{"decision":"approve"}`，详见 §6.14.1）。放行一律靠 **exit 0 + 权限引擎规则**（批准时 server 已写入 allow 规则），而非 hook 输出声明。
 
 #### 6.13.5 注册方式
 
@@ -1062,7 +1109,7 @@ fi
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "",
         "hooks": [
           { "type": "command", "command": "/path/to/resources/hooks/approve.sh", "timeout": 70000 }
         ]
@@ -1077,6 +1124,75 @@ fi
 > **70000**（70s）＞ curl -m 65 ＞ server 60s auto-deny，确保正常情况下 server 先
 > 返回 `allowed:false` 而非 hook 先超时。本机实际注册路径为
 > `/home/cury/harness-monitor/resources/hooks/approve.sh`（D1 打包后改为安装路径）。
+> **matcher 空串 = 匹配所有工具**（审批镜像轮起；永不询问工具由脚本快速通道过滤，§6.13.2）。
+
+---
+
+### 6.14 permission-mirror.ts — 权限镜像模块（2026-08-03 审批镜像轮）
+
+> 对应 **FR-3.10 / FR-3.11**。目标：**工具审批面 ≡ 终端原生询问面**（⊆ 且 ⊇）。两个职责：① `mirrorFilter()` 判定"终端此刻会不会弹原生询问"（不会 → passthrough 静默；会 → ask 弹卡）；② `persistAllowRule()` 在工具批准时写 allow 规则，使 exit 0 后权限引擎静默放行（Plan B，见 §6.14.1）。
+
+#### 6.14.1 决策背景（实测驱动）
+
+2026-08-03 实测（Claude Code 2.1.207，hook 输入捕获 + 三轮标记命令 + 用户终端肉眼确认）：
+- hook 输入字段为**顶层 `tool_input`**（approve.sh 旧读 `.tool_use.input` → 审批卡命令内容恒空，本轮修，§6.13.1）；
+- 输入含 `permission_mode`（default/acceptEdits/bypassPermissions/plan）；
+- hook stdout 的三种权限 JSON（`hookSpecificOutput.permissionDecision:"allow"` / 顶层 `permissionDecision` / legacy `{"decision":"approve"}`）**均被忽略**，终端照常弹原生询问。
+
+结论：hook 无法用输出 JSON 跳过终端询问 → "工具批准 = 终端不再问"必须由权限引擎自己得出 → 批准动作 = 写入引擎可识别的 allow 规则（与终端"允许并不再询问"完全同机制）。用户 2026-08-03 拍板：**永久写入**（精确规则串；可预期、与既有 580 条规则的增长模式一致）。
+
+#### 6.14.2 mirrorFilter(tool, toolInput, cwd, permissionMode) → 'passthrough' | 'ask'
+
+求值顺序（短路）：
+1. `permissionMode === 'bypassPermissions'` → passthrough（该模式终端从不询问）
+2. `permissionMode === 'acceptEdits'` 且 tool ∈ 编辑类（Edit/Write/NotebookEdit）→ passthrough
+3. 命中合并后 **deny** 规则 → passthrough（交还引擎原生拦截，保持终端语义）
+4. 命中合并后 **allow** 规则 → passthrough
+5. 工具默认表：Read 且解析后路径在 cwd 内 → passthrough；Glob/Grep/LS/Task/TodoWrite 由 approve.sh 快速通道处理（不到此）；其余（Bash/Edit/Write/WebFetch/WebSearch/Skill/mcp__*/Read 越界/未知工具）→ 无规则命中即 **ask**
+6. `plan` 模式按 default 处理（宁可多弹卡，失败模式无害）
+
+> 失败模式分析：passthrough 误判（终端实际会问）→ 引擎仍弹原生询问，用户在终端决定——无害；ask 误判（终端实际不问）→ 工具多弹一张卡——本模块的质量指标就是消除它，规则求值精度即质量。
+
+#### 6.14.3 规则来源与合并
+
+读取四层 settings 的 `permissions.allow` / `permissions.deny` 取**并集**（与 Claude Code 权限合并语义一致）：① `~/.claude/settings.json`　② `~/.claude/settings.local.json`　③ `<cwd>/.claude/settings.json`　④ `<cwd>/.claude/settings.local.json`
+
+- 按文件 mtime 缓存解析结果（statSync 廉价重校验，无需 fs.watch）；项目层（③④）以请求 cwd 为键缓存（不同会话 cwd 不同，不可全局缓存）
+- 明确不求值的规则源（已知缺口，登记备查）：enterprise managed settings、CLI `--allowedTools`、**会话内临时授权**（内存态不可观测 → 工具可能多弹一次卡，点批准等价放行，无害）
+- 文件缺失/损坏 → 该层视为空（不抛）
+
+#### 6.14.4 规则匹配语义（子集实现，偏差恒无害）
+
+| 规则形式 | 匹配 |
+|---|---|
+| `Tool`（无括号） | 该工具所有调用（如 `WebSearch`） |
+| `Bash(cmd)` | 精确相等 |
+| `Bash(cmd *)` / `Bash(cmd:*)` | 前缀匹配（剥尾部 `*` 与可选 `:`） |
+| `Read/Edit/Write(path)` | 路径 glob：首部 `//` 视作绝对路径（与终端写入形式一致，如 `Read(//sys/**)`）、`~` 展开、相对路径按 cwd 解析、`**`→`.*`、`*`→`[^/]*` |
+| `WebFetch(domain:host)` | 请求 URL hostname === host 或以 `.host` 结尾 |
+| `Skill(name)` / `mcp__server__tool` | 名称相等（支持尾部 `*` 前缀） |
+
+复合 Bash 命令（顶层 `;` `&&` `||` `|` 与换行分隔）：引擎按子命令逐一校验，mirrorFilter 同语义（**全部**子命令被覆盖才算命中）。引号内分隔符的误切属已知边界 → 偏差方向为多弹卡（无害）。
+
+#### 6.14.5 persistAllowRule(tool, toolInput) — 批准写规则
+
+在 HTTP 响应**之前**完成写盘（server 写 → 响应 approve.sh → exit 0 → 引擎读规则，时序确定无竞态）。写入 **`~/.claude/settings.local.json`**（用户既有 580 条规则的同库同格式；跨项目生效，与用户既有习惯一致）。规则形式按工具：
+
+| 工具 | 写入规则 |
+|---|---|
+| Bash | 每个子命令一条精确 `Bash(<子命令>)`（顶层分隔符切分，best-effort） |
+| Read/Edit/Write | `Tool(<绝对路径>)` |
+| WebFetch | `WebFetch(domain:<hostname>)` |
+| WebSearch / Skill | 裸 `WebSearch` / `Skill(<name>)` |
+| mcp__* | 精确全名 |
+
+- 原子写（parse → `permissions.allow` 追加去重 → tmp+rename，沿用 M2 原子写模式）
+- 文件不存在 / 无 `permissions` 段 → 建结构；解析失败 → 备份原文件（`.bak-<timestamp>`）后重建最小结构（不毁用户数据）
+- 写失败（权限等）→ 仅 log + 正常返回 allowed:true（降级：终端再问一次，无害）
+
+#### 6.14.6 可测性
+
+`electron.vite.config.ts` 增 `permission-mirror` 独立入口（同 deepseek/claude-sessions 模式），裸 node 验收：规则求值用例（取用户 settings.local.json 真实样本）+ 规则写入（HOME 隔离沙箱，见 TASKS §15）。
 
 ---
 

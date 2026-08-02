@@ -62,11 +62,11 @@
 | FR-2.7 | 跳转终端 | 优先聚焦会话所在的已有终端窗口（X11：xdotool 按终端祖先 pid 定位，多窗口按标题筛选）；不可用时（Wayland / 无 xdotool）在会话实际工作目录开系统终端（kgx → gnome-terminal → xterm 回退）（2026-07-31 修订） | P1 |
 | FR-2.8 | 关闭终端 | 关闭会话所在的那一个终端窗口：SIGTERM 该 tty 的根 shell → 模拟器关窗/标签 → 会话随 pty hangup 退出；无控制终端（后台会话）→ 行内提示（2026-07-31 修订，原"终止 Session：SIGTERM 直杀进程"） | P1 |
 
-### FR-3: Bash 命令审批
+### FR-3: 工具调用审批（审批镜像轮起扩至全工具）
 
 | ID | 功能 | 详细描述 | 优先级 |
 |----|------|---------|--------|
-| FR-3.1 | Hook 脚本 | Bash 脚本 `approve.sh`：从 stdin 读 JSON → `POST /approve` → 阻塞等待 → 解析响应决定 exit 0（放行）/ 2（拦截，遵循 Claude Code PreToolUse hook 规范） | P0 |
+| FR-3.1 | Hook 脚本 | Bash 脚本 `approve.sh`：**全工具 PreToolUse hook**（matcher 空串）；永不询问工具（Glob/Grep/LS/Task/TodoWrite）快速通道 exit 0 不联网；其余工具中继 `POST /approve` → 阻塞等待 → 解析响应决定 exit 0（放行）/ 2（拦截，遵循 Claude Code PreToolUse hook 规范）；hook 输入字段两路兼容（顶层 `tool_input` / 旧版 `tool_use.input`） | P0 |
 | FR-3.2 | 审批阻塞 | 服务端创建 Promise/Future 挂起 HTTP 请求，超时 60 秒自动 deny | P0 |
 | FR-3.3 | 审批卡片 | 对应 session 卡片底部展开审批块：完整命令文本、危险命令警告标签、批准/拒绝/复制按钮 | P0 |
 | FR-3.4 | 危险检测 | 命令中含 `sudo`/`rm`/`chmod`/`chown`/`dd`/`mkfs`/`>` 时高亮警告 | P0 |
@@ -74,6 +74,8 @@
 | FR-3.6 | 结果动画 | 批准/拒绝后审批块 2 秒淡出消失 | P1 |
 | FR-3.7 | 审批历史 | SQLite 持久化每条审批决议，面板底部可折叠展示最近 20 条（含时间戳） | P1 |
 | FR-3.8 | 桌面通知 | 新审批到达时发送 Electron 桌面通知，内容包含 session 名和命令预览 | P1 |
+| FR-3.10 | 审批镜像 | **工具审批面 ≡ 终端原生询问面**（2026-08-03 审批镜像轮）：server 前置镜像过滤（合并四层 settings allow/deny 规则 + permission_mode 短路 + 工具默认询问表）——终端不会弹的请求静默放行（不入队 / 不落库 / 不通知 / 不置橙）；终端会弹的才弹审批卡，**含非 Bash 工具**（Edit/Write/WebFetch/WebSearch/Skill/mcp__* 等，卡带工具徽章与真实请求内容） | P0 |
+| FR-3.11 | 批准写规则 | 工具批准 = 写 allow 规则（永久、精确串，与终端"允许并不再询问"同机制）：响应前原子写入 `~/.claude/settings.local.json`，exit 0 后权限引擎静默放行，终端不再二次询问（2026-08-03 实测 hook stdout 三种权限 JSON 全被 2.1.207 忽略，此为唯一确定性方案，用户拍板永久写入）；写失败降级为终端再问一次（无害） | P0 |
 
 > FR-3.9 终端并行审批（Ctrl+C 拒绝 / 另开窗口 curl 响应）→ 移入「延后项」，见 §5。
 
