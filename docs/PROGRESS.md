@@ -18,7 +18,7 @@
 | M9 Sessions 视图 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 16:09 | commit 2c0b99a；SessionCard/ApprovalBlock/ApprovalHistory + 状态灯；GUI 延后并入批量审；globals.css 提交含 M8 段（归属串，无碍） |
 | M10 设置视图 | P1 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 17:33 | commit a722e3b；saveConfig 抛出 + 重调度 / General+Limits / Quit；GUI 全项实测通过 |
 | M11 端到端测试 + approve.sh | P0 | ✅ 完成 | 通过(42项) | E2E 即验收 | 2026-07-30 17:57 | approve.sh d4264c6；E2E 42 项通过/0 失败/4 肉眼项用户确认 |
-| M12 审批镜像轮（归档后修订） | P0 | 🔄 进行中 | — | — | | hook 全工具中继 + permission-mirror + 批准写规则（Plan B）；实测 hook 权限 JSON 全被 2.1.207 忽略 |
+| M12 审批镜像轮（归档后修订） | P0 | 🔄 进行中 | — | — | | hook 全工具中继 + permission-mirror + 批准输出权限 JSON（Plan A，01:26 实测生效；Plan B 已被污染实测误导，翻转） |
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
@@ -29,7 +29,7 @@
 - 2026-07-31 上午 session 显示名修复（3b0693e，transcript 首条用户消息优先）
 - 2026-07-31 下午 会话卡片 6 项反馈修复轮（cdf4130 + a0086b0 + hook 注册）——详见日志末条
 - 2026-07-31 傍晚 Sessions/审批四项体验增强轮（ee9f436：审批描述 / 卡片最近任务 / 自动审批开关 / 动效提速）——详见日志末条
-- 2026-08-03 凌晨 审批镜像轮启动（M12：工具审批面 ≡ 终端询问面；实测 hook 权限 JSON 三格式全被 2.1.207 忽略 → Plan B「批准 = 写 allow 规则」，用户拍板永久写入）——详见日志末条
+- 2026-08-03 凌晨 审批镜像轮启动（M12：工具审批面 ≡ 终端询问面；早先"hook 权限 JSON 全被忽略"结论被复原弹窗污染，01:26 零干扰实测翻转 → Plan A「批准 = 输出权限 JSON」）——详见日志末二条
 
 ---
 
@@ -503,6 +503,15 @@
 - 已知缺口（登记）：会话内临时授权不可观测 → 工具可能多弹一次卡（无害）；规则匹配子集实现，偏差方向恒为多弹卡/终端兜底；enterprise settings / CLI --allowedTools 不求值（单机工具）
 - 交接：F1-F4 的 GUI E2E 遗留项随 M12 收尾的用户实例重启一并核销（都需要重启载新构建）
 - 派发：开发+测试合并 subagent（共享文件多——approve.sh/server/types/UI/config，串行单 agent；高速档），完成后主对话 diff 复核 + E2E（matcher "" 切换 + 双向保真 + 批准写规则实写 + 用户肉眼）
+
+### 2026-08-03 01:26:21 ｜ 归档后修订 ｜ 审批镜像轮 实测翻转 + 方案回调 Plan B → Plan A
+- 起因：01:11 并行派发的文档研究 agent 返回（856s）——v2.1.207 二进制静态分析：Zod schema 非严格（未知键剥除不拒绝）、legacy `decision:"approve"` 与 `hookSpecificOutput.permissionDecision` 皆支持且新格式覆盖旧格式、exit 0 + stdout 纯 JSON 才解析、JSON allow 不覆盖任意作用域 deny/ask 规则——与早先三轮"全被忽略"实测正面矛盾
+- 污染根因：此前每轮标记测试后紧跟一条**复原配置命令**（未覆盖规则 → 终端原生流必弹一次），该弹窗被当成标记命令的；用户多轮回答"弹了"时实际看到的是复原命令的询问（01:06 单 legacy 轮后"弹了的"、组合轮后"弹了的"皆为此污染；首轮 wrapper-active 证据真实但用户未盯屏）
+- 零干扰复测（01:24-01:26）：改 approve.sh TEMP 诊断段对 MIRRORCAP-TEST 命令输出规范形 permissionDecision allow JSON——真实注册路径（无 settings 切换 = 无热更新疑问）、无后续命令（= 无弹窗干扰）；首轮 echo/seq 存会话级临时授权干扰嫌疑 → 次轮换 `sha256sum`（会话全新 + 任何规则表均无）→ **用户全程目视确认：没弹、直接执行（01:26:21）** → hook 权限 JSON 生效结论确立
+- 方案回调（Plan A，默认执行并向用户披露）：工具批准 → approve.sh 输出权限 JSON 压制终端二问；Plan B 的 persistAllowRule / 规则写入管线 / FR-3.11 原义（永久写规则）全废；批准 = 一次性语义；永久化登记 **延后项 D4**（审批卡勾选，Plan B 规则写入设计备装，见 commit 806165f 之 §6.14.5）；用户先前"永久写入"拍板的前提（JSON 无效）已推翻，据此回调
+- fail-safe 不对称设计：拦截不托付 JSON（解析失败 = fail-open 安全洞）→ exit 2 + stderr；放行 JSON 解析失败降级"终端再问一次"（无害）
+- 蓝图原地重写：DESIGN v3.3（头注 / §5.3 流程 / §6.5 前置管线 / §6.13.4 三态含 JSON 输出 / §6.14.1 翻转实录 / §6.14 引言去 persistAllowRule / 删 §6.14.5、6.14.6→6.14.5）/ REQUIREMENTS FR-3.11 重写 / TASKS §15 任务与验收瘦身 + §13 D4 / 本日志
+- approve.sh TEMP 诊断段恢复简单直通，静候新实现整体替换
 
 ---
 

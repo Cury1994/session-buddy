@@ -2,7 +2,7 @@
 
 > 版本 v3.3 | 2026-08-03 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
 >
-> **v3.3 变更**（2026-08-03 审批镜像轮，实测驱动）：① §5.3 审批流重绘——POST /approve 前置镜像过滤（passthrough/ask 二分）+ 批准写 allow 规则；② 新 §6.14 permission-mirror（四层规则合并求值 + persistAllowRule + 命令摘要单一真源）；③ §6.13 approve.sh 改全工具薄中继 + 快速通道 + hook 输入 schema 两路兼容（2.1.207 顶层 tool_input 实测勘误）；④ §6.12 ApprovalPayload + toolInput/permissionMode、tool 改实际工具名。决策依据：hook stdout 三种权限 JSON 实测全被 2.1.207 忽略 → Plan B（工具批准 = 写 allow 规则，与终端"允许并不再询问"同机制）；用户 2026-08-03 拍板永久写入。
+> **v3.3 变更**（2026-08-03 审批镜像轮，实测驱动）：① §5.3 审批流重绘——POST /approve 前置镜像过滤（passthrough/ask 二分）+ 批准输出权限 JSON 压制终端二问；② 新 §6.14 permission-mirror（四层规则合并求值 + 命令摘要单一真源）；③ §6.13 approve.sh 改全工具薄中继 + 快速通道 + hook 输入 schema 两路兼容（2.1.207 顶层 tool_input 实测勘误）；④ §6.12 ApprovalPayload + toolInput/permissionMode、tool 改实际工具名。决策依据：2026-08-03 01:26 零干扰实测（会话全新命令 sha256sum）确认 hook stdout `hookSpecificOutput.permissionDecision:"allow"` **生效**——此前"三格式全被忽略"的实测结论被每轮紧随的复原命令之原生弹窗污染；故采 **Plan A**（工具批准 → 输出权限 JSON，settings 文件零侵入，一次性批准语义；永久化见 TASKS §13 D4）。
 >
 > **v3.2 变更**（蓝图裁剪，用户逐项确认）：
 > ① 用量视图删统计卡（今日 token / 本月用量 / 千 token 均价 — DeepSeek API 不返回，原为假数据）与余额进度条（API 不返回总预算，无分母），趋势线改画 30 天**余额**走势、原生 SVG 实现（删 Recharts 依赖）；
@@ -422,7 +422,7 @@ renderer:
       │    → 不入队 / 不落库 / 不通知 / 不置橙 / 不 push（工具完全静默）
       └─ ask（会弹）→ 进入审批流（下）
   → 【F3 自动审批早退，2026-07-31 增】若模块级 autoApprove flag 为 true：
-      persistAllowRule()（§6.14.5，镜像轮增）→ db.recordApproval(..., true)
+      db.recordApproval(..., true)（复用唯一落库点记 allowed=1）
       → 返回 {"allowed":true}（不入队 / 不通知 / 不置橙 / 不 push）。开关见 §6.11
   → approvalQueue.enqueue(payload) → {id, promise}
   → win.webContents.send("approval:pending", {id, ...payload})
@@ -443,24 +443,29 @@ renderer:
       → win.webContents.send("approval:resolved", {id, allowed: true})
 
 [POST /approve 的 await 恢复处（唯一落库点，M5 勘误）]
-  → allowed=true 时先 persistAllowRule()（§6.14.5；响应前完成写盘 → 引擎必读到，无竞态；
-    写失败仅 log，降级为终端再问一次，无害）
   → db.recordApproval(harness, session, command, cwd, allowed)
       // 单一落库点：approve / deny / 超时 auto-deny 三路径都经此；passthrough 不经此（不落库）
   → refreshTrayColor()   // 优先级协议 红>橙>绿（computeTrayColor），非字面置绿
   → Express returns {"id", "allowed"}
 
 [approve.sh]
-  → {"action":"passthrough"} 或 {"allowed":true} → exit 0
-      → 权限引擎接管：allow 规则（含刚写入的）命中 → 静默执行，终端不再弹
-  → {"allowed":false} → exit 2 拦截
+  → {"action":"passthrough"} → exit 0（不输出 JSON）→ 权限引擎接管：
+      allow 规则命中 → 静默执行；deny 规则命中 → 原生拦截（保持终端语义）
+  → {"allowed":true} → stdout 输出 {"hookSpecificOutput":{"hookEventName":"PreToolUse",
+      "permissionDecision":"allow",...}} + exit 0 → 引擎跳过原生询问 → 命令执行
+      （JSON 解析失败降级为正常流程 → 终端再问一次，无害）
+  → {"allowed":false} → exit 2 拦截（拦截不托付 JSON：解析失败会 fail-open 出安全洞；
+      exit 2 的拦截语义不依赖 JSON 解析，fail-safe）
 
-设计依据（2026-08-03 实测，详见 §6.14.1）：本机 Claude Code 2.1.207 对 hook stdout 的三种
-权限 JSON（hookSpecificOutput.permissionDecision / 顶层 permissionDecision / legacy
-decision:approve）**全部忽略**——hook 无法以输出 JSON 压制终端原生询问。故"工具批准=完事"
-改由 Plan B 实现：批准 = 写 allow 规则 + exit 0，让权限引擎自己得出"放行且不询问"的结论
-（与终端"允许并不再询问"同机制）。镜像过滤的兜底同理：任何误判为 passthrough 而终端实际
-会问的情况，引擎仍弹原生询问——失败模式恒无害。
+设计依据（2026-08-03 实测）：早先三轮"hook 权限 JSON 全被忽略"的结论确认为**污染**——
+每轮实测后紧跟一条未覆盖规则的复原命令（终端必弹一次），其原生询问被误认为标记命令的。
+01:26 零干扰复测（标记命令含会话全新、规则表未覆盖的 `sha256sum`，无后续命令，用户全程
+目视）：输出 `hookSpecificOutput.permissionDecision:"allow"` 后**没弹、直接执行** → JSON 生效
+（与研究 agent 的 2.1.207 二进制静态分析一致：Zod schema 非严格、新旧格式皆支持、新格式
+覆盖旧格式）。故 Plan A：批准 = 输出权限 JSON，不写 settings 规则（Plan B 及其
+persistAllowRule 作废；永久化见 TASKS §13 D4）。镜像过滤的兜底不变：误判 passthrough
+而终端实际会问时引擎仍弹原生询问——失败模式恒无害。另：JSON allow 不能覆盖 deny/ask
+规则（任意 settings 作用域），与镜像过滤的 deny→passthrough 语义恰好自洽。
 ```
 
 ### 5.4 设置保存
@@ -626,7 +631,7 @@ BrowserWindow 配置:
 | POST | `/approve` | `handleApprove` | **阻塞式**审批 |
 | POST | `/approve/:id/respond` | `handleRespond` | 解析指定审批 |
 
-**POST /approve 前置管线（2026-08-03 审批镜像轮）**：请求解析后**先过 §6.14 `mirrorFilter()`**——判定 `passthrough` 立即返回 `{"action":"passthrough"}`（不入队 / 不落库 / 不通知 / 不置橙 / 不 push）；判定 `ask` 才进入 F3 早退检查 → 入队 → 阻塞等待。批准路径（含 F3 早退）在响应前调 `persistAllowRule()` 写 allow 规则，其后才是唯一落库点 `recordApproval`（三路径不变量不破）。`command` 字段由 server 的 `buildCommandSummary(tool, toolInput)` 构建（Bash: `.command`；Edit/Write/Read: 文件路径；WebFetch: URL；WebSearch: query；其余: 截断 JSON 摘要）——审批卡内容单一真源，修复旧版 approve.sh 字段错位（读 `.tool_use.input`、实际发 `tool_input`）导致的**空卡 bug**。
+**POST /approve 前置管线（2026-08-03 审批镜像轮）**：请求解析后**先过 §6.14 `mirrorFilter()`**——判定 `passthrough` 立即返回 `{"action":"passthrough"}`（不入队 / 不落库 / 不通知 / 不置橙 / 不 push）；判定 `ask` 才进入 F3 早退检查 → 入队 → 阻塞等待。批准路径响应 `{"allowed":true}`，由 approve.sh 输出权限 JSON 压制终端二问（§6.13.4）；唯一落库点 `recordApproval` 位置不动（三路径不变量不破）。`command` 字段由 server 的 `buildCommandSummary(tool, toolInput)` 构建（Bash: `.command`；Edit/Write/Read: 文件路径；WebFetch: URL；WebSearch: query；其余: 截断 JSON 摘要）——审批卡内容单一真源，修复旧版 approve.sh 字段错位（读 `.tool_use.input`、实际发 `tool_input`）导致的**空卡 bug**。
 
 **端口冲突处理（v3.2 简化）**：`config.server.port` 默认 `18456`。单机单用户工具，端口被占几乎必然是旧版进程（Python 版或本应用）未退出：
 
@@ -1075,12 +1080,16 @@ curl_status=$?
 
 ```bash
 # 服务端响应三种（§5.3 / §6.14）：
-#   {"action":"passthrough"}  镜像过滤判定终端不会弹 → exit 0（引擎按规则放行/原生拦截）
-#   {"allowed": true}         用户在工具批准（server 已写 allow 规则）→ exit 0 → 引擎静默放行
-#   {"allowed": false}        拒绝 / 超时 auto-deny → exit 2 拦截
+#   {"action":"passthrough"}  镜像过滤判定终端不会弹 → exit 0（不输出 JSON，引擎按规则走）
+#   {"allowed": true}         用户在工具批准 → 输出 permissionDecision allow + exit 0 → 引擎跳过询问
+#   {"allowed": false}        拒绝 / 超时 auto-deny → exit 2 拦截（拦截不托付 JSON，fail-safe）
 action=$(jq -r '.action // empty' <<<"$response")
 allowed=$(jq -r '.allowed // empty' <<<"$response")
-if [[ "$action" == "passthrough" || "$allowed" == "true" ]]; then
+if [[ "$action" == "passthrough" ]]; then
+  exit 0
+elif [[ "$allowed" == "true" ]]; then
+  # 压制终端原生二问：2026-08-03 01:26 零干扰实测确认本格式被 2.1.207 尊重（§6.14.1）
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Approved in harness-monitor"}}\n'
   exit 0
 else
   echo "harness-monitor 已拒绝: $tool 调用" >&2
@@ -1098,7 +1107,7 @@ fi
 
 > ⚠️ 关键点：Claude Code 的 PreToolUse hook 中**只有 exit 2 能真正拦截命令**；exit 1 被视为"非阻塞错误"，命令照常执行。因此拒绝必须用 `exit 2`（配合 stderr 说明原因），这也是 §5.3 数据流 "deny → 命令不执行" 的唯一正确实现。本节约定与 REVIEW #2 建议的 `0/1/2` 的差异正源于此。
 >
-> **为何放行不输出权限 JSON**：2026-08-03 实测本机 2.1.207 忽略 hook stdout 的全部三种权限控制 JSON（`hookSpecificOutput.permissionDecision` / 顶层 `permissionDecision` / legacy `{"decision":"approve"}`，详见 §6.14.1）。放行一律靠 **exit 0 + 权限引擎规则**（批准时 server 已写入 allow 规则），而非 hook 输出声明。
+> **放行/拦截的不对称设计**：放行输出 `hookSpecificOutput.permissionDecision:"allow"`（2026-08-03 01:26 零干扰实测确认 2.1.207 尊重本格式，见 §6.14.1）以压制终端原生二问；其解析失败降级为正常流程（终端再问一次，无害）。拦截不托付 JSON 而用 exit 2——JSON deny 若解析失败会 fail-open（命令照跑），是安全洞；exit 2 的拦截语义不依赖 JSON 解析，fail-safe。
 
 #### 6.13.5 注册方式
 
@@ -1130,7 +1139,7 @@ fi
 
 ### 6.14 permission-mirror.ts — 权限镜像模块（2026-08-03 审批镜像轮）
 
-> 对应 **FR-3.10 / FR-3.11**。目标：**工具审批面 ≡ 终端原生询问面**（⊆ 且 ⊇）。两个职责：① `mirrorFilter()` 判定"终端此刻会不会弹原生询问"（不会 → passthrough 静默；会 → ask 弹卡）；② `persistAllowRule()` 在工具批准时写 allow 规则，使 exit 0 后权限引擎静默放行（Plan B，见 §6.14.1）。
+> 对应 **FR-3.10 / FR-3.11**。目标：**工具审批面 ≡ 终端原生询问面**（⊆ 且 ⊇）。核心职责：`mirrorFilter()` 判定"终端此刻会不会弹原生询问"（不会 → passthrough 静默；会 → ask 弹卡）。终端二问的压制由 approve.sh 放行时输出权限 JSON 完成（§6.13.4，Plan A，见 §6.14.1）。
 
 #### 6.14.1 决策背景（实测驱动）
 
@@ -1139,7 +1148,7 @@ fi
 - 输入含 `permission_mode`（default/acceptEdits/bypassPermissions/plan）；
 - hook stdout 的三种权限 JSON（`hookSpecificOutput.permissionDecision:"allow"` / 顶层 `permissionDecision` / legacy `{"decision":"approve"}`）**均被忽略**，终端照常弹原生询问。
 
-结论：hook 无法用输出 JSON 跳过终端询问 → "工具批准 = 终端不再问"必须由权限引擎自己得出 → 批准动作 = 写入引擎可识别的 allow 规则（与终端"允许并不再询问"完全同机制）。用户 2026-08-03 拍板：**永久写入**（精确规则串；可预期、与既有 580 条规则的增长模式一致）。
+结论**翻转**（2026-08-03 01:26）：早先三轮"忽略"实测均被污染——每轮之后紧跟一条未覆盖规则的复原命令（终端必弹一次），其原生询问被误认为标记命令的。零干扰复测（标记命令含会话全新、规则表未覆盖的 `sha256sum`，无后续命令，用户全程目视）：输出 `hookSpecificOutput.permissionDecision:"allow"` 后**没弹、直接执行** → JSON 生效，与二进制静态分析一致（2.1.207 Zod schema 非严格，新旧格式皆支持，新格式覆盖旧格式；JSON allow 不覆盖任意作用域的 deny/ask 规则）。故采 **Plan A**：批准 = 输出权限 JSON，**不写 settings 规则**（Plan B 的 persistAllowRule 作废；永久化需求登记 TASKS §13 D4，届时 Plan B 机制可作为勾选实现原装备用）。
 
 #### 6.14.2 mirrorFilter(tool, toolInput, cwd, permissionMode) → 'passthrough' | 'ask'
 
@@ -1174,23 +1183,7 @@ fi
 
 复合 Bash 命令（顶层 `;` `&&` `||` `|` 与换行分隔）：引擎按子命令逐一校验，mirrorFilter 同语义（**全部**子命令被覆盖才算命中）。引号内分隔符的误切属已知边界 → 偏差方向为多弹卡（无害）。
 
-#### 6.14.5 persistAllowRule(tool, toolInput) — 批准写规则
-
-在 HTTP 响应**之前**完成写盘（server 写 → 响应 approve.sh → exit 0 → 引擎读规则，时序确定无竞态）。写入 **`~/.claude/settings.local.json`**（用户既有 580 条规则的同库同格式；跨项目生效，与用户既有习惯一致）。规则形式按工具：
-
-| 工具 | 写入规则 |
-|---|---|
-| Bash | 每个子命令一条精确 `Bash(<子命令>)`（顶层分隔符切分，best-effort） |
-| Read/Edit/Write | `Tool(<绝对路径>)` |
-| WebFetch | `WebFetch(domain:<hostname>)` |
-| WebSearch / Skill | 裸 `WebSearch` / `Skill(<name>)` |
-| mcp__* | 精确全名 |
-
-- 原子写（parse → `permissions.allow` 追加去重 → tmp+rename，沿用 M2 原子写模式）
-- 文件不存在 / 无 `permissions` 段 → 建结构；解析失败 → 备份原文件（`.bak-<timestamp>`）后重建最小结构（不毁用户数据）
-- 写失败（权限等）→ 仅 log + 正常返回 allowed:true（降级：终端再问一次，无害）
-
-#### 6.14.6 可测性
+#### 6.14.5 可测性
 
 `electron.vite.config.ts` 增 `permission-mirror` 独立入口（同 deepseek/claude-sessions 模式），裸 node 验收：规则求值用例（取用户 settings.local.json 真实样本）+ 规则写入（HOME 隔离沙箱，见 TASKS §15）。
 

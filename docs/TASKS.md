@@ -567,6 +567,7 @@ npm run dev
 | D1 | 打包（.deb / AppImage）+ 开机自启 + chrome-sandbox SUID 固化 + electron-rebuild postinstall 固化（M5 发现：native 模块需按 Electron ABI 重建，全新安装必须走 postinstall） | FR-6.6 / 旧 M15 / M1+M5 遗留 | 前期直接 `npm run dev` / electron 跑源码自用 |
 | D2 | 终端并行审批：hook 输出提示到终端，Ctrl+C 拒绝 / 另开窗口 curl 响应 | FR-3.9 | 面板批准/拒绝已覆盖主路径 |
 | D3 | 审批超时时间可配置 | FR-5.4 | v1 固定 60 秒 |
+| D4 | 审批卡「不再询问」勾选：勾选批准则写 allow 规则永久化（Plan B 规则写入机制已设计备装，见 git 历史 806165f 之 §6.14.5） | FR-3.11 | Plan A 一次性语义覆盖主路径；待真实诉求 |
 
 ---
 
@@ -583,18 +584,17 @@ npm run dev
 
 ## 15. M12 — 审批镜像轮（归档后修订，2026-08-03）
 
-> 背景：用户要求"终端界面出现的、需要授权的请求同步弹到工具；终端未出现的不弹"。实测三定根因：① approve.sh 读 `.tool_use.input`、当前 Claude Code 2.1.207 发**顶层 `tool_input`** → 审批卡内容恒空（F1 stub 自测用旧格式掩盖了真实漂移）；② hook matcher 仅 Bash 且无条件拦截 → 超集（settings.local.json 580 条 allow 规则全被无视，每条 Bash 都弹卡）+ 缺集（Edit/WebFetch 等终端询问不进工具）；③ hook stdout 三种权限 JSON 全被 2.1.207 忽略 → 放行改走 Plan B（批准 = 写 allow 规则，用户拍板永久写入）。设计见 DESIGN §5.3（流程图）/ §6.14（镜像模块）/ §6.13（hook 改造）/ §6.5（/approve 前置管线）；需求见 REQUIREMENTS FR-3.10/3.11。
+> 背景：用户要求"终端界面出现的、需要授权的请求同步弹到工具；终端未出现的不弹"。实测三定根因：① approve.sh 读 `.tool_use.input`、当前 Claude Code 2.1.207 发**顶层 `tool_input`** → 审批卡内容恒空（F1 stub 自测用旧格式掩盖了真实漂移）；② hook matcher 仅 Bash 且无条件拦截 → 超集（settings.local.json 580 条 allow 规则全被无视，每条 Bash 都弹卡）+ 缺集（Edit/WebFetch 等终端询问不进工具）；③ hook 权限 JSON 实测**翻转**：早先三轮"全被忽略"结论系每轮紧随的复原命令之原生弹窗污染（01:26 零干扰复测：会话全新命令 sha256sum 没弹、直接执行）→ Plan A（批准 = 输出 permissionDecision JSON，终端不二问；一次性语义，永久化见 §13 D4）。设计见 DESIGN §5.3（流程图）/ §6.14（镜像模块）/ §6.13（hook 改造）/ §6.5（/approve 前置管线）；需求见 REQUIREMENTS FR-3.10/3.11。
 
 ### 任务
 
-1. **approve.sh 全工具薄中继**（§6.13）：字段两路兼容（`tool_input` // `tool_use.input`）；快速通道（Glob/Grep/LS/Task/TodoWrite → exit 0，不 curl）；BODY 携带 tool（tool_name）/ toolInput（原始对象，jq --argjson）/ description / permissionMode / session / cwd；响应三态（`{"action":"passthrough"}` 或 `allowed:true` → exit 0；`allowed:false` → exit 2）；**删除开发期临时直通段**（`set -euo pipefail` 后的 TEMP exit 0）
+1. **approve.sh 全工具薄中继**（§6.13）：字段两路兼容（`tool_input` // `tool_use.input`）；快速通道（Glob/Grep/LS/Task/TodoWrite → exit 0，不 curl）；BODY 携带 tool（tool_name）/ toolInput（原始对象，jq --argjson）/ description / permissionMode / session / cwd；响应三态：`{"action":"passthrough"}` → exit 0（不输出 JSON）；`allowed:true` → stdout 输出 hookSpecificOutput permissionDecision allow JSON（§6.13.4，末行 printf 逐字照抄）+ exit 0；`allowed:false` → exit 2 + stderr（拦截不托付 JSON）；**删除开发期临时直通/诊断段**（`set -euo pipefail` 后的 TEMP 段）
 2. **src/main/permission-mirror.ts**（§6.14，新模块）：
    - `loadMergedRules(cwd)`：四层 settings allow/deny 并集，mtime 缓存（项目层按 cwd 键）；缺失/损坏层视为空
    - `mirrorFilter(tool, toolInput, cwd, permissionMode)` → `'passthrough' | 'ask'`（§6.14.2 求值序：模式短路 → deny → allow → 工具默认表）
    - 规则匹配（§6.14.4 子集语义）：裸工具名；Bash 精确 / 尾部 `*`（含 `:*`）前缀；复合命令按顶层分隔符切分、**全部子命令**覆盖才算命中；路径 glob（首部 `//` 绝对形、`~` 展开、相对按 cwd、`**`/`*`）；`WebFetch(domain:x)` hostname；`Skill(name)` / mcp 全名
-   - `persistAllowRule(tool, toolInput)`：§6.14.5 按工具生成规则 → 原子追加 `~/.claude/settings.local.json`（去重 / 建结构 / 损坏备份重建 / 失败仅 log 不抛）
    - `buildCommandSummary(tool, toolInput)`：卡内容单一真源（Bash: command；Edit/Write/Read: file_path；WebFetch: url；WebSearch: query；其余: 截断 JSON）
-3. **server.ts /approve 前置管线**（§6.5）：mirrorFilter passthrough → 立即 `{"action":"passthrough"}`（不入队/不落库/不通知/不置橙/不 push）；ask → F3 早退（**加 persistAllowRule**）→ 入队；批准恢复处**先 persistAllowRule 后 recordApproval**（唯一落库点位置不动）；command 改用 buildCommandSummary；payload 带 toolInput/permissionMode
+3. **server.ts /approve 前置管线**（§6.5）：mirrorFilter passthrough → 立即 `{"action":"passthrough"}`（不入队/不落库/不通知/不置橙/不 push）；ask → F3 早退（逻辑不变）→ 入队；批准恢复处 recordApproval（位置不动，§5.3），响应 `{"allowed":true}`；command 改用 buildCommandSummary；payload 带 toolInput/permissionMode
 4. **shared/types.ts**：ApprovalPayload + `toolInput: Record<string, unknown>` / `permissionMode: string`，tool/command 注释勘误（§6.12）
 5. **ApprovalBlock 工具徽章**：显示真实工具名徽章（非 Bash 尤其醒目）；description 回退文案用真实 tool 名
 6. **electron.vite.config.ts**：permission-mirror 独立入口（裸 node 验收用）
@@ -603,7 +603,6 @@ npm run dev
 
 1. `npm run build` 三入口零错误 + 双 strict typecheck 零错误
 2. 裸 node 规则求值（取用户 `~/.claude/settings.local.json` 真实规则样本）：`Bash(curl *)` 前缀命中 / 精确命中 / 未覆盖 miss；复合命令全覆盖与半覆盖；`Read(//sys/**)` 绝对 glob 命中；`WebFetch(domain:github.com)` 命中（含子域）；裸 `WebSearch`；deny 命中 → passthrough；bypassPermissions → passthrough；acceptEdits+Edit → passthrough；Read cwd 内 → passthrough / 越界 → ask；未知工具 → ask
-3. 裸 node 规则写入（HOME 沙箱，**不碰真实 settings**）：既有文件追加去重 + 其他段不毁；无文件建结构；损坏文件备份重建；目录只读 → 不抛仅 log
-4. approve.sh stub（`HARNESS_MONITOR_PORT=19999`）自测：Bash 中继 BODY 含 toolInput/permissionMode/description（新 schema）；Edit 形输入中继；快速通道工具**不触达 stub**（stub 零请求）且立即 exit 0；旧版 `tool_use.input` 输入兼容解析；passthrough / allowed:true / allowed:false / 无响应 fail-open 四态
-5. 不变量（自测 + 交主对话 diff 复核）：recordApproval 唯一落库点（passthrough 不落 / F3 一次 / ask 一次）；F3 早退含 persistAllowRule；全仓无占位桩
-6. 约束：用户常驻实例（pid 见 PROGRESS，18456）**全程不触碰**；`~/.claude` 只读（规则写入真实文件归 E2E）；验证用 stub 结束即关；GUI 验证延后并入主对话 E2E（单实例锁约束，同 07-31 四轮模式）
+3. approve.sh stub（`HARNESS_MONITOR_PORT=19999`）自测：Bash 中继 BODY 含 toolInput/permissionMode/description（新 schema）；Edit 形输入中继；快速通道工具**不触达 stub**（stub 零请求）且立即 exit 0；旧版 `tool_use.input` 输入兼容解析；四态——passthrough→exit 0 无 stdout JSON / allowed:true→exit 0 且 stdout 为含 `permissionDecision:"allow"` 的合法 JSON（jq 可解析）/ allowed:false→exit 2 + stderr 且无 stdout JSON / 无响应 fail-open exit 0
+4. 不变量（自测 + 交主对话 diff 复核）：recordApproval 唯一落库点（passthrough 不落 / F3 一次 / ask 一次）；全仓无占位桩
+5. 约束：用户常驻实例（pid 见 PROGRESS，18456）**全程不触碰**；`~/.claude` 只读；验证用 stub 结束即关；GUI 验证延后并入主对话 E2E（单实例锁约束，同 07-31 四轮模式）
