@@ -8,6 +8,9 @@
  * 命令：等宽、黑底(#1e1e1e)白字(#e0e0e0)、横向滚动；危险关键字高亮 #ff6b6b。
  * [Reject] / [Approve] → respondApproval(id, allowed)。淡出（FR-3.6，2s）由
  * useSessionsData 的 fading 状态驱动：fading 时整块淡出并显示 ✓/✗ 结果标记。
+ *
+ * M12（审批镜像轮）：描述行前置真实工具名徽章（data.tool，hook tool_name）——
+ *   Bash 低调（中性灰），非 Bash 醒目（红调），回退文案用真实工具名（原写死 "Bash"）。
  */
 
 import { useEffect, useState } from 'react'
@@ -111,9 +114,16 @@ function ApprovalBlock({ item }: ApprovalBlockProps): React.JSX.Element {
       )}
 
       <div className="approval-desc">
-        {data.description !== ''
-          ? data.description
-          : `Claude Code 请求执行 ${data.tool} 命令`}
+        <span
+          className={`approval-tool-badge${data.tool === 'Bash' ? '' : ' tool-prominent'}`}
+        >
+          {data.tool}
+        </span>
+        <span className="approval-desc-text">
+          {data.description !== ''
+            ? data.description
+            : `Claude Code 请求执行 ${data.tool} 操作`}
+        </span>
       </div>
 
       <div className="cmd-box">{highlightDanger(data.command)}</div>

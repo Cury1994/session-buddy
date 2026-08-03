@@ -2,6 +2,7 @@ import { app, Notification } from 'electron'
 import express from 'express'
 
 import { notifyApproval } from './notifications'
+import { buildCommandSummary, mirrorFilter } from './permission-mirror'
 
 import type { Server } from 'node:http'
 import type { BrowserWindow } from 'electron'
@@ -146,13 +147,37 @@ export function createServer(deps: ServerDeps): ManagedServer {
    */
   expressApp.post('/approve', async (req, res) => {
     const body = (req.body ?? {}) as Partial<ApprovalPayload>
+    // toolInput：hook 原始 tool_input 对象（approve.sh 经 --argjson 透传）；非纯对象/缺失 → {}
+    const toolInput: Record<string, unknown> =
+      typeof body.toolInput === 'object' &&
+      body.toolInput !== null &&
+      !Array.isArray(body.toolInput)
+        ? body.toolInput
+        : {}
+    const tool = typeof body.tool === 'string' && body.tool !== '' ? body.tool : 'Bash'
+    const cwd = typeof body.cwd === 'string' ? body.cwd : ''
+    const permissionMode = typeof body.permissionMode === 'string' ? body.permissionMode : ''
     const payload: ApprovalPayload = {
       harness: typeof body.harness === 'string' ? body.harness : 'unknown',
       session: typeof body.session === 'string' ? body.session : 'unknown',
-      command: typeof body.command === 'string' ? body.command : '',
-      cwd: typeof body.cwd === 'string' ? body.cwd : '',
-      tool: typeof body.tool === 'string' ? body.tool : 'Bash',
-      description: typeof body.description === 'string' ? body.description : ''
+      // command 单一真源：server 从 toolInput 按工具构建（§6.5 前置管线），修复旧版 approve.sh
+      // 读 .tool_use.input（实际发 tool_input）导致的审批卡空内容 bug。
+      command: buildCommandSummary(tool, toolInput),
+      cwd,
+      tool,
+      description: typeof body.description === 'string' ? body.description : '',
+      toolInput,
+      permissionMode
+    }
+
+    // 镜像过滤前置（§5.3 / §6.14，2026-08-03 审批镜像轮）：判定"终端此刻会不会弹原生询问"。
+    //   passthrough（不会弹）→ 立即返回 {"action":"passthrough"}：
+    //     不入队 / 不落库（不变量 A）/ 不通知 / 不置橙 / 不 push —— 工具完全静默，
+    //     终端原生权限流接管（allow 规则静默执行 / deny 规则原生拦截）。
+    //   ask（会弹）→ 进入 F3 早退检查 → 入队阻塞审批。
+    if (mirrorFilter(tool, toolInput, cwd, permissionMode) === 'passthrough') {
+      res.json({ action: 'passthrough' })
+      return
     }
 
     // 自动审批（F3）：会话级全局开关开启时立即放行。

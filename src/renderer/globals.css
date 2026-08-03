@@ -683,6 +683,27 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  /* M12 工具徽章：真实工具名（hook tool_name）。Bash 低调（中性灰底）；
+     非 Bash 醒目（红调），提示用户这是非命令类工具（Edit/Write/WebFetch/Skill/mcp__*…）的审批 */
+  .approval-tool-badge {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-right: 5px;
+    vertical-align: middle;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-muted);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+  }
+  .approval-tool-badge.tool-prominent {
+    background: color-mix(in srgb, var(--danger-red) 12%, transparent);
+    color: var(--danger-red);
+    border-color: color-mix(in srgb, var(--danger-red) 32%, transparent);
+  }
   .cmd-box {
     background-color: #1e1e1e;
     color: #e0e0e0;

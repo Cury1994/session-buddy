@@ -7,6 +7,7 @@
  * M2 引入：AppConfig 及其嵌套子接口（DESIGN §6.1 / §8.1）。
  * M3 引入：UsageRecord / BalanceDailySnapshot / ApprovalRecord / BalanceInfo（§6.12）。
  * M5 引入：ApprovalPayload / PendingApproval / ApprovalResponse / SessionStatus / SessionInfo（§6.12 / §5.3 / §6.8）。
+ * M12 引入：ApprovalPayload 增 toolInput / permissionMode，tool/command 注释勘误（§6.12 / §6.14 审批镜像轮）。
  */
 
 // ─── 通用工具类型 ───
@@ -112,14 +113,16 @@ export interface ApprovalRecord {
 
 // ─── 审批流程（DESIGN §6.12 / §5.3 / §6.6） ───
 
-/** approve.sh POST /approve 的请求体 / IPC approval:pending 的负载（§5.3） */
+/** approve.sh POST /approve 的请求体 / IPC approval:pending 的负载（§5.3 / §6.12） */
 export interface ApprovalPayload {
   harness: string // "claude-code"
   session: string // session 名 / id
-  command: string // 待审批命令全文
+  command: string // 待审批内容摘要（server buildCommandSummary 从 toolInput 按工具构建，§6.5 前置管线；Bash 为命令全文）
   cwd: string // 工作目录
-  tool: string // "Bash"
-  description: string // 命令的人类可读摘要（hook 提供，可空）；仅实时展示，不落库
+  tool: string // 实际工具名（hook 输入 tool_name：Bash/Edit/Write/WebFetch/Skill/mcp__*…；2026-08-03 勘误，原固定 "Bash"）
+  description: string // 命令的人类可读摘要（Bash hook 输入自带 description；approve.sh 透传，仅实时展示不落库，可空；F1，2026-07-31 增）
+  toolInput: Record<string, unknown> // hook 输入原始 tool_input 对象（§6.14 规则求值 + 摘要构建用；2026-08-03 审批镜像轮增）
+  permissionMode: string // hook 输入 permission_mode（default/acceptEdits/bypassPermissions/plan，空按 default；2026-08-03 审批镜像轮增）
 }
 
 /** 队列内审批项 = payload + 运行时字段（§6.6 getAll()） */
