@@ -265,38 +265,8 @@ function splitTopLevel(command: string): string[] {
   const parts: string[] = []
   let cur = ''
   let quote: string | null = null
-  // heredoc 状态：`<<DELIM` 起进入，直到仅含 DELIM 的终止行（`<<-` 允许前导 tab）为止，
-  // 整段作为**单个子命令**累积，不参与顶层切分——否则 heredoc 正体会被换行切成多段，
-  // 每段都匹配不上前缀规则，导致本应静默的 `python3 - <<'EOF'` 误弹卡（终端把它当一条
-  // 命令命中 `Bash(python3 *)`，工具却因切分误判为 ask）。
-  let heredocDelim: string | null = null
-  let heredocTab = false
-  let bodyLine = ''
-
-  const flush = (): void => {
-    const t = cur.trim()
-    if (t.length > 0) parts.push(t)
-    cur = ''
-  }
-
   for (let i = 0; i < command.length; i++) {
     const c = command[i] as string
-
-    if (heredocDelim !== null) {
-      cur += c
-      if (c === '\n') {
-        const line = heredocTab ? bodyLine.replace(/^\t+/, '') : bodyLine.trim()
-        if (line === heredocDelim) {
-          heredocDelim = null
-          flush() // 终止符独占一行 = 该 heredoc 命令已结束，收段（后续裸换行也应断段）
-        }
-        bodyLine = ''
-      } else {
-        bodyLine += c
-      }
-      continue
-    }
-
     if (quote !== null) {
       cur += c
       if (c === quote) quote = null
@@ -308,67 +278,31 @@ function splitTopLevel(command: string): string[] {
       continue
     }
     if (c === '\n' || c === ';') {
-      flush()
+      parts.push(cur)
+      cur = ''
       continue
     }
     if (c === '&' && command[i + 1] === '&') {
-      flush()
+      parts.push(cur)
+      cur = ''
       i++
       continue
     }
     if (c === '|' && command[i + 1] === '|') {
-      flush()
+      parts.push(cur)
+      cur = ''
       i++
       continue
     }
     if (c === '|') {
-      flush()
+      parts.push(cur)
+      cur = ''
       continue
     }
     cur += c
-
-    // 识别 heredoc 重定向 `<<DELIM`（排除 `<<<` here-string）。引号内已在上面分支消化。
-    if (c === '<' && command[i + 1] === '<' && command[i + 2] !== '<') {
-      let j = i + 2
-      let dash = false
-      if (command[j] === '-') {
-        dash = true
-        j++
-      }
-      const delim = readHeredocDelim(command, j)
-      if (delim !== null) {
-        heredocDelim = delim
-        heredocTab = dash
-        bodyLine = ''
-      }
-    }
   }
-  flush()
-  return parts
-}
-
-/** 读取 `<<` 后的 heredoc 分隔符（支持 `<<EOF` / `<<'EOF'` / `<<"EOF"` / `<<E"O"F` 部分引号，跳过前导空白）。 */
-function readHeredocDelim(command: string, start: number): string | null {
-  let i = start
-  while (i < command.length && /\s/.test(command[i] as string)) i++
-  let delim = ''
-  while (i < command.length) {
-    const c = command[i] as string
-    if (c === '"' || c === "'") {
-      i++
-      while (i < command.length && command[i] !== (c === '"' ? '"' : "'")) {
-        delim += command[i]
-        i++
-      }
-      i++ // 跳过闭合引号
-      continue
-    }
-    // 分隔符边界恒定：空白 / `;` / `<` / `>`（引号只影响正文是否展开，不改边界）
-    if (/[\s;<>]/.test(c)) break
-    delim += c
-    i++
-  }
-  return delim.length > 0 ? delim : null
+  parts.push(cur)
+  return parts.map((p) => p.trim()).filter((p) => p.length > 0)
 }
 
 /**
