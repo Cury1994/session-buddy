@@ -18,7 +18,7 @@
 | M9 Sessions 视图 | P0 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 16:09 | commit 2c0b99a；SessionCard/ApprovalBlock/ApprovalHistory + 状态灯；GUI 延后并入批量审；globals.css 提交含 M8 段（归属串，无碍） |
 | M10 设置视图 | P1 | ✅ 完成 | 通过 | 通过(批量) | 2026-07-29 17:33 | commit a722e3b；saveConfig 抛出 + 重调度 / General+Limits / Quit；GUI 全项实测通过 |
 | M11 端到端测试 + approve.sh | P0 | ✅ 完成 | 通过(42项) | E2E 即验收 | 2026-07-30 17:57 | approve.sh d4264c6；E2E 42 项通过/0 失败/4 肉眼项用户确认 |
-| M12 审批镜像轮（归档后修订） | P0 | 🔄 进行中 | — | — | | hook 全工具中继 + permission-mirror + 批准输出权限 JSON（Plan A，01:26 实测生效；Plan B 已被污染实测误导，翻转） |
+| M12 审批镜像轮（归档后修订） | P0 | ✅ 完成 | 通过(41+36项) | 通过(diff复核×3) | 2026-08-06 01:01 | commits 70f391a+0a6cff7+98308da；E2E 双向保真全项 + F1-F4 GUI 遗留核销 |
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
@@ -30,6 +30,7 @@
 - 2026-07-31 下午 会话卡片 6 项反馈修复轮（cdf4130 + a0086b0 + hook 注册）——详见日志末条
 - 2026-07-31 傍晚 Sessions/审批四项体验增强轮（ee9f436：审批描述 / 卡片最近任务 / 自动审批开关 / 动效提速）——详见日志末条
 - 2026-08-03 凌晨 审批镜像轮启动（M12：工具审批面 ≡ 终端询问面；早先"hook 权限 JSON 全被忽略"结论被复原弹窗污染，01:26 零干扰实测翻转 → Plan A「批准 = 输出权限 JSON」）——详见日志末二条
+- 2026-08-06 凌晨 审批镜像轮完成（M12：E2E 全项通过——静默/询问/非 Bash/deny/F3/历史 tool 列；期间发现并修复 2 项 P2：镜像默认表元工具 + 历史 tool 列；F1-F4 GUI 遗留全核销）——详见日志末条
 
 ---
 
@@ -513,6 +514,22 @@
 - 蓝图原地重写：DESIGN v3.3（头注 / §5.3 流程 / §6.5 前置管线 / §6.13.4 三态含 JSON 输出 / §6.14.1 翻转实录 / §6.14 引言去 persistAllowRule / 删 §6.14.5、6.14.6→6.14.5）/ REQUIREMENTS FR-3.11 重写 / TASKS §15 任务与验收瘦身 + §13 D4 / 本日志
 - approve.sh TEMP 诊断段恢复简单直通，静候新实现整体替换
 
+### 2026-08-06 01:01:21 ｜ 归档后修订 ｜ 审批镜像轮（M12）完成（E2E 全项通过）
+- 开发（08-03 起，开发+测试合并 subagent）：两度 API 超时中断，均 SendMessage 续接原 agent 恢复（07-29 纪律再次生效）
+- commits：70f391a feat(M12) 主体（7 文件 +579/−68）→ 0a6cff7 fix(M12) 垃圾响应 fail-open（复核整改）→ 98308da fix(M12) 镜像默认表元工具 + 历史 tool 列（E2E 整改）
+- diff 复核（主对话 ×3 轮）：不变量 A-E（单落库点 / mirrorFilter 前置 / 快速通道白名单 / 权限 JSON 仅 allowed:true 分支输出 / F3 未破坏）全过；发现 1 项必修回归（垃圾响应误拦，旧版 fail-open）+ agent 连带挖出隐藏 bug（jq `.allowed // empty` 吞 false → deny 分支死代码）
+- 主对话独立复跑：裸 node 镜像求值 18/18（真实规则样本：前缀/复合半全覆/模式短路/越界 Read/域名子域/摘要各分支）；整改轮 agent 累计 41/41 求值 + 36/36 stub 五态
+- **E2E（真实实例 + matcher "" 全工具，用户肉眼确认）**：
+  - 静默路径 ✅：规则覆盖命令（git *）不弹卡完全静默（超集方向修复成立）
+  - 询问路径 ✅：未覆盖命令弹卡带内容（命令文本 + 徽章 + 描述行——字段错位空卡 bug 修复实证）；工具批准 = 一次性完事，终端不二问（Plan A permissionDecision JSON 生产落地）
+  - 非 Bash ✅：WebFetch 未覆盖域弹卡、徽章醒目、内容为 URL（缺集方向修复成立）
+  - deny ✅：拒绝 → exit 2 拦截 + stderr 原因，历史 allowed=0
+  - F3 ✅：开关 ON → 未覆盖命令无卡自动放行 + 托盘不闪橙 + 历史 allowed=1（07-31 GUI 遗留核销）
+- E2E 发现并轮内修复的 2 项 P2：B1 镜像默认表"未知工具→ask"误拦 harness 元工具（AskUserQuestion 实测被拦卡、阻塞主对话提问链路 → NEVER_PROMPT_TOOLS 21 项集合作为求值步 2.5，蓝图已勘误）；B2 recordApproval 缺 tool 参 → 历史 tool 列恒 'Bash'（签名 + INSERT 列补全，无 schema 迁移，蓝图已勘误）
+- 环境坑（本轮新增）：① settings.json 的 hooks 段曾被外部重写移除（08-06 发现，疑似 provider 配置工具覆写），经用户确认后重新注册——**D1 打包时的 hook 一键注册须含完整性校验**；② settings 热加载（删除/注册）数秒内生效，再次实证；③ pkill -f 自匹配陷阱（括号技巧 `harness[-]monitor`）；④ 实测污染教训：标记测试不得紧跟任何未覆盖命令（复原命令的原生弹窗会污染观察）
+- 收尾三件套：① 3 commits 入库 ✅ ② 实例 = 最新构建（98308da）健康在听 18456、无孤儿进程/端口；本轮 /tmp 诊断残留全清（wrapper/captures/stub/验证脚本/过期 settings 备份）✅ ③ 本日志 ✅
+- 遗留：无（F2 卡片任务行用户日用中自然验证，异常随时反馈）
+
 ---
 
-**下一步**：M12 开发派发 → diff 复核 → E2E（settings.json matcher "" 切换 + 双向保真实测 + 批准写规则落 settings.local.json 实证 + 核销开发期直通段 + 顺带核销 F1-F4 GUI 遗留）→ 收尾三件套；其后延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（timeout 70000ms、matcher ""）+ xdotool 声明可选依赖）；D2 暂缓。
+**下一步**：按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（matcher ""、timeout 70000ms，**含注册完整性校验**——本轮 hooks 段曾被外部重写移除）+ xdotool 声明可选依赖）；D4（审批卡"不再询问"勾选，Plan B 规则写入机制已设计备装）可随批评估；D2 暂缓。

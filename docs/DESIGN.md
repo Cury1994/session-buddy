@@ -564,7 +564,7 @@ CREATE INDEX idx_approval_time ON approval_history(timestamp DESC);
 | `recordUsage(provider, model, balance, currency)` | INSERT | 余额快照入库 |
 | `getLatestUsage()` | SELECT MAX(id) GROUP BY provider, model | 用量 View 展示 |
 | `get30DayBalance(provider, model)` | 每日取 MAX(id) 那条快照的 balance + DATE(timestamp) as day | 余额趋势图数据 |
-| `recordApproval(harness, session, cmd, cwd, allowed)` | INSERT | 审批历史入库 |
+| `recordApproval(harness, session, cmd, cwd, tool, allowed)` | INSERT | 审批历史入库（tool = payload 实际工具名；2026-08-06 M12 勘误——原签名缺 tool 参，INSERT 恒走 schema DEFAULT 'Bash'，非 Bash 审批工具列错记） |
 | `getRecentApprovals(limit=20)` | SELECT ORDER BY timestamp DESC, id DESC LIMIT ? | 历史列表 |
 
 ### 6.3 tray.ts — 系统托盘
@@ -1084,16 +1084,23 @@ curl_status=$?
 #   {"allowed": true}         用户在工具批准 → 输出 permissionDecision allow + exit 0 → 引擎跳过询问
 #   {"allowed": false}        拒绝 / 超时 auto-deny → exit 2 拦截（拦截不托付 JSON，fail-safe）
 action=$(jq -r '.action // empty' <<<"$response")
-allowed=$(jq -r '.allowed // empty' <<<"$response")
+# ⚠️ 此处不可用 `.allowed // empty`：jq 的 `//` 把 false 当 falsy 吞成空串，
+#    将无法区分"拒绝"与"垃圾响应"（0a6cff7 勘误）
+allowed=$(jq -r '.allowed' <<<"$response")
 if [[ "$action" == "passthrough" ]]; then
   exit 0
 elif [[ "$allowed" == "true" ]]; then
   # 压制终端原生二问：2026-08-03 01:26 零干扰实测确认本格式被 2.1.207 尊重（§6.14.1）
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Approved in harness-monitor"}}\n'
   exit 0
-else
+elif [[ "$allowed" == "false" ]]; then
   echo "harness-monitor 已拒绝: $tool 调用" >&2
   exit 2
+else
+  # 垃圾 / 无法解析的响应 → fail-open（0a6cff7 勘误：原稿此态归 exit 2 拦截分支，
+  # 回退了"宁可漏审，不可误杀工作流"的 fail-open 语义；拦截仅限显式 allowed:false）
+  echo "harness-monitor 异常响应，放行: $tool 调用" >&2
+  exit 0
 fi
 ```
 
@@ -1155,6 +1162,7 @@ fi
 求值顺序（短路）：
 1. `permissionMode === 'bypassPermissions'` → passthrough（该模式终端从不询问）
 2. `permissionMode === 'acceptEdits'` 且 tool ∈ 编辑类（Edit/Write/NotebookEdit）→ passthrough
+2.5. **`NEVER_PROMPT_TOOLS` 元工具集** → passthrough（98308da 勘误增：AskUserQuestion / Task* / Cron* / Monitor / plan 模式切换 / SendMessage / Workflow / ReportFindings / DesignSync 等 21 个 harness 元工具终端从不弹询问；2026-08-03 E2E 实测发现 AskUserQuestion 被拦成审批卡、阻塞主对话提问链路。正确性唯一真源在此，与 approve.sh 快速通道（高频工具性能层）互补不重叠）
 3. 命中合并后 **deny** 规则 → passthrough（交还引擎原生拦截，保持终端语义）
 4. 命中合并后 **allow** 规则 → passthrough
 5. 工具默认表：Read 且解析后路径在 cwd 内 → passthrough；Glob/Grep/LS/Task/TodoWrite 由 approve.sh 快速通道处理（不到此）；其余（Bash/Edit/Write/WebFetch/WebSearch/Skill/mcp__*/Read 越界/未知工具）→ 无规则命中即 **ask**
