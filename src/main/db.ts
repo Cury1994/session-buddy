@@ -56,9 +56,10 @@ const SELECT_LATEST_USAGE =
 const SELECT_30DAY_BALANCE =
   "SELECT DATE(timestamp) AS day, balance FROM api_usage WHERE id IN (SELECT MAX(id) FROM api_usage WHERE provider = ? AND model = ? AND timestamp >= date('now','localtime','-30 days') GROUP BY DATE(timestamp)) ORDER BY day"
 
-// tool 列省略，由 schema DEFAULT 'Bash' 填充
+// M12 审批镜像轮起全工具审批：tool 列写真值（B2 E2E 整改——原省略该列由
+// DEFAULT 'Bash' 填充，导致非 Bash 审批历史工具列恒错）。
 const INSERT_APPROVAL =
-  'INSERT INTO approval_history (harness, session_name, command, cwd, allowed) VALUES (?, ?, ?, ?, ?)'
+  'INSERT INTO approval_history (harness, session_name, command, cwd, tool, allowed) VALUES (?, ?, ?, ?, ?, ?)'
 
 const SELECT_RECENT_APPROVALS =
   'SELECT * FROM approval_history ORDER BY timestamp DESC, id DESC LIMIT ?'
@@ -192,16 +193,18 @@ export class AppDatabase {
     }
   }
 
+  /** 审批历史落库（唯一落库点在 server.ts POST /approve，§5.3）。tool 为实际工具名（M12 审批镜像轮，B2 整改）。 */
   recordApproval(
     harness: string,
     sessionName: string | null,
     command: string,
     cwd: string | null,
+    tool: string,
     allowed: boolean
   ): void {
     try {
       const stmt = (this.sInsertApproval ??= this.db.prepare<unknown[]>(INSERT_APPROVAL))
-      stmt.run(harness, sessionName, command, cwd, allowed ? 1 : 0)
+      stmt.run(harness, sessionName, command, cwd, tool, allowed ? 1 : 0)
     } catch (err) {
       console.warn(`[db] recordApproval 失败: ${(err as Error).message}`)
     }

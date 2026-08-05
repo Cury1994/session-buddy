@@ -340,12 +340,53 @@ function isWithinCwd(absPath: string, cwd: string): boolean {
   return absPath.startsWith(base)
 }
 
+// ─── 从不弹询问的 harness 元工具（B1 E2E 整改：镜像默认表缺口·超集违规） ───
+
+/**
+ * 终端原生权限流**从不**对这些 harness 元工具弹询问的集合 → mirrorFilter 命中即 passthrough。
+ * 实测根因（E2E）：AskUserQuestion 等元工具原落入兜底"未知工具 → ask"，把主对话提问链路
+ * 拦成审批卡（approval_history 可见 command 为问题 JSON），用户不在时会话停滞。
+ *
+ * 与 approve.sh 快速通道的分工：
+ *   - 快速通道（Glob/Grep/LS/Task/TodoWrite）= **高频只读工具的性能层**——在 curl 之前退出，
+ *     结构性免疫 server 故障/延迟；
+ *   - 本集合 = **正确性唯一真源**——低频元工具不享受性能捷径，经薄中继到达 server 后在此
+ *     passthrough。两表互不重叠、互补；快速通道工具必属"从不询问"，反之不必然。
+ *
+ * ⚠️ 集合里绝不放可能弹询问的工具（Bash/Read/Edit/Write/NotebookEdit/WebFetch/
+ *    WebSearch/Skill/mcp__ 系列）——误收 = 漏审安全洞。
+ */
+const NEVER_PROMPT_TOOLS = new Set<string>([
+  'AskUserQuestion',
+  'TaskCreate',
+  'TaskUpdate',
+  'TaskList',
+  'TaskGet',
+  'TaskOutput',
+  'TaskStop',
+  'PushNotification',
+  'ScheduleWakeup',
+  'CronCreate',
+  'CronDelete',
+  'CronList',
+  'Monitor',
+  'EnterPlanMode',
+  'ExitPlanMode',
+  'EnterWorktree',
+  'ExitWorktree',
+  'SendMessage',
+  'Workflow',
+  'ReportFindings',
+  'DesignSync'
+])
+
 // ─── 对外主入口（§6.14.2） ───
 
 /**
  * 判定"终端此刻会不会弹原生询问"。求值顺序（短路）：
  *   1. bypassPermissions → passthrough（该模式终端从不询问）
  *   2. acceptEdits 且编辑类（Edit/Write/NotebookEdit）→ passthrough
+ *   2.5. NEVER_PROMPT_TOOLS 元工具（终端从不弹询问）→ passthrough（B1 E2E 整改）
  *   3. 命中 deny 规则 → passthrough（交还引擎原生拦截，保持终端语义）
  *   4. 命中 allow 规则 → passthrough
  *   5. 工具默认表：Read 且路径在 cwd 内 → passthrough；
@@ -366,6 +407,11 @@ export function mirrorFilter(
   if (mode === 'acceptEdits' && (tool === 'Edit' || tool === 'Write' || tool === 'NotebookEdit')) {
     return 'passthrough'
   }
+
+  // 2.5 harness 元工具：终端从不弹询问 → 静默放行（模式短路之后、规则求值之前，避免
+  //     未知工具兜底把提问/任务管理/调度类元工具误拦成审批卡——B1 E2E 整改）。
+  //     与 approve.sh 快速通道的分工见 NEVER_PROMPT_TOOLS 注释。
+  if (NEVER_PROMPT_TOOLS.has(tool)) return 'passthrough'
 
   const { allow, deny } = loadMergedRules(cwd)
 

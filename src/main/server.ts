@@ -185,7 +185,7 @@ export function createServer(deps: ServerDeps): ManagedServer {
     //   不入队 / 不通知 / 不置橙 / 不 push —— 渲染端从没有这张卡（无需淡出），托盘不闪橙。
     //   approve.sh 阻塞的 curl 直接收到 allowed:true 放行。
     if (getAutoApprove()) {
-      db.recordApproval(payload.harness, payload.session, payload.command, payload.cwd, true)
+      db.recordApproval(payload.harness, payload.session, payload.command, payload.cwd, payload.tool, true)
       res.json({ id: '', allowed: true })
       return
     }
@@ -212,7 +212,7 @@ export function createServer(deps: ServerDeps): ManagedServer {
     // §5.3 将 recordApproval 画在 respond 分支，但超时 auto-deny 不经过 respond，
     // 若只在 respond 落库会漏记超时记录（M5/M11 验收要求超时也写历史 allowed=0）。
     // 故统一在 await 恢复后落库：promise 仅解析一次 → 每条审批恰好一条历史，无重复。
-    db.recordApproval(payload.harness, payload.session, payload.command, payload.cwd, allowed)
+    db.recordApproval(payload.harness, payload.session, payload.command, payload.cwd, payload.tool, allowed)
 
     // 审批结束（respond 或超时）后按协议复位托盘色。
     // 超时路径不会经过 /respond，必须在此复位，否则托盘滞留橙色。
