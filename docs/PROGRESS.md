@@ -598,7 +598,7 @@
 | M13.3 quota-reader 注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:00 | commit 14fa809；http-json 通用 + bss 签名 + subscription 占位 |
 | M13.4 db 扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:30 | commit 91835dd；billing/unit 列 + 幂等迁移 + 单卡查询 |
 | M13.5 调度泛化 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:50 | commit 450dcb8；startUsageChecker 多卡 + 全局最低告警线 + per-card 告警 |
-| M13.6 IPC + 多卡 UI | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-07 10:30 | commit 待补；多卡渲染 + 槽位卡引导 + 用量源表单 + Tailwind 坑 |
+| M13.6 IPC + 多卡 UI | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-07 10:30 | commit 51d588d；多卡渲染 + 槽位卡引导 + 用量源表单 + Tailwind 坑 |
 | M13.7 文档 + 集成测试 | ⏳ 未开始 | — | — | | 添加厂商指南 + E2E |
 
 **遗留项登记表（M13 新增）**
@@ -671,7 +671,7 @@
 - **【环境坑·Tailwind 3.4】`@layer components` 内类名字符串未在源码字面出现即被构建剥离**：`usage-badge-${card.billing}` 模板拼接 → usage-badge-payg/subscription 被丢弃（零报错、运行时无样式）。修复：`BILLING_BADGE_CLASS` 字面映射（UsageCardCard 导出，SettingsView 复用），构建后逐类核对全在
 - 偏离：limit 字段按实际类型为 JSON 点号路径字符串（quota-reader 对 remaining.limit 做 getPath，非数值）；低余量判定用 per-card warnThreshold（config 最低线仅兜底）
 - 清理：验证实例 18599/9223 已释放，无孤儿；用户实例未触碰（18456 = pid 596626 health OK）；/tmp/hm-m136-home 已删
-- 收尾三件套：① commit 待补 ② 无新起实例、无孤儿 ③ 本日志 ✅
+- 收尾三件套：① commit 51d588d ② 无新起实例、无孤儿 ③ 本日志 ✅
 
 ---
 
