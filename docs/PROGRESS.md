@@ -594,8 +594,8 @@
 | 模块 | 状态 | 单测 | Code Review | 完成时间 | 备注 |
 |------|------|------|-------------|---------|------|
 | M13.1 配置模型扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:20 | commit 4329c0b；usage_sources 计费/接入/提取 + detection 注册表 |
-| M13.2 检测器注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:40 | commit 待补；cc-switch/transcript/manual 合并降级 |
-| M13.3 quota-reader 注册表 | ⏳ 未开始 | — | — | | http-json 通用 + aliyun-bss + 百炼套餐 |
+| M13.2 检测器注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:40 | commit c8643aa；cc-switch/transcript/manual 合并降级 |
+| M13.3 quota-reader 注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:00 | commit 待补；http-json 通用 + bss 签名 + subscription 占位 |
 | M13.4 db 扩展 | ⏳ 未开始 | — | — | | billing/unit + 每卡 30 天趋势 |
 | M13.5 调度泛化 | ⏳ 未开始 | — | — | | 遍历 called 逐个查 + 独立低余量告警 |
 | M13.6 IPC + 多卡 UI | ⏳ 未开始 | — | — | | 余量卡+槽位卡 + 设置页用量源表单 |
@@ -637,6 +637,14 @@
 - 关键处置：better-sqlite3 为 Electron ABI，用 `ELECTRON_RUN_AS_NODE=1 electron` 跑验收（不占端口、不触碰用户实例）；实测 session json 无 model 字段 → transcript 尾部 256KB 逆扫（独立轻量实现，与 tailFacts 同源）
 - 桥接预演：deepseek↔default(cc-switch)、aliyun-bailian↔c3c29ba1…(cc-switch) 匹配成立；1373c51d(AIgC) 零调用不出卡（符合"调用过才出卡"）
 - 偏离：输出排序任务书未规定，自定 evidence 优先级→calls 降序→id 升序（确定性）
+- 收尾三件套：① commit c8643aa ② 无新起实例、无孤儿 ③ 本日志 ✅
+
+### 2026-08-06 16:00:41 ｜ M13.3 ｜ quota-reader 注册表 完成（commit 待补）
+- 派发：开发+测试合并 subagent；注入 kind 分发 + QuotaInfo 统一类型 + JSON 路径提取契约
+- 产出：quota-reader.ts（约 330 行）——readQuota(source) 按 kind 分发；http-json 适配器（bearer/none + getPath 点号+数组下标 + limit 自动算剩余 + 15s 超时）+ aliyun-bss（阿里云 RPC HMAC-SHA1 签名 + QueryAccountBalance 解析 AvailableCashAmount）+ subscription 占位（空 url→null）；electron.vite.config 加 quota-reader 入口
+- 验证全绿：build 三入口 + 双 typecheck 零错误；**真实 DeepSeek 余额 10.77 CNY**（key 经 ~/.bashrc 注入，未入代码/文档/提交）；getPath 10 例边界；limit mock 400；失败态全 null 不抛；**BSS 签名与阿里云官方文档向量 OLeaideS1JvxuMvnyHOwuJ+uX5qY= 一致 + python3 hmac 双重对照**；mock BSS 解析 88.88 CNY；subscription 空 url→null——共 51/51 断言
+- 偏离：无（BSS 无真实 AK 联调过，代码注释已标明首次真实调用需核对时钟/AK 权限）
+- 遗留：百炼套餐端点（subscription 占位）、BSS AccessKey 待用户提供
 - 收尾三件套：① commit 待补 ② 无新起实例、无孤儿 ③ 本日志 ✅
 
 ---
