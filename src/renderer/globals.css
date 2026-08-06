@@ -691,16 +691,15 @@
   .approval-mark {
     font-weight: 700;
   }
-  /* F1 审批描述：命令的人类可读摘要（hook 提供），muted 小字、两行截断，不抢命令框视觉 */
+  /* F1 审批描述：命令的人类可读摘要（hook 提供）。完整展示、随窗口宽度换行，
+   不截断（长摘要/URL 等长无空白 token 用 overflow-wrap 兜底避免撑破窗口） */
   .approval-desc {
     font-size: 12px;
     color: var(--text-muted);
     line-height: 1.4;
     margin-bottom: 6px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   /* M12 工具徽章：真实工具名（hook tool_name）。Bash 低调（中性灰底）；
      非 Bash 醒目（红调），提示用户这是非命令类工具（Edit/Write/WebFetch/Skill/mcp__*…）的审批 */
@@ -731,8 +730,10 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 11px;
     margin-bottom: 10px;
-    white-space: nowrap;
-    overflow-x: auto;
+    /* 完整展示命令：保留命令内换行（heredoc 等）+ 超宽行自动换行，自适应窗口宽度；
+       长无空白 token 用 overflow-wrap 兜底，不再横向滚动截断 */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   .cmd-danger {
     color: #ff6b6b;

@@ -5,7 +5,8 @@
  * auto-deny（config.notifications.approve_timeout_sec，默认 60）。PendingApproval
  * 带 createdAt/timeoutSec → 倒计时；缺省（异常）时回退显示「已等待时长」。
  *
- * 命令：等宽、黑底(#1e1e1e)白字(#e0e0e0)、横向滚动；危险关键字高亮 #ff6b6b。
+ * 命令：等宽、黑底(#1e1e1e)白字(#e0e0e0)、pre-wrap 完整换行自适应窗口；危险关键字高亮 #ff6b6b。
+ * 描述：完整展示不截断（overflow-wrap 兜底长 token），随窗口宽度换行。
  * [Reject] / [Approve] → respondApproval(id, allowed)。淡出（FR-3.6，2s）由
  * useSessionsData 的 fading 状态驱动：fading 时整块淡出并显示 ✓/✗ 结果标记。
  *
