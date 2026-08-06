@@ -593,8 +593,8 @@
 
 | 模块 | 状态 | 单测 | Code Review | 完成时间 | 备注 |
 |------|------|------|-------------|---------|------|
-| M13.1 配置模型扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:20 | commit 待提交；usage_sources 计费/接入/提取 + detection 注册表 |
-| M13.2 检测器注册表 | ⏳ 未开始 | — | — | | cc-switch/claude-sessions/manual 合并降级 |
+| M13.1 配置模型扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:20 | commit 4329c0b；usage_sources 计费/接入/提取 + detection 注册表 |
+| M13.2 检测器注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:40 | commit 待补；cc-switch/transcript/manual 合并降级 |
 | M13.3 quota-reader 注册表 | ⏳ 未开始 | — | — | | http-json 通用 + aliyun-bss + 百炼套餐 |
 | M13.4 db 扩展 | ⏳ 未开始 | — | — | | billing/unit + 每卡 30 天趋势 |
 | M13.5 调度泛化 | ⏳ 未开始 | — | — | | 遍历 called 逐个查 + 独立低余量告警 |
@@ -628,6 +628,15 @@
 - 关键约束遵守：providers.deepseek 过渡保留（M13.5 调度泛化才移除，不破坏现有编译）；M8 类型原样保留
 - 偏离：无。说明：裸 tsc -p tsconfig.web.json 报 TS6307 属存量基线（项目 typecheck 脚本带 --composite false）
 - 蓝图勘误：无
+- 收尾三件套：① commit 4329c0b ② 无新起实例、无孤儿 ③ 本日志 ✅
+
+### 2026-08-06 15:40:12 ｜ M13.2 ｜ 检测器注册表 完成（commit 待补）
+- 派发：开发+测试合并 subagent；注入 detect_ids 桥接设计（cc-switch provider_id ≠ usage_sources.id）
+- 产出：types.ts 各 Source 加 detect_ids + 新增 CalledApi；cc-switch-usage.ts 加 detectCalled（按 provider_id COUNT join name）；detectors.ts 新建注册表（manual 恒生效 + cc-switch 可选 + claude-sessions 扫 model）；config.ts/config.yaml 加 detect_ids（DeepSeek:'default'，百炼两 UUID）；electron.vite.config 加 detectors 入口
+- 验证全绿：build 三入口 + 双 typecheck 零错误；真实 cc-switch 库 detectCalled 6 条（百炼 3313 / DeepSeek 1116 + transcript 2 model + manual 2 source），python3 真源对照一致；无 cc-switch 降级（enabled:false 与 db_path 不存在两态均跳过不崩）；碰撞合并 4/4
+- 关键处置：better-sqlite3 为 Electron ABI，用 `ELECTRON_RUN_AS_NODE=1 electron` 跑验收（不占端口、不触碰用户实例）；实测 session json 无 model 字段 → transcript 尾部 256KB 逆扫（独立轻量实现，与 tailFacts 同源）
+- 桥接预演：deepseek↔default(cc-switch)、aliyun-bailian↔c3c29ba1…(cc-switch) 匹配成立；1373c51d(AIgC) 零调用不出卡（符合"调用过才出卡"）
+- 偏离：输出排序任务书未规定，自定 evidence 优先级→calls 降序→id 升序（确定性）
 - 收尾三件套：① commit 待补 ② 无新起实例、无孤儿 ③ 本日志 ✅
 
 ---

@@ -10,6 +10,7 @@
  * M12 引入：ApprovalPayload 增 toolInput / permissionMode，tool/command 注释勘误（§6.12 / §6.14 审批镜像轮）。
  * M13.1 引入：usage_sources 可插拔泛化（BillingMode / UsageSourceKind / HttpJsonSource / BssSource /
  *   SubscriptionSource / DetectionConfig），替换并删除 ApiBalanceSource / BssBalanceSource / CcSwitchConfig（§6.1）。
+ * M13.2 引入：CalledApi（检测器发现的"调用过的 API"）；三类余量源补可选 detect_ids 桥接字段。
  */
 
 // ─── 通用工具类型 ───
@@ -100,6 +101,12 @@ export interface HttpJsonSource {
   currency?: string
   /** 低余量告警线（可选，命中即告警） */
   warn_threshold?: number
+  /**
+   * M13.2 检测标识桥接：该 API 的所有检测标识（cc-switch provider_id / model 名等），
+   * 缺省 = [id]。卡片匹配：`source.detect_ids?.includes(item.id) || source.id === item.id`。
+   * 背景：cc-switch provider_id 与 usage_sources.id 不对应（如 DeepSeek 在 cc-switch 是 'default'）。
+   */
+  detect_ids?: string[]
 }
 
 /** 阿里云 BSS QueryAccountBalance（HMAC-SHA1 签名，按量） */
@@ -110,6 +117,8 @@ export interface BssSource {
   kind: 'bss'
   access_key_id_env: string
   access_key_secret_env: string
+  /** M13.2 检测标识桥接：该 API 的所有检测标识，缺省 = [id]（见 HttpJsonSource.detect_ids 说明） */
+  detect_ids?: string[]
 }
 
 /** 厂商订阅套餐专属余量查询 */
@@ -123,9 +132,26 @@ export interface SubscriptionSource {
   remaining: RemainingSpec
   unit: string
   warn_threshold?: number
+  /** M13.2 检测标识桥接：该 API 的所有检测标识，缺省 = [id]（见 HttpJsonSource.detect_ids 说明） */
+  detect_ids?: string[]
 }
 
 export type UsageSourceConfig = HttpJsonSource | BssSource | SubscriptionSource
+
+/**
+ * 检测器发现的一个"调用过的 API"（M13.2 检测器注册表产出，UI 与调度共用）。
+ * 卡片匹配逻辑：`source.detect_ids?.includes(item.id) || source.id === item.id`。
+ */
+export interface CalledApi {
+  /** 检测标识（cc-switch provider_id / model 名 / source.id） */
+  id: string
+  /** 展示名 */
+  name: string
+  /** 证据来源：cc-switch > transcript > manual（合并时保留高优先级） */
+  evidence: 'cc-switch' | 'transcript' | 'manual'
+  /** 请求数（cc-switch 证据有） */
+  calls?: number
+}
 
 /** 检测器注册表配置：cc_switch 可选（无装自动跳过）；claude_sessions 扫会话记录；manual 恒生效（无配置项） */
 export interface DetectionConfig {

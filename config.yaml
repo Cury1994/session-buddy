@@ -31,6 +31,8 @@ usage_sources:
     unit: CNY
     currency: CNY
     warn_threshold: 10
+    detect_ids:                          # M13.2 检测桥接：cc-switch 里 DeepSeek 的 provider_id 是 'default'
+      - "default"
   - id: aliyun-bailian
     name: 阿里云百炼
     billing: subscription
@@ -41,6 +43,9 @@ usage_sources:
     remaining:
       path: ""
     unit: token
+    detect_ids:                          # M13.2 检测桥接：百炼在 cc-switch 的两个 provider（coding / AIgC 模型）
+      - "c3c29ba1-57b2-4171-bfdf-6d1e01a55b8e"
+      - "1373c51d-40fb-4e04-b814-4491c7cefa74"
 
 # 检测器注册表：cc_switch 可选（本机未装自动跳过，db_path 支持 ~ 展开）；
 # claude_sessions 扫会话记录；manual 恒生效（无配置项）

@@ -54,7 +54,9 @@ const DEFAULT_CONFIG: AppConfig = {
       remaining: { path: 'balance_infos[0].total_balance', limit: undefined },
       unit: 'CNY',
       currency: 'CNY',
-      warn_threshold: 10
+      warn_threshold: 10,
+      // M13.2 检测桥接：cc-switch 里 DeepSeek 的 provider_id 是 'default'
+      detect_ids: ['default']
     },
     {
       // 阿里云百炼订阅套餐：端点待用户提供，先占位（M13.2+ 再接入）
@@ -65,7 +67,9 @@ const DEFAULT_CONFIG: AppConfig = {
       url: '',
       auth: { type: 'none' },
       remaining: { path: '', limit: undefined },
-      unit: 'token'
+      unit: 'token',
+      // M13.2 检测桥接：百炼在 cc-switch 有两个 provider（coding 模型 / AIgC 模型，UUID）
+      detect_ids: ['c3c29ba1-57b2-4171-bfdf-6d1e01a55b8e', '1373c51d-40fb-4e04-b814-4491c7cefa74']
     }
   ],
   detection: {
