@@ -64,6 +64,10 @@ const INSERT_APPROVAL =
 const SELECT_RECENT_APPROVALS =
   'SELECT * FROM approval_history ORDER BY timestamp DESC, id DESC LIMIT ?'
 
+/** 全部审批历史（无 LIMIT，供历史列表滚动展示全部） */
+const SELECT_ALL_APPROVALS =
+  'SELECT * FROM approval_history ORDER BY timestamp DESC, id DESC'
+
 // ─── 行原始结构（snake_case，对应表列） ───
 
 interface RawUsageRow {
@@ -142,6 +146,7 @@ export class AppDatabase {
   private s30DayBalance: Database.Statement<unknown[], RawDayRow> | null = null
   private sInsertApproval: Database.Statement<unknown[]> | null = null
   private sRecentApprovals: Database.Statement<unknown[], RawApprovalRow> | null = null
+  private sAllApprovals: Database.Statement<unknown[], RawApprovalRow> | null = null
 
   /**
    * @param dbPath 显式路径（测试/验收用）；省略则用 resolveDefaultDbPath()。
@@ -210,12 +215,19 @@ export class AppDatabase {
     }
   }
 
-  getRecentApprovals(limit = 20): ApprovalRecord[] {
+  /** limit 缺省/≤0 → 返回全部审批历史（滚动展示全部）；否则返回最近 limit 条 */
+  getRecentApprovals(limit?: number): ApprovalRecord[] {
     try {
-      const stmt = (this.sRecentApprovals ??= this.db.prepare<unknown[], RawApprovalRow>(
-        SELECT_RECENT_APPROVALS
+      if (typeof limit === 'number' && limit > 0) {
+        const stmt = (this.sRecentApprovals ??= this.db.prepare<unknown[], RawApprovalRow>(
+          SELECT_RECENT_APPROVALS
+        ))
+        return stmt.all(limit).map(toApprovalRecord)
+      }
+      const all = (this.sAllApprovals ??= this.db.prepare<unknown[], RawApprovalRow>(
+        SELECT_ALL_APPROVALS
       ))
-      return stmt.all(limit).map(toApprovalRecord)
+      return all.all().map(toApprovalRecord)
     } catch (err) {
       console.warn(`[db] getRecentApprovals 失败: ${(err as Error).message}`)
       return []

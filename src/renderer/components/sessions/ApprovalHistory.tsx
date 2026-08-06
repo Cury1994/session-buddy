@@ -1,8 +1,8 @@
 /**
  * M9 — 审批历史（DESIGN §4 / TASKS §10）
  *
- * 折叠/展开 toggle（默认折叠）。展开时调 getApprovalHistory()（history:get，最近 20 条）。
- * 每行：✓/✗ + 命令（截断，hover title 显示完整内容含工具）+ session + 相对时间。
+ * 折叠/展开 toggle（默认折叠）。展开时调 getApprovalHistory()（history:get，返回全部审批）。
+ * 每行两行：✓/✗ + 命令（截断，hover 浮层显示完整内容含工具）+ 关联 session + 具体时间戳。
  * 展开期间订阅 onApprovalResolved，新审批落库后（400ms 延时，让 POST /approve 唯一落库点
  * 提交）自动刷新，保证刚审批的记录即时可见。
  */
@@ -11,20 +11,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 
 import type { ApprovalRecord } from '../../../shared/types'
-
-/** ApprovalRecord.timestamp 为本地 "YYYY-MM-DD HH:MM:SS"，解析为相对时间 */
-function relativeTime(timestamp: string): string {
-  const parsed = new Date(timestamp.replace(' ', 'T')).getTime()
-  if (Number.isNaN(parsed)) return timestamp
-  const diff = Math.max(0, Math.floor((Date.now() - parsed) / 1000))
-  if (diff < 5) return '刚刚'
-  if (diff < 60) return `${diff} 秒前`
-  const min = Math.floor(diff / 60)
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  return `${Math.floor(hr / 24)} 天前`
-}
 
 function ApprovalHistory(): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -93,23 +79,29 @@ function ApprovalHistory(): React.JSX.Element {
             <>
               <ul className="history-list">
                 {records.map((r) => (
-                <li
-                  key={r.id}
-                  className="history-row"
-                  onMouseEnter={(e) => showTip(e, r)}
-                  onMouseLeave={() => setTip(null)}
-                >
-                  <span
-                    className={`history-mark ${r.allowed ? 'ok' : 'deny'}`}
-                    aria-label={r.allowed ? 'approved' : 'rejected'}
+                  <li
+                    key={r.id}
+                    className="history-row"
+                    onMouseEnter={(e) => showTip(e, r)}
+                    onMouseLeave={() => setTip(null)}
                   >
-                    {r.allowed ? '✓' : '✗'}
-                  </span>
-                  <span className="history-cmd">{r.command}</span>
-                  <span className="history-session">{r.sessionName ?? '—'}</span>
-                  <span className="history-time">{relativeTime(r.timestamp)}</span>
-                </li>
-              ))}
+                    <span className="history-main">
+                      <span
+                        className={`history-mark ${r.allowed ? 'ok' : 'deny'}`}
+                        aria-label={r.allowed ? 'approved' : 'rejected'}
+                      >
+                        {r.allowed ? '✓' : '✗'}
+                      </span>
+                      <span className="history-cmd">{r.command}</span>
+                    </span>
+                    <span className="history-meta">
+                      <span className="history-session" title={r.sessionName ?? ''}>
+                        {r.sessionName ?? '—'}
+                      </span>
+                      <span className="history-time">{r.timestamp}</span>
+                    </span>
+                  </li>
+                ))}
               </ul>
               {tip !== null && (
                 <div className="history-tooltip" style={{ left: tip.x, top: tip.y }}>

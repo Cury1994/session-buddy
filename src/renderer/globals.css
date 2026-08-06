@@ -812,11 +812,18 @@
   }
   .history-row {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 5px 0;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 0;
     border-top: 1px solid rgba(0, 0, 0, 0.05);
     font-size: 11px;
+    cursor: help;
+  }
+  .history-main {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
   .history-mark {
     flex-shrink: 0;
@@ -838,18 +845,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .history-session {
-    flex-shrink: 0;
-    max-width: 70px;
+  .history-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
     font-size: 10px;
     color: var(--text-muted);
+  }
+  .history-session {
+    min-width: 0;
+    max-width: 200px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .history-time {
     flex-shrink: 0;
-    font-size: 10px;
     color: rgba(0, 0, 0, 0.4);
   }
   /* 审批历史 hover 浮层：fixed 定位不被滚动容器裁剪，pre 保留命令换行/等宽 */

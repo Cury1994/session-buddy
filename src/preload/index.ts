@@ -49,7 +49,7 @@ const api = {
   /** 活跃 session 列表（sessions:get → scanner 缓存） */
   getSessionsData: (): Promise<SessionInfo[]> => ipcRenderer.invoke('sessions:get'),
 
-  /** 最近 20 条审批历史（history:get → db.getRecentApprovals） */
+  /** 全部审批历史（history:get → db.getRecentApprovals，无 limit 即全部） */
   getApprovalHistory: (): Promise<ApprovalRecord[]> => ipcRenderer.invoke('history:get'),
 
   /** 当前生效配置（config:get → loadConfig） */

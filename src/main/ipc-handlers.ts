@@ -125,10 +125,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   /** 活跃 session（scanner 缓存的同步读取，§5.2） */
   ipcMain.handle('sessions:get', () => scanner.getSessions())
 
-  /** 最近审批历史（limit 缺省 20，非法值回退 20） */
+  /** 审批历史（limit 缺省 → 全部，滚动展示；传正数则限最近 N 条） */
   ipcMain.handle('history:get', (_event, limit?: number) => {
     const safeLimit =
-      typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : 20
+      typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : undefined
     return db.getRecentApprovals(safeLimit)
   })
 

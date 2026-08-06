@@ -13,8 +13,8 @@ import type { ApprovalPayload, PendingApproval } from '../shared/types'
  * （approval_history 用自身 INTEGER AUTOINCREMENT id，见 §6.2）。
  *
  * 超时：入队时 `setTimeout(timeoutSec)`（默认读 config.notifications.approve_timeout_sec），
- * 到点自动 resolve(false)（deny）并从 Map 移除——server 侧 await 恢复时 `size`
- * 已反映移除，颜色联动（server.refreshTrayColor）据此复位。
+ * 到点自动 resolve(true)（默认同意，用户 2026-08-06 拍板）并从 Map 移除——server 侧 await
+ * 恢复时 `size` 已反映移除，颜色联动（server.refreshTrayColor）据此复位。
  */
 
 interface PendingEntry {
@@ -50,11 +50,12 @@ export class ApprovalQueue {
       resolve = res
     })
 
-    // 超时兜底：自动 deny。先 delete 再 resolve，保证 server 侧 await 恢复时
-    // queue.size 已更新（respond 与超时互斥，delete 返回 false 说明已被 respond 移除）。
+    // 超时兜底：默认同意（用户 2026-08-06 拍板：工具中弹出审批超时后自动放行）。
+    // 先 delete 再 resolve，保证 server 侧 await 恢复时 queue.size 已更新
+    // （respond 与超时互斥，delete 返回 false 说明已被 respond 移除）。
     const timer = setTimeout(() => {
       if (this.pending.delete(id)) {
-        resolve(false)
+        resolve(true)
       }
     }, this.timeoutSec * 1000)
 
