@@ -597,7 +597,7 @@
 | M13.2 检测器注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:40 | commit c8643aa；cc-switch/transcript/manual 合并降级 |
 | M13.3 quota-reader 注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:00 | commit 14fa809；http-json 通用 + bss 签名 + subscription 占位 |
 | M13.4 db 扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:30 | commit 91835dd；billing/unit 列 + 幂等迁移 + 单卡查询 |
-| M13.5 调度泛化 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:50 | commit 待补；startUsageChecker 多卡 + 全局最低告警线 + per-card 告警 |
+| M13.5 调度泛化 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:50 | commit 450dcb8；startUsageChecker 多卡 + 全局最低告警线 + per-card 告警 |
 | M13.6 IPC + 多卡 UI | ⏳ 未开始 | — | — | | 余量卡+槽位卡 + 设置页用量源表单 |
 | M13.7 文档 + 集成测试 | ⏳ 未开始 | — | — | | 添加厂商指南 + E2E |
 
@@ -662,7 +662,7 @@
 - 核验方式：tsc 编译至 gitignored out/m135-test + ELECTRON_RUN_AS_NODE=1 electron 跑（Electron ABI）；mock HTTP 驱动真实 startUsageChecker 全链路
 - 备注：首轮测试挂 6 条为测试脚本自身期望值错误（A 卡持续低位不重复告警属正确；槽位卡混入 payload 属预期），修正后全绿，非代码问题
 - 蓝图勘误：无（computeTrayColor 签名不变，warnThreshold 语义改全局最低线，注释已注明）
-- 收尾三件套：① commit 待补 ② 无新起实例、无孤儿（pgrep 匹配为命令自身 shell 包装）③ 本日志 ✅
+- 收尾三件套：① commit 450dcb8 ② 无新起实例、无孤儿（pgrep 匹配为命令自身 shell 包装）③ 本日志 ✅
 
 ---
 
