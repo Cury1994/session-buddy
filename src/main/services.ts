@@ -122,7 +122,16 @@ export function startSessionScanner(deps: SessionScannerDeps): ScheduledTask {
   async function tick(): Promise<void> {
     try {
       const sessions = await scanner.discoverSessions()
-      tray.setSessionSnapshot(sessions.map((s) => ({ name: s.name, status: s.status })))
+      tray.setSessionSnapshot(
+        sessions.map((s) => ({
+          name: s.name,
+          status: s.status,
+          hasPendingApproval: s.hasPendingApproval,
+          recentlyActive: s.recentlyActive,
+          tool: s.tool,
+          apiProvider: s.apiProvider
+        }))
+      )
       sendToRenderer(win, 'sessions:updated', sessions)
       tray.setIconColor(computeTrayColor(approvalQueue.size, db.getLatestUsage(), threshold))
     } catch (err) {

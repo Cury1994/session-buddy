@@ -36,6 +36,26 @@ export type TrayIconColor = 'green' | 'amber' | 'red' | 'gray'
 export interface TraySessionSnapshot {
   name: string
   status: 'busy' | 'idle'
+  hasPendingApproval: boolean
+  recentlyActive: boolean
+  tool: string
+  apiProvider: string
+}
+
+/**
+ * 四态任务状态（与 StatusDot 逐字同源，优先级高→低）：
+ *   待执行 🔴 红 —— hasPendingApproval（等待审批）
+ *   执行中 🟡 黄 —— 进程存活 && recentlyActive（transcript 最近写入）
+ *   空闲   🟢 绿 —— 进程存活兜底
+ *   已退出 ⚪ 灰 —— 进程已死
+ * 原生菜单无法着色单条文本，用彩色圆点 emoji（Noto Color Emoji）承载颜色，
+ * 状态名文本兜底语义（emoji 若渲染为单色，靠文字区分）。
+ */
+function deriveState(s: TraySessionSnapshot): { dot: string; label: string } {
+  if (s.hasPendingApproval) return { dot: '🔴', label: '待执行' }
+  if (s.status === 'busy' && s.recentlyActive) return { dot: '🟡', label: '执行中' }
+  if (s.status === 'busy') return { dot: '🟢', label: '空闲' }
+  return { dot: '⚪', label: '已退出' }
 }
 
 const TRAY_COLORS: Record<TrayIconColor, string> = {
@@ -156,17 +176,20 @@ export function createTray(_config: AppConfig, win: BrowserWindow): ManagedTray 
   /**
    * 按 §6.3 结构构建右键菜单：
    *   Harness Monitor (label) / Show / Hide Dashboard / ── /
-   *   Active Agents (动态列表) / ── / Preferences... / ── / Quit
+   *   Active Agents (动态列表，四态彩色圆点 + 状态名 + 工具 + 模型 + 会话名) / ── / Quit
    */
   function buildContextMenu(): Menu {
     const sessionItems: Electron.MenuItemConstructorOptions[] =
       sessions.length === 0
         ? [{ label: '(none)', enabled: false }]
-        : sessions.map((s) => ({
-            // busy=实心脉冲点 / idle=空心点（原生菜单无法着色，用字符区分状态）
-            label: `${s.status === 'busy' ? '●' : '○'} ${s.name} — ${s.status}`,
-            enabled: false
-          }))
+        : sessions.map((s) => {
+            const { dot, label } = deriveState(s)
+            return {
+              // 原生菜单无法着色，用彩色 emoji 圆点承载状态色（与卡片四态逻辑一致）
+              label: `${dot} ${label} · ${s.tool} · ${s.apiProvider} · ${s.name}`,
+              enabled: false
+            }
+          })
 
     return Menu.buildFromTemplate([
       { label: 'Harness Monitor', enabled: false },
@@ -188,16 +211,6 @@ export function createTray(_config: AppConfig, win: BrowserWindow): ManagedTray 
       ...sessionItems,
       { type: 'separator' },
       {
-        // M10（设置视图）接入后改为打开 Settings 页签；M4 阶段先唤起窗口
-        label: 'Preferences...',
-        accelerator: 'CommandOrControl+,',
-        click: (): void => {
-          win.show()
-          win.focus()
-        }
-      },
-      { type: 'separator' },
-      {
         // 原生菜单无法将 label 标红（danger 样式为设计稿语义，平台限制降级）
         label: 'Quit Harness Monitor',
         accelerator: 'CommandOrControl+Q',
@@ -217,6 +230,14 @@ export function createTray(_config: AppConfig, win: BrowserWindow): ManagedTray 
       win.show()
       win.focus()
     }
+  })
+
+  // 双击托盘图标 → 弹出工具界面。
+  // ⚠ appindicator 下多为仅右键弹菜单，双击/单击可能不触发（§2.10 平台降级）；
+  // 记录此事件以保证支持该事件的平台（部分 Linux DE / Windows）下双击即弹窗。
+  tray.on('double-click', () => {
+    win.show()
+    win.focus()
   })
 
   // 右键时用最新快照重建菜单（§6.3），保证 Active Agents 列表实时。
