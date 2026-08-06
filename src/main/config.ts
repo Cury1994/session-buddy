@@ -76,6 +76,9 @@ const DEFAULT_CONFIG: AppConfig = {
     cc_switch: { enabled: true, db_path: '~/.cc-switch/cc-switch.db' },
     claude_sessions: { enabled: true }
   },
+  // M13.5：全局用量源轮询间隔（分钟）。单卡时代的 providers.deepseek.check_interval_min
+  // 为过渡字段（渲染端设置页 M13.6 迁移到本字段后删除）。
+  usage_poll_interval_min: 1,
   harnesses: {
     'claude-code': {
       sessions_glob: '~/.claude/sessions/*.json',

@@ -12,6 +12,9 @@
  *   SubscriptionSource / DetectionConfig），替换并删除 ApiBalanceSource / BssBalanceSource / CcSwitchConfig（§6.1）。
  * M13.2 引入：CalledApi（检测器发现的"调用过的 API"）；三类余量源补可选 detect_ids 桥接字段。
  * M13.4 引入：UsageRecord 增可选 billing/unit（计费形式 + 显示单位，用量视图多卡泛化的 db 层支撑）。
+ * M13.5 引入：UsageCard（调度产出的用量卡：余量卡/槽位卡统一模型）；AppConfig 增
+ *   usage_poll_interval_min（全局用量源轮询间隔，替代过渡的 providers.deepseek.check_interval_min）；
+ *   删除 BalanceInfo（唯一消费方 deepseek.ts 随 M13.5 删除）。
  */
 
 // ─── 通用工具类型 ───
@@ -161,6 +164,27 @@ export interface DetectionConfig {
 }
 
 /**
+ * 一张用量卡（余量卡或槽位卡），M13.5 调度产出、M13.6 渲染。
+ *   - status=ok：余量卡（readQuota 成功，remaining/unit/updatedAt 有值）
+ *   - status=missing-config：已调用但未配置端点（如 subscription url 空）/ 检测到了但无对应 usage_source（槽位卡，引导补配置）
+ *   - status=missing-credential：缺凭证环境变量（missingHint 指出缺哪个）
+ *   - status=error：余量查询失败（网络/解析等，NFR-3 保留上次展示）
+ */
+export interface UsageCard {
+  sourceId: string
+  name: string
+  billing: BillingMode
+  status: 'ok' | 'missing-config' | 'missing-credential' | 'error'
+  remaining?: number
+  unit?: string
+  currency?: string
+  updatedAt?: string // 本地时间 "YYYY-MM-DD HH:MM:SS"（渲染端按字面展示）
+  warnThreshold?: number
+  calls?: number // 调用次数（cc-switch 证据，槽位卡展示用）
+  missingHint?: string // status=missing-config/missing-credential 时的引导文案
+}
+
+/**
  * 应用配置顶层结构（DESIGN §6.1，字段名严格对齐 config.yaml schema §8.1）。
  */
 export interface AppConfig {
@@ -173,15 +197,11 @@ export interface AppConfig {
   usage_sources: UsageSourceConfig[]
   /** M13.1：检测器注册表（cc_switch 可选 + claude_sessions 开关；manual 恒生效无配置项） */
   detection: DetectionConfig
-}
-
-// ─── API 余额（DESIGN §6.7 / §6.12） ───
-
-/** deepseek.ts 解析后的内部余额模型（§5.1 / §6.7） */
-export interface BalanceInfo {
-  provider: string // "deepseek"
-  balance: number // total_balance parseFloat
-  currency: string // "CNY"
+  /**
+   * M13.5：全局用量源轮询间隔（分钟，缺省 1，运行时 Math.max(1, …) 兜底）。
+   * 替代过渡字段 providers.deepseek.check_interval_min（单卡时代的遗留，渲染端 M13.6 迁移后删除）。
+   */
+  usage_poll_interval_min: number
 }
 
 // ─── API 用量 / 审批历史（DESIGN §6.12，db INTEGER/REAL → TS 映射） ───

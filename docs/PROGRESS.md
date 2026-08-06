@@ -597,7 +597,7 @@
 | M13.2 检测器注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:40 | commit c8643aa；cc-switch/transcript/manual 合并降级 |
 | M13.3 quota-reader 注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:00 | commit 14fa809；http-json 通用 + bss 签名 + subscription 占位 |
 | M13.4 db 扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:30 | commit 91835dd；billing/unit 列 + 幂等迁移 + 单卡查询 |
-| M13.5 调度泛化 | ⏳ 未开始 | — | — | | 遍历 called 逐个查 + 独立低余量告警 |
+| M13.5 调度泛化 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:50 | commit 待补；startUsageChecker 多卡 + 全局最低告警线 + per-card 告警 |
 | M13.6 IPC + 多卡 UI | ⏳ 未开始 | — | — | | 余量卡+槽位卡 + 设置页用量源表单 |
 | M13.7 文档 + 集成测试 | ⏳ 未开始 | — | — | | 添加厂商指南 + E2E |
 
@@ -654,6 +654,15 @@
 - 运行时验证：better-sqlite3 为 Electron ABI，tsc 单独编译后 electron 跑测试脚本
 - 偏离：无（迁移函数命名 migrateApiUsageColumns 私有方法，与 initDB 生命周期一致）
 - 收尾三件套：① commit 91835dd ② 无新起实例、无孤儿 ③ 本日志 ✅
+
+### 2026-08-06 16:50:31 ｜ M13.5 ｜ 调度泛化 完成（commit 待补）
+- 派发：开发+测试合并 subagent；注入 UsageCard 类型 + buildUsageCards 契约 + 全局最低告警线设计
+- 产出：types.ts 增 UsageCard（ok/missing-config/missing-credential/error 四态）；services.ts startUsageChecker 泛化（buildUsageCards/buildSourceCard 导出 + per-card 告警 + 模块级卡片缓存 getUsageCards）；index.ts 去 DeepSeekProvider 接线；server.ts 全局最低告警线（min 所有 source.warn_threshold）；ipc usage:get→UsageCard[]、usage:history 收 sourceId；config 增 usage_poll_interval_min:1；notifications.ts notifyUsageLow（per-card 附名+余量）；**deepseek.ts 删除**（grep 无引用）
+- 验证全绿：build 三入口 + 双 typecheck 零错误；真实 config → DeepSeek 卡 ok（remaining=10.44 CNY、warnThreshold=10）+ 百炼 missing-config（"未配置订阅端点"）+ 3 张 transcript 槽位卡 + 六参落库；缺凭证 → missing-credential + missingHint 正确；托盘色多卡（任一卡<全局线→红，红>橙不破）；per-card 告警独立/恢复重置/幂等；usage:updated 收到合法 UsageCard[]；deepseek.ts 无残留——调度器 E2E 16/16 + 单元 28 断言全绿
+- 核验方式：tsc 编译至 gitignored out/m135-test + ELECTRON_RUN_AS_NODE=1 electron 跑（Electron ABI）；mock HTTP 驱动真实 startUsageChecker 全链路
+- 备注：首轮测试挂 6 条为测试脚本自身期望值错误（A 卡持续低位不重复告警属正确；槽位卡混入 payload 属预期），修正后全绿，非代码问题
+- 蓝图勘误：无（computeTrayColor 签名不变，warnThreshold 语义改全局最低线，注释已注明）
+- 收尾三件套：① commit 待补 ② 无新起实例、无孤儿（pgrep 匹配为命令自身 shell 包装）③ 本日志 ✅
 
 ---
 

@@ -54,7 +54,7 @@ export interface QuotaInfo {
 
 // ─── 常量 ───
 
-/** HTTP 请求超时（与 deepseek.ts 15s 约定一致） */
+/** HTTP 请求超时（15s，原 deepseek.ts 约定沿袭） */
 const REQUEST_TIMEOUT_MS = 15000
 
 /** 阿里云 BSS QueryAccountBalance 端点与 API 版本（RPC 风格，M13.3 任务书指定） */

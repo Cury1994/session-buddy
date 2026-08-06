@@ -7,9 +7,8 @@ import { AppDatabase } from './db'
 import { ApprovalQueue } from './approval-queue'
 import { initNotifications } from './notifications'
 import { createServer } from './server'
-import { DeepSeekProvider } from './deepseek'
 import { ClaudeCodeSessionScanner } from './claude-sessions'
-import { startBalanceChecker, startSessionScanner } from './services'
+import { getCachedUsageCards, startUsageChecker, startSessionScanner } from './services'
 import { registerIpcHandlers } from './ipc-handlers'
 
 import type { ManagedTray } from './tray'
@@ -24,7 +23,7 @@ import type { ScheduledTask } from './services'
  *   - 单实例锁：重复实例立即退出
  *   - whenReady → createMainWindow + createTray + AppDatabase(initDB)
  *                 + ApprovalQueue + initNotifications + server.start
- *                 + DeepSeekProvider + ClaudeCodeSessionScanner + 双调度器启动
+ *                 + ClaudeCodeSessionScanner + 双调度器启动（usageChecker + sessionScanner）
  *   - window-all-closed → 不 quit（托盘常驻）
  *   - will-quit → 双调度器 stop() + server.stop() + tray.destroy() + db.close()
  *   - SIGTERM/SIGINT → app.quit()（FR-6.5 优雅退出，经 will-quit 走清理）
@@ -34,7 +33,7 @@ let managedWindow: ManagedWindow | null = null
 let managedTray: ManagedTray | null = null
 let managedServer: ManagedServer | null = null
 let database: AppDatabase | null = null
-let balanceTask: ScheduledTask | null = null
+let usageTask: ScheduledTask | null = null
 let sessionTask: ScheduledTask | null = null
 
 // ─── 单实例锁 ───
@@ -73,10 +72,10 @@ if (!gotTheLock) {
       const approvalQueue = new ApprovalQueue(config.notifications.approve_timeout_sec)
       initNotifications(managedWindow.win, config)
 
-      // ─── M6：数据服务 + 调度 ───
-      // DeepSeekProvider 读 process.env.DEEPSEEK_API_KEY + config balance_url（§6.7）。
+      // ─── M6 → M13.5：数据服务 + 调度 ───
+      // usageChecker 内部经 quota-reader + detectors 泛化轮询所有 usage_sources
+      // （取代 M6 DeepSeekProvider 单卡，deepseek.ts 已删）。
       // ClaudeCodeSessionScanner 持 approvalQueue 引用（合并 hasPendingApproval，§6.8.2 step 4）。
-      const balanceProvider = new DeepSeekProvider(config)
       const sessionScanner = new ClaudeCodeSessionScanner(config, approvalQueue)
 
       // getSessions 注入 scanner 缓存的同步读取（server /api/sessions 用，§5.2）
@@ -91,10 +90,9 @@ if (!gotTheLock) {
       managedServer.start(config.server.port)
 
       // 双调度器：立即各执行一次，随后按配置间隔轮询（§6.9）。
-      // 余额侧颜色联动复用 server.ts computeTrayColor（红>橙>绿，services.ts 内注释）。
-      balanceTask = startBalanceChecker({
+      // 余量侧颜色联动复用 server.ts computeTrayColor（红>橙>绿，services.ts 内注释）。
+      usageTask = startUsageChecker({
         db: database,
-        provider: balanceProvider,
         approvalQueue,
         config,
         win: managedWindow.win,
@@ -112,20 +110,19 @@ if (!gotTheLock) {
       // ─── M10：reschedule —— 配置保存后重调度（注入 ipc-handlers config:save）───
       // stop 旧双调度器 → 重新 loadConfig → 按新 config 重启；同时刷新 notifications
       // 模块配置引用（notifications.enabled 即时生效，见 notifications.ts 文件头约定）。
-      // balance_warn_threshold / check_interval_min / refresh_interval_sec 在 start* 内
+      // usage_poll_interval_min / refresh_interval_sec / warn_threshold 在 start* 内
       // 按传入 config 固化，重启后即按新值轮询。const 句柄捕获：database / managedWindow /
       // managedTray 为模块级 let（will-quit 会置 null），闭包内无法收窄，故捕获为非空 const。
       const dbHandle = database
       const winHandle = managedWindow
       const trayHandle = managedTray
       const reschedule = (): void => {
-        balanceTask?.stop()
+        usageTask?.stop()
         sessionTask?.stop()
         const fresh = loadConfig()
         initNotifications(winHandle.win, fresh)
-        balanceTask = startBalanceChecker({
+        usageTask = startUsageChecker({
           db: dbHandle,
-          provider: balanceProvider,
           approvalQueue,
           config: fresh,
           win: winHandle.win,
@@ -152,8 +149,9 @@ if (!gotTheLock) {
         tray: managedTray,
         window: managedWindow,
         triggerRefresh: async () => {
-          await Promise.all([balanceTask?.tick(), sessionTask?.tick()])
+          await Promise.all([usageTask?.tick(), sessionTask?.tick()])
         },
+        getUsageCards: () => getCachedUsageCards(),
         reschedule
       })
     } catch (err) {
@@ -190,8 +188,8 @@ if (!gotTheLock) {
   // 退出时清理：双调度器 → HTTP server → 托盘 → 数据库（§6.9 / §6.5 / §6.4 / §6.2）
   // 定时器先于 server/db 停，避免 stop 间隙回调再触达已关闭的 db / 已销毁的 tray
   app.on('will-quit', () => {
-    balanceTask?.stop()
-    balanceTask = null
+    usageTask?.stop()
+    usageTask = null
     sessionTask?.stop()
     sessionTask = null
     managedServer?.stop()

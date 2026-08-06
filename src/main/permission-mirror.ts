@@ -9,7 +9,7 @@ import { isAbsolute, join } from 'node:path'
  * 原生询问"——不会 → `'passthrough'`（工具完全静默）；会 → `'ask'`（进审批流弹卡）。
  * 终端二问的压制由 approve.sh 放行时输出权限 JSON 完成（§6.13.4，Plan A）。
  *
- * 纯函数 + 只读文件，裸 node 可测（同 config.ts / deepseek.ts 模式，**不 import electron**）。
+ * 纯函数 + 只读文件，裸 node 可测（同 config.ts / quota-reader.ts 模式，**不 import electron**）。
  *
  * 规则来源：四层 settings 的 `permissions.allow` / `permissions.deny` 并集（§6.14.3），
  * 按文件 mtime 缓存。项目层（③④）路径含 cwd，故"按文件路径缓存" ≡ "按 cwd 键缓存"

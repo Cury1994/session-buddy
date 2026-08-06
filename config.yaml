@@ -2,6 +2,7 @@ server:
   host: "127.0.0.1"
   port: 18456
 
+# 过渡保留（M13.5 起主进程调度不再消费本段；渲染端设置页仍读写，M13.6 迁移后删除）：
 providers:
   deepseek:
     balance_url: "https://api.deepseek.com/user/balance"
@@ -55,6 +56,9 @@ detection:
     db_path: "~/.cc-switch/cc-switch.db"
   claude_sessions:
     enabled: true
+
+# M13.5：全局用量源轮询间隔（分钟，多卡余量轮询；替代过渡的 providers.deepseek.check_interval_min）
+usage_poll_interval_min: 1
 
 harnesses:
   claude-code:

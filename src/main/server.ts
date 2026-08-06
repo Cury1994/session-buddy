@@ -14,7 +14,8 @@ import type {
   ApprovalPayload,
   PendingApproval,
   SessionInfo,
-  UsageRecord
+  UsageRecord,
+  UsageSourceConfig
 } from '../shared/types'
 
 /**
@@ -29,15 +30,18 @@ import type {
  *   POST /approve/:id/respond → 解析审批（respond → recordApproval → 复位 tray）
  *
  * ─── 颜色优先级协议（本模块定义，M6 余额侧共同遵循，见 DESIGN §6.3）───
- *   优先级从高到低：**红（余额 < balance_warn_threshold）> 橙（待审批）> 绿（空闲）**
+ *   优先级从高到低：**红（任一余额 < 全局最低告警线）> 橙（待审批）> 绿（空闲）**
  *   灰仅用于 server 未启动 / 致命错误，不参与 computeTrayColor。
  *   统一由 computeTrayColor() 计算、refreshTrayColor() 落盘到 tray，避免各处
  *   无脑 setIconColor('green') 覆盖掉活跃的红/橙状态：
  *     - 有任一 provider 最新余额 < 阈值 → 红（即使队列非空也红，红 > 橙）
  *     - 否则队列非空 → 橙
  *     - 否则 → 绿
- *   M6 余额侧：checkBalance 后同样调用本协议（余额恢复且队列空 → 绿；队列非空 → 橙；
- *   余额告警 → 红 + notifyBalanceLow），保证两条联动链路收敛到同一优先级。
+ *   M13.5 多卡泛化：阈值 = 全局最低告警线（min 所有 usage_source.warn_threshold，
+ *   computeGlobalWarnThreshold），任一卡低于全局最低线触发红（安全方向：低阈值卡
+ *   精确触发，高阈值卡不误报）。
+ *   M6 余额侧：余量轮询后同样调用本协议（余额恢复且队列空 → 绿；队列非空 → 橙；
+ *   余额告警 → 红 + 低余量通知），保证两条联动链路收敛到同一优先级。
  */
 
 /**
@@ -61,10 +65,11 @@ export function getAutoApprove(): boolean {
 }
 
 /**
- * 按颜色优先级协议计算托盘色（纯函数，便于 M6 复用 / 单测）。
+ * 按颜色优先级协议计算托盘色（纯函数，便于 M6/M13.5 复用 / 单测）。
  * @param queueSize      当前待审批数量
  * @param latestUsage    db.getLatestUsage() 的最新余额快照
- * @param warnThreshold  config.providers.deepseek.balance_warn_threshold（¥ 绝对金额）
+ * @param warnThreshold  全局最低告警线（computeGlobalWarnThreshold：min 所有
+ *                       usage_source.warn_threshold，¥ 绝对金额；无阈值时 Infinity）
  */
 export function computeTrayColor(
   queueSize: number,
@@ -77,6 +82,23 @@ export function computeTrayColor(
   if (queueSize > 0) return 'amber'
   // 优先级 2：空闲 → 绿
   return 'green'
+}
+
+/**
+ * 全局最低告警线（M13.5 多卡泛化）：min(所有 usage_source 的 warn_threshold)。
+ * 无任何阈值 → Infinity（computeTrayColor 的 `balance < Infinity` 会使任一已落库
+ * 余额触发红——阈值全缺属下异常配置，宁红勿漏，与"安全方向"一致；默认配置恒有
+ * deepseek warn_threshold=10，正常路径不会命中该边界）。
+ * bss 源类型上无 warn_threshold 字段，天然不参与。
+ */
+export function computeGlobalWarnThreshold(sources: readonly UsageSourceConfig[]): number {
+  let min = Infinity
+  for (const source of sources) {
+    if (source.kind === 'bss') continue
+    const t = source.warn_threshold
+    if (typeof t === 'number' && Number.isFinite(t) && t < min) min = t
+  }
+  return min
 }
 
 /** createServer 的依赖注入包（getSessions 为 M6 scanner 注入口） */
@@ -99,7 +121,11 @@ export interface ManagedServer {
 export function createServer(deps: ServerDeps): ManagedServer {
   const { db, approvalQueue, tray, win, config } = deps
   const getSessions = deps.getSessions ?? ((): SessionInfo[] => [])
-  const warnThreshold = config.providers.deepseek.balance_warn_threshold
+  // M13.5：全局最低告警线（min 所有 usage_source.warn_threshold）。
+  // 注：与 M5 起的行为一致，阈值在 createServer 时固化（闭包捕获）——config:save
+  // 改 warn_threshold 后审批侧 refreshTrayColor 用旧值至重启（已知 P3-5，reschedule
+  // 已覆盖调度侧主消费方；重建 server 风险更高，维持原裁定）。
+  const warnThreshold = computeGlobalWarnThreshold(config.usage_sources ?? [])
 
   const expressApp = express()
   expressApp.use(express.json())

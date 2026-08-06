@@ -1,14 +1,14 @@
 import { Notification } from 'electron'
 
 import type { BrowserWindow } from 'electron'
-import type { ApprovalPayload, AppConfig } from '../shared/types'
+import type { ApprovalPayload, AppConfig, UsageCard } from '../shared/types'
 
 /**
  * M5 — 桌面通知工具模块（DESIGN §6.10 / §5.3）
  *
  * 两类通知：
  *   - notifyApproval(payload)：审批到达（M5 server 调用）
- *   - notifyBalanceLow(balance, currency)：余额告警（M6 balanceChecker 调用）
+ *   - notifyUsageLow(card)：用量卡低余量告警（M13.5 usageChecker 调用，泛化自 M6 notifyBalanceLow）
  *
  * 开关：config.notifications.enabled 为 false 时静默（每次调用实时读取，
  * 供 M10 设置页改配置后即时生效）。点击通知 → win.show() + focus。
@@ -61,14 +61,15 @@ export function notifyApproval(payload: ApprovalPayload): void {
   notification.show()
 }
 
-/** 余额告警通知（M6 balanceChecker 调用；本模块先实现） */
-export function notifyBalanceLow(balance: number, currency: string): void {
+/** 用量卡低余量告警通知（M13.5 usageChecker 调用；per-card 独立告警，附卡名 + 余量） */
+export function notifyUsageLow(card: UsageCard): void {
   if (!notificationsEnabled() || !Notification.isSupported()) return
 
-  const symbol = currency === 'CNY' ? '¥' : `${currency} `
+  const remaining = card.remaining ?? 0
+  const unit = card.unit ?? ''
   const notification = new Notification({
     title: 'Low API Balance',
-    body: `Balance below warning threshold: ${symbol}${balance.toFixed(2)}`
+    body: `${card.name} below warning threshold: ${remaining.toFixed(2)} ${unit}`.trim()
   })
   attachClickToShow(notification)
   notification.show()

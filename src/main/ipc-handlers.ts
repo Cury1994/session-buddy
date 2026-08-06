@@ -12,7 +12,7 @@ import type { AppDatabase } from './db'
 import type { ManagedTray } from './tray'
 import type { ManagedWindow } from './window'
 import type { DeepPartial } from './config'
-import type { AppConfig, ApprovalResponse } from '../shared/types'
+import type { AppConfig, ApprovalResponse, UsageCard } from '../shared/types'
 
 /**
  * M7 — IPC 通道集中注册（DESIGN §6.11 / §7）
@@ -48,13 +48,19 @@ export interface IpcHandlerDeps {
   /** 当前未被 handler 直接使用（颜色 push 在 tray.ts 内部完成），保留供后续模块扩展 */
   tray: ManagedTray
   window: ManagedWindow
-  /** app:refresh → 手动触发一轮 balanceChecker + sessionScanner（services 暴露的 tick） */
+  /** app:refresh → 手动触发一轮 usageChecker + sessionScanner（services 暴露的 tick） */
   triggerRefresh: () => Promise<void>
   /**
+   * usage:get → 调度器缓存的最新 UsageCard[]（M13.5：startUsageChecker 每轮刷新，
+   * services.getCachedUsageCards；index.ts 注入）。buildUsageCards 是 async（readQuota
+   * 异步），IPC handle 不直接触发查询，只读缓存——首轮 tick 完成前返回 []。
+   */
+  getUsageCards: () => UsageCard[]
+  /**
    * config:save 成功后按新配置重调度双定时器（index.ts 实现并注入）：
-   * stop 旧 balanceChecker/sessionScanner → 重新 loadConfig → 按新 config 重启。
-   * 使 check_interval_min / refresh_interval_sec / balance_warn_threshold /
-   * notifications.enabled 变更即时生效（M10）。
+   * stop 旧 usageChecker/sessionScanner → 重新 loadConfig → 按新 config 重启。
+   * 使 usage_poll_interval_min / refresh_interval_sec / usage_sources.warn_threshold /
+   * notifications.enabled 变更即时生效（M10，M13.5 泛化）。
    */
   reschedule: () => void
 }
@@ -114,11 +120,23 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // ─── 用量 ───
 
-  /** 最新余额快照（db.getLatestUsage，§6.2） */
-  ipcMain.handle('usage:get', () => db.getLatestUsage())
+  /**
+   * 最新用量卡（M13.5 起返回 UsageCard[]，取代 M8 的 db.getLatestUsage()）。
+   * 读调度器缓存（每轮 usageChecker tick 刷新），不在 IPC 内触发异步余量查询。
+   * 渲染端 M13.6 消费多卡；旧渲染端（M8 useUsageData）期望 UsageRecord[]，
+   * 运行时形态变化由 M13.6 同步改（本模块只保证主进程编译通过）。
+   */
+  ipcMain.handle('usage:get', () => deps.getUsageCards())
 
-  /** 30 天余额走势（db.get30DayBalance，供 TrendSparkline，§6.11 v2.3 补入） */
-  ipcMain.handle('usage:history', () => db.get30DayBalance('deepseek', 'all'))
+  /**
+   * 30 天余额走势（db.get30DayBalance，供 TrendSparkline，§6.11 v2.3 补入）。
+   * M13.5：接受 sourceId 参数逐卡取趋势（provider=source.id, model='all'）；
+   * 入参缺失/非串回退 'deepseek'（旧渲染端无参调用的过渡兼容，M13.6 起逐卡传参）。
+   */
+  ipcMain.handle('usage:history', (_event, sourceId?: unknown) => {
+    const id = typeof sourceId === 'string' && sourceId !== '' ? sourceId : 'deepseek'
+    return db.get30DayBalance(id, 'all')
+  })
 
   // ─── Sessions / 审批历史 ───
 
@@ -157,7 +175,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // ─── 应用级 ───
 
-  /** 手动刷新一轮（余额查询 + session 扫描，FR-1.5） */
+  /** 手动刷新一轮（多卡余量查询 + session 扫描，FR-1.5） */
   ipcMain.handle('app:refresh', async () => {
     await deps.triggerRefresh()
   })
