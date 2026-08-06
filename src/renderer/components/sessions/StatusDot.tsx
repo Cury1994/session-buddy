@@ -1,9 +1,12 @@
 /**
- * M9 — Session 状态灯（DESIGN §4 / 基准原型 .status-pulse）
+ * Session 任务状态灯（含名称标签，DESIGN §4 / 基准原型 .status-pulse）
  *
- * busy（进程存活）：绿色 #00e676 脉冲动画（globals.css @keyframes status-pulse）。
- * idle（进程死亡）：灰色静止；memoryMB<=0 视为进程已退出（dead，更淡的灰）。
- * SessionStatus 仅 busy/idle 两态（§6.12），dead 由 idle + memoryMB=0 推断（§6.8 进程死亡 memory=0）。
+ * 四态（优先级高→低，均带颜色 + 名称文本）：
+ *   待执行 红 #ff5252 脉冲 —— hasPendingApproval（命令等待审批，需用户操作）
+ *   执行中 黄 #ffd54f 脉冲 —— 进程存活 && recentlyActive（transcript 最近写入，正在执行任务）
+ *   busy   绿 #00e676 静   —— 进程存活兜底（会话在运行，但无近期活动）
+ *   已退出 灰             —— 进程已死（status idle && memoryMB<=0）
+ *   （idle 兜底"空闲"灰）
  */
 
 import type { SessionInfo } from '../../../shared/types'
@@ -11,14 +14,41 @@ import type { SessionInfo } from '../../../shared/types'
 interface StatusDotProps {
   status: SessionInfo['status']
   memoryMB: number
+  hasPendingApproval: boolean
+  recentlyActive: boolean
 }
 
-function StatusDot({ status, memoryMB }: StatusDotProps): React.JSX.Element {
-  const dead = status === 'idle' && memoryMB <= 0
-  const variant = status === 'busy' ? 'busy' : dead ? 'dead' : 'idle'
-  const label = status === 'busy' ? 'Working' : dead ? 'Process exited' : 'Waiting'
+function StatusDot({
+  status,
+  memoryMB,
+  hasPendingApproval,
+  recentlyActive
+}: StatusDotProps): React.JSX.Element {
+  let variant: 'pending' | 'executing' | 'busy' | 'idle' | 'dead'
+  let label: string
+  if (hasPendingApproval) {
+    variant = 'pending'
+    label = '待执行'
+  } else if (status === 'busy' && recentlyActive) {
+    variant = 'executing'
+    label = '执行中'
+  } else if (status === 'busy') {
+    variant = 'busy'
+    label = 'busy'
+  } else if (memoryMB <= 0) {
+    variant = 'dead'
+    label = '已退出'
+  } else {
+    variant = 'idle'
+    label = '空闲'
+  }
 
-  return <span className={`status-dot ${variant}`} title={label} aria-label={label} />
+  return (
+    <span className="status-wrap">
+      <span className={`status-dot ${variant}`} title={label} aria-label={label} />
+      <span className="status-label">{label}</span>
+    </span>
+  )
 }
 
 export default StatusDot

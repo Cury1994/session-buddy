@@ -87,7 +87,12 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
       <div className="session-card-body">
         <div className="session-header">
           <div className="session-idline">
-            <StatusDot status={session.status} memoryMB={session.memoryMB} />
+            <StatusDot
+              status={session.status}
+              memoryMB={session.memoryMB}
+              hasPendingApproval={session.hasPendingApproval}
+              recentlyActive={session.recentlyActive}
+            />
             <span className="session-name" title={session.name}>
               {session.name}
             </span>

@@ -160,5 +160,6 @@ export interface SessionInfo {
   cwd: string // 实际工作目录（transcript 尾读 lastCwd → json cwd 降级；截断 4096，§6.8.2b）
   startedAt: number // Unix ms
   hasPendingApproval: boolean // approvalQueue 中存在匹配项
+  recentlyActive: boolean // 进程存活且 transcript 最近写入（mtime ≤ ACTIVE_WINDOW_MS，§6.8）→ 执行中
   lastActivity: string // 最近一条可读对话/任务内容（transcript 尾读，截断 120；无则空串）
 }

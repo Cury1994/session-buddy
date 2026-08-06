@@ -107,6 +107,13 @@ function contextWindowForModel(modelId: string): number {
 const TAIL_BYTES = 262144
 
 /**
+ * 「执行中」判定窗口：进程存活且 transcript 最近写入（mtime）在此毫秒数内 → recentlyActive。
+ * transcript 随 Claude Code 每轮活动更新，空闲会话停在提示符时停止写入，故 mtime 是
+ * "正在执行任务"的廉价真源（无需额外解析）。仅对存活会话有意义。
+ */
+const ACTIVE_WINDOW_MS = 60_000
+
+/**
  * 单次尾窗读同时提取的四件事（F2，见文件头说明）：
  *   usedTokens  —— ctxPct 计算源（末条 usage 三项和）
  *   lastCwd     —— 实际工作目录（最后一条含 cwd 的记录；Claude Code 随 cd 动态更新）
@@ -825,6 +832,17 @@ export class ClaudeCodeSessionScanner {
     const status: SessionStatus = alive ? 'busy' : 'idle'
     const memoryMB = alive ? readMemoryMB(pid) : 0
 
+    // 执行中判定：进程存活且 transcript 最近写入（mtime 距现在 ≤ ACTIVE_WINDOW_MS）。
+    // transcript 为空（找不到）/ statSync 失败 → 非执行中（降级为 busy 绿色态）
+    let recentlyActive = false
+    if (alive && transcript !== null) {
+      try {
+        recentlyActive = Date.now() - statSync(transcript).mtimeMs <= ACTIVE_WINDOW_MS
+      } catch {
+        recentlyActive = false
+      }
+    }
+
     // ctxPct：与 statusline.py 同源（usedTokens 取自尾读三事之一）。
     // 窗口判定继续由 settings 的 modelId 驱动——transcript 的模型 id 经代理改写后
     // 不含 [1m] 标记，不可用于窗口判定（contextWindowForModel 不动，见文件头说明）
@@ -862,6 +880,7 @@ export class ClaudeCodeSessionScanner {
       cwd,
       startedAt,
       hasPendingApproval,
+      recentlyActive,
       lastActivity: tail.lastActivity ?? '' // F2：最近可读任务内容（扫不到为空串，卡片据此条件渲染）
     }
   }
