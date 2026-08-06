@@ -545,6 +545,23 @@
 - **蓝图勘误（DESIGN §6.14.4）**：撤销 01:22 加的 heredoc 单块切分注记，恢复"引号内分隔符/更深嵌套误切属已知边界→多弹卡无害"原文。
 - 收尾三件套：① commit f0f3c02（revert）+ 本次 PROGRESS/DESIGN 回写待提交 ✅ ② 实例已重建为回滚后代码并重启（健康在听 18456，无孤儿）✅ ③ 本日志 ✅
 
+### 2026-08-06 09:55:50 ｜ 归档后修订 ｜ 会话卡片任务状态灯 + 名称 完成（commit 72b12a0）
+- 背景：用户提出在 Sessions 卡片加"任务状态"，初始两态（执行中/待执行）用颜色区分；需求澄清后确立**四态**（优先级高→低）：
+  - **待执行 红** —— `hasPendingApproval`（命令等待审批，需用户操作）
+  - **执行中 黄** —— 进程存活 && `recentlyActive`（transcript 最近写入，正在执行任务）
+  - **busy 绿**（静）—— 进程存活兜底（会话在运行，无近期活动）
+  - **已退出 灰** —— 进程已死（idle && memoryMB<=0）
+- 数据源决策（AskUserQuestion 用户拍板）：busy(绿) 与 执行中(黄) 的区分 = **transcript 最近写入（mtime ≤ 60s）**，无需新增解析/轮询对比；待执行(红)=hasPendingApproval 无歧义
+- 实现（S 档小改，主对话直接开发，未单开 review）：
+  - types.ts：SessionInfo 增 `recentlyActive: boolean`
+  - claude-sessions.ts：新增 `ACTIVE_WINDOW_MS=60_000`，进程存活且 transcript mtime 在窗口内 → recentlyActive（statSync 失败/transcript 空 → 降级 false）
+  - StatusDot.tsx：重写为四态派生（pending/executing/busy/idle/dead）+ 彩色圆点 + **状态名称标签**（.status-label）
+  - SessionCard.tsx：传 hasPendingApproval/recentlyActive 两新 prop
+  - globals.css：增 pending(红)/executing(黄) 圆点 + status-wrap/status-label 样式；busy 由脉冲改静绿，脉冲移至执行中/待执行
+- 验收：build 三入口 + 双 strict typecheck 零错误 ✅；真实数据校验——当前活动会话 transcript age=0s（→执行中），历史会话 days 级（→busy/已退出），阈值判定正确 ✅；构建产物含 recentlyActive 逻辑 + 四态标签 ✅
+- 收尾三件套：① commit 72b12a0 ✅ ② 未触碰用户实例（pid 532090 仍为旧构建，GUI 肉眼确认待重启后核销）✅ ③ 本日志 ✅
+- 遗留：实例重启后核销四态肉眼观感（红/黄/绿/灰 + 名称标签渲染）
+
 ---
 
 **下一步**：按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（matcher ""、timeout 70000ms，**含注册完整性校验**——本轮 hooks 段曾被外部重写移除）+ xdotool 声明可选依赖）；D4（审批卡"不再询问"勾选，Plan B 规则写入机制已设计备装）可随批评估；D2 暂缓。
