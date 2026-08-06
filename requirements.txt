@@ -1,5 +1,0 @@
-pygobject
-aiohttp
-pyyaml
-psutil
-aiosqlite
