@@ -2,7 +2,7 @@
  * M9 — 审批历史（DESIGN §4 / TASKS §10）
  *
  * 折叠/展开 toggle（默认折叠）。展开时调 getApprovalHistory()（history:get，最近 20 条）。
- * 每行：✓/✗ + 命令（截断，title 全文）+ session + 相对时间（"3 分钟前"）。
+ * 每行：✓/✗ + 命令（截断，hover title 显示完整内容含工具）+ session + 相对时间。
  * 展开期间订阅 onApprovalResolved，新审批落库后（400ms 延时，让 POST /approve 唯一落库点
  * 提交）自动刷新，保证刚审批的记录即时可见。
  */
@@ -89,7 +89,7 @@ function ApprovalHistory(): React.JSX.Element {
                   >
                     {r.allowed ? '✓' : '✗'}
                   </span>
-                  <span className="history-cmd" title={r.command}>
+                  <span className="history-cmd" title={`[${r.tool}] ${r.command}`}>
                     {r.command}
                   </span>
                   <span className="history-session">{r.sessionName ?? '—'}</span>

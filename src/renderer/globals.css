@@ -668,38 +668,44 @@
   .approval-block {
     background-color: color-mix(in srgb, var(--danger-red) 10%, transparent);
     border-top: 1px solid color-mix(in srgb, var(--danger-red) 15%, transparent);
-    padding: 12px;
+    padding: 8px 10px;
   }
   .approval-fade {
     animation: approval-fade-out 0.5s ease forwards;
   }
-  .approval-header {
+  /* 紧凑单行：标题（工具徽章 + 倒计时）与 Reject/Approve 同行；hover 标题看完整内容 */
+  .approval-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .approval-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--danger-red);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+  }
+  .approval-resolved {
     display: flex;
     align-items: center;
     gap: 4px;
     color: var(--danger-red);
     font-size: 11px;
     font-weight: 600;
-    margin-bottom: 6px;
   }
-  .approval-header.resolved-ok {
+  .approval-resolved.ok {
     color: #00a854;
-  }
-  .approval-header.resolved-deny {
-    color: var(--danger-red);
   }
   .approval-mark {
     font-weight: 700;
-  }
-  /* F1 审批描述：命令的人类可读摘要（hook 提供）。完整展示、随窗口宽度换行，
-   不截断（长摘要/URL 等长无空白 token 用 overflow-wrap 兜底避免撑破窗口） */
-  .approval-desc {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.4;
-    margin-bottom: 6px;
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
   /* M12 工具徽章：真实工具名（hook tool_name）。Bash 低调（中性灰底）；
      非 Bash 醒目（红调），提示用户这是非命令类工具（Edit/Write/WebFetch/Skill/mcp__*…）的审批 */
@@ -722,26 +728,10 @@
     color: var(--danger-red);
     border-color: color-mix(in srgb, var(--danger-red) 32%, transparent);
   }
-  .cmd-box {
-    background-color: #1e1e1e;
-    color: #e0e0e0;
-    padding: 8px;
-    border-radius: 6px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11px;
-    margin-bottom: 10px;
-    /* 完整展示命令：保留命令内换行（heredoc 等）+ 超宽行自动换行，自适应窗口宽度；
-       长无空白 token 用 overflow-wrap 兜底，不再横向滚动截断 */
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .cmd-danger {
-    color: #ff6b6b;
-    font-weight: 600;
-  }
   .approval-actions {
     display: flex;
     gap: 6px;
+    flex-shrink: 0;
   }
 
   /* 通用按钮（基准原型 .btn / .btn-primary） */
