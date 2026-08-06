@@ -562,6 +562,19 @@
 - 收尾三件套：① commit 72b12a0 ✅ ② 未触碰用户实例（pid 532090 仍为旧构建，GUI 肉眼确认待重启后核销）✅ ③ 本日志 ✅
 - 遗留：实例重启后核销四态肉眼观感（红/黄/绿/灰 + 名称标签渲染）
 
+### 2026-08-06 10:13:01 ｜ 归档后修订 ｜ 任务状态灯收尾 + 托盘增强 完成（commit 72b12a0 + 6c05b09 + 4bae67c）
+- 任务状态灯（72b12a0，见上条）：四态彩色圆点 + 名称标签；绿色态标签 6c05b09 由 "busy" 改"空闲"
+- 托盘增强（4bae67c）：
+  - **Active Agents 菜单项**：彩色 emoji 圆点（🔴待执行/🟡执行中/🟢空闲/⚪已退出）承载状态色，
+    与卡片 StatusDot 四态逻辑逐字同源（原生菜单无法着色单条文本，emoji + 状态名文本兜底）；
+    并展示具体 tool + apiProvider + 会话名（替换原仅 ●/○ + name + busy/idle）
+  - **双击托盘图标 → 弹窗**（win.show+focus；appindicator 平台可能降级，守卫记录）
+  - **移除 Preferences... 菜单项**及分隔符
+  - TraySessionSnapshot 增 hasPendingApproval/recentlyActive/tool/apiProvider，services.ts 全量透传
+- 验收：build 三入口 + 双 typecheck 零错误；构建产物确认四态标签/emoji/双击在产、Preferences 菜单项已清（仅剩 webPreferences 选项误匹配）；实例重启（pid 578623）健康 200
+- 收尾三件套：① commit 72b12a0+6c05b09+4bae67c ✅ ② 实例 = 最新构建，无孤儿 ✅ ③ 本日志 ✅
+- 遗留：托盘菜单 emoji 彩色与双击行为需用户肉眼核销（GNOME appindicator 下双击可能不触发，属平台降级）
+
 ---
 
 **下一步**：按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（matcher ""、timeout 70000ms，**含注册完整性校验**——本轮 hooks 段曾被外部重写移除）+ xdotool 声明可选依赖）；D4（审批卡"不再询问"勾选，Plan B 规则写入机制已设计备装）可随批评估；D2 暂缓。
