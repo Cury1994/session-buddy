@@ -577,4 +577,45 @@
 
 ---
 
-**下一步**：按需启动延后项 **D1+D3 同批**（打包 + 开机自启 + SUID/postinstall 固化 + 审批超时可配；打包时 approve.sh 安装路径固化 + hook 一键注册（matcher ""、timeout 70000ms，**含注册完整性校验**——本轮 hooks 段曾被外部重写移除）+ xdotool 声明可选依赖）；D4（审批卡"不再询问"勾选，Plan B 规则写入机制已设计备装）可随批评估；D2 暂缓。
+## M13 用量视图泛化（多 provider 阶段，2026-08-06 启动）
+
+> 规模档：**L** ｜ 推进档位：**高速档**（用户选定分模块 subagent 推进）
+> 背景：用量视图当前为 DeepSeek 单 provider 硬编码（余额卡 + 30 天趋势）。用户要求泛化为**多 provider + 惰性出卡**，
+> 按卡片类型区分：余额卡（按量计费）/ 消耗卡（5h/7d 实际消耗）。
+> 数据源（已逐一核实，见下日志评估）：
+>   - DeepSeek 余额：`api.deepseek.com/user/balance`（`DEEPSEEK_API_KEY`，M8 已工作）
+>   - 百炼余额：阿里云 BSS `QueryAccountBalance`（`business.aliyuncs.com` v2017-12-14，HMAC-SHA1 签名，`AliyunBSSReadOnlyAccess` AccessKey；**区别于 `sk-sp-` 模型 key**）
+>   - 消耗卡：**cc-switch 本地库** `~/.cc-switch/cc-switch.db` `proxy_request_logs`（5046 条真实请求级用量，按 provider 聚合 `total_cost_usd`）
+> 关键决策：订阅 5h/7d 消耗卡**不接各 provider 订阅 API**（用户实际 provider 均为按量计费、无该窗口），
+> 改从 cc-switch 日志聚合——真实、本地、零认证，且「调用过就出卡」字面成立。
+
+### M13 状态总览
+
+| 模块 | 状态 | 单测 | Code Review | 完成时间 | 备注 |
+|------|------|------|-------------|---------|------|
+| M13a 配置+共享类型泛化 | ⏳ 未开始 | — | — | | usage_sources 列表 + cc_switch_db |
+| M13b cc-switch 消耗读取 | ⏳ 未开始 | — | — | | cc-switch-usage.ts 聚合 5h/7d |
+| M13c 百炼余额 | ⏳ 未开始 | — | — | | aliyun-bss.ts HMAC-SHA1 签名 |
+| M13d 调度泛化 + db 接入 | ⏳ 未开始 | — | — | | startUsageChecker 遍历 sources |
+| M13e IPC + 渲染（多卡片惰性出卡） | ⏳ 未开始 | — | — | | UsageView + hook + preload |
+| M13f 集成测试 + review | ⏳ 未开始 | — | — | | E2E 逐项 + 批量 review |
+
+**遗留项登记表（M13 新增）**
+| 项 | 来源 | 计划收口 | 状态 |
+|----|------|---------|------|
+| 百炼余额真实凭证（阿里云 BSS AccessKeyId/Secret） | M13c | 用户提供后核销 | 🔄 待凭证 |
+| 消耗卡 trend 图（数据在 cc-switch，本期只做现值） | 反膨胀裁剪 | 延后 | ⏳ |
+| cc-switch 表结构耦合（升级改表 → 读失败降级保留上次） | M13b | 读取端 try/catch（NFR-3） | ⏳ |
+
+---
+
+### 2026-08-06 11:28 ｜ M13 ｜ 评估 + 蓝图确认
+- 现状核实：用量视图 = DeepSeek 单 provider 硬编码（deepseek.ts 写死 `balance_infos[0].total_balance`）；cc-switch 本地代理 127.0.0.1:15721 路由到 DeepSeek + 阿里云百炼（glm-5.2/qwen3.8-max 均在百炼，`sk-sp-` token）
+- 数据源核实：cc-switch `proxy_request_logs` 5046 条真实请求级用量（provider/model/tokens/total_cost_usd/created_at）；阿里云 BSS `QueryAccountBalance`（HMAC-SHA1 RPC 签名）
+- 反膨胀结论：用户实际 provider（DeepSeek + 百炼）均为**按量计费**，无"订阅 5h/7d 窗口"；消耗卡改从 cc-switch 日志聚合
+- 用户决策（AskUserQuestion）：① 消耗卡数据源 = 读 cc-switch 日志 ② 百炼余额 = 本期就做（需 BSS AccessKey）③ 推进方式 = 分模块 ④ 百炼凭证 = 稍后用户提供（已告知 https://ram.console.aliyun.com/manage/ak 获取，需 `AliyunBSSReadOnlyAccess`）
+- 蓝图：见上方 M13 状态总览 + 模块表
+
+---
+
+**D1/D2/D3/D4 延后项暂缓**（M13 优先，用户本次指令）。原"下一步"文案见 git 历史。

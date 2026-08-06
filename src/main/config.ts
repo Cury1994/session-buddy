@@ -42,6 +42,25 @@ const DEFAULT_CONFIG: AppConfig = {
       balance_warn_threshold: 10
     }
   },
+  usage_sources: [
+    {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      type: 'api',
+      balance_url: 'https://api.deepseek.com/user/balance',
+      api_key_env: 'DEEPSEEK_API_KEY'
+    },
+    {
+      id: 'aliyun-bailian',
+      name: '阿里云百炼',
+      type: 'bss',
+      access_key_id_env: 'ALIYUN_ACCESS_KEY_ID',
+      access_key_secret_env: 'ALIYUN_ACCESS_KEY_SECRET'
+    }
+  ],
+  cc_switch: {
+    db_path: '~/.cc-switch/cc-switch.db'
+  },
   harnesses: {
     'claude-code': {
       sessions_glob: '~/.claude/sessions/*.json',

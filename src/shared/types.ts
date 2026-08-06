@@ -62,6 +62,37 @@ export interface WindowConfig {
   height: number
 }
 
+// ─── M13 用量源配置（2026-08-06 泛化，DESIGN §6.1 追加） ───
+
+/** 余额源类型：api=GET url+Bearer key（DeepSeek 式）；bss=阿里云 BSS QueryAccountBalance（HMAC-SHA1 签名） */
+export type UsageSourceKind = 'api' | 'bss'
+
+/** API 式余额源（DeepSeek）：GET balance_url + Authorization: Bearer $api_key_env */
+export interface ApiBalanceSource {
+  id: string
+  name: string
+  type: 'api'
+  balance_url: string
+  /** 环境变量名，存 API key；缺省 DEEPSEEK_API_KEY */
+  api_key_env?: string
+}
+
+/** BSS 式余额源（阿里云百炼）：QueryAccountBalance，凭证走两个环境变量 */
+export interface BssBalanceSource {
+  id: string
+  name: string
+  type: 'bss'
+  access_key_id_env: string
+  access_key_secret_env: string
+}
+
+export type UsageSourceConfig = ApiBalanceSource | BssBalanceSource
+
+/** 消耗卡数据源：cc-switch 本地库（只读聚合 proxy_request_logs） */
+export interface CcSwitchConfig {
+  db_path: string // 支持 ~ 展开
+}
+
 /**
  * 应用配置顶层结构（DESIGN §6.1，字段名严格对齐 config.yaml schema §8.1）。
  */
@@ -71,6 +102,10 @@ export interface AppConfig {
   harnesses: HarnessesConfig
   notifications: NotificationsConfig
   window: WindowConfig
+  /** M13：余额源列表（多 provider 惰性出卡） */
+  usage_sources: UsageSourceConfig[]
+  /** M13：消耗卡数据源（cc-switch 本地库） */
+  cc_switch: CcSwitchConfig
 }
 
 // ─── API 余额（DESIGN §6.7 / §6.12） ───
@@ -97,6 +132,27 @@ export interface UsageRecord {
 export interface BalanceDailySnapshot {
   day: string // "YYYY-MM-DD"（本地日期）
   balance: number // 当日最后一次快照余额
+}
+
+// ─── M13 消耗卡（cc-switch proxy_request_logs 聚合，2026-08-06） ───
+
+/** 单个时间窗内的消耗聚合 */
+export interface ConsumptionBucket {
+  costUsd: number // Σ total_cost_usd
+  inputTokens: number
+  outputTokens: number
+  cacheTokens: number // cache_read + cache_creation
+  requests: number
+}
+
+/** 单个 cc-switch provider 的消耗卡数据（惰性出卡：有日志的 provider 才出现） */
+export interface ConsumptionSummary {
+  providerId: string // cc-switch provider_id（default=DeepSeek / UUID=百炼）
+  providerName: string // 展示名（cc-switch provider.name 或 id 兜底）
+  h5: ConsumptionBucket
+  h24: ConsumptionBucket
+  d7: ConsumptionBucket
+  lastRequestAt: string | null // 最近一次请求时间，字面展示
 }
 
 /** approval_history 表行（§6.2）→ ApprovalHistory 渲染；allowed INTEGER → boolean */
