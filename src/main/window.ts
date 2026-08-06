@@ -1,6 +1,7 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, nativeImage } from 'electron'
 import { join } from 'path'
 
+import { buildAppIconPng } from './tray'
 import type { AppConfig } from '../shared/types'
 
 /**
@@ -38,6 +39,8 @@ export function createMainWindow(config: AppConfig): ManagedWindow {
     resizable: true,
     skipTaskbar: false, // 正常显示在任务栏（§2.9）
     show: false, // 初始隐藏，托盘左键唤起（§6.4）
+    // 任务栏图标：应用自带绿色圆点（与托盘同款），替换 Electron 默认图标
+    icon: nativeImage.createFromBuffer(buildAppIconPng()),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       // sandbox:true（M7 决策落定，收口 M1 遗留）：preload 仅使用

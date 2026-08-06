@@ -68,9 +68,8 @@ const TRAY_COLORS: Record<TrayIconColor, string> = {
 // ─── 手工 PNG 编码（零依赖位图交付，替代失效的 SVG data URL 方案） ───
 
 const TRAY_ICON_SIZE = 22
-const DOT_RADIUS = 5 // 实心圆点半径（px）
-const GLOW_SIGMA = 1.8 // 外发光高斯标准差（px）
-const CENTER = (TRAY_ICON_SIZE - 1) / 2 // 10.5，几何中心
+const DOT_RADIUS = 5 // 实心圆点半径（px，按 22px 基准）
+const GLOW_SIGMA = 1.8 // 外发光高斯标准差（px，按 22px 基准）
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256)
@@ -103,28 +102,32 @@ function pngChunk(type: string, data: Buffer): Buffer {
 }
 
 /**
- * 生成 22×22 RGBA PNG：中心实心圆点 + 高斯外发光（透明度随距离衰减）。
- * d ≤ DOT_RADIUS → 不透明；d > DOT_RADIUS → alpha = exp(-(d-r)²/2σ²)。
+ * 生成 size×size RGBA PNG：中心实心圆点 + 高斯外发光（透明度随距离衰减）。
+ * d ≤ dotRadius → 不透明；d > dotRadius → alpha = exp(-(d-r)²/2σ²)。
+ * 圆点半径/发光按 size/22 比例缩放（托盘 22px 与窗口 128px 共用同款视觉）。
  */
-function buildIconPng(color: TrayIconColor): Buffer {
+function buildIconPng(color: TrayIconColor, size = TRAY_ICON_SIZE): Buffer {
   const hex = TRAY_COLORS[color]
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
   const b = parseInt(hex.slice(5, 7), 16)
 
-  // 每行：1 字节 filter(0=None) + SIZE×4 字节 RGBA
-  const raw = Buffer.alloc(TRAY_ICON_SIZE * (1 + TRAY_ICON_SIZE * 4))
+  const dotRadius = Math.max(1, Math.round((size / TRAY_ICON_SIZE) * DOT_RADIUS))
+  const glowSigma = (size / TRAY_ICON_SIZE) * GLOW_SIGMA
+  const center = (size - 1) / 2
+
+  // 每行：1 字节 filter(0=None) + size×4 字节 RGBA
+  const stride = 1 + size * 4
+  const raw = Buffer.alloc(size * stride)
   let off = 0
-  for (let y = 0; y < TRAY_ICON_SIZE; y++) {
+  for (let y = 0; y < size; y++) {
     raw[off++] = 0
-    for (let x = 0; x < TRAY_ICON_SIZE; x++) {
-      const dx = x - CENTER
-      const dy = y - CENTER
+    for (let x = 0; x < size; x++) {
+      const dx = x - center
+      const dy = y - center
       const d = Math.sqrt(dx * dx + dy * dy)
       const intensity =
-        d <= DOT_RADIUS
-          ? 1
-          : Math.exp(-((d - DOT_RADIUS) ** 2) / (2 * GLOW_SIGMA ** 2))
+        d <= dotRadius ? 1 : Math.exp(-((d - dotRadius) ** 2) / (2 * glowSigma ** 2))
       raw[off++] = r
       raw[off++] = g
       raw[off++] = b
@@ -133,8 +136,8 @@ function buildIconPng(color: TrayIconColor): Buffer {
   }
 
   const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(TRAY_ICON_SIZE, 0)
-  ihdr.writeUInt32BE(TRAY_ICON_SIZE, 4)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
   ihdr[8] = 8 // bit depth
   ihdr[9] = 6 // color type: RGBA
 
@@ -144,6 +147,11 @@ function buildIconPng(color: TrayIconColor): Buffer {
     pngChunk('IDAT', deflateSync(raw)),
     pngChunk('IEND', Buffer.alloc(0))
   ])
+}
+
+/** 窗口/任务栏应用图标（128×128，绿色——与托盘同款圆点，替换 Electron 默认图标） */
+export function buildAppIconPng(): Buffer {
+  return buildIconPng('green', 128)
 }
 
 /** createTray 的受控返回值 */
