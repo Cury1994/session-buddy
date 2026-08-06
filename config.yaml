@@ -8,25 +8,48 @@ providers:
     check_interval_min: 1
     balance_warn_threshold: 10            # ¥ 绝对金额（v2.3：原比例 0.15 改绝对值，API 不返回总预算）
 
-# M13 用量视图泛化：余额源列表（多 provider 惰性出卡）。
-#   type: api  = GET balance_url + Authorization: Bearer $api_key_env（DeepSeek 式）
-#   type: bss  = 阿里云 BSS QueryAccountBalance（business.aliyuncs.com v2017-12-14，HMAC-SHA1 签名）
-# 低余额告警线沿用上方 providers.deepseek.balance_warn_threshold（全局）
+# M13.1 用量视图泛化：余量源列表（可插拔，多 provider 惰性出卡）。
+#   kind: http-json    = 通用 GET + JSON 提取（配置驱动，零代码适配 90% 厂商）
+#   kind: bss          = 阿里云 BSS QueryAccountBalance（HMAC-SHA1 签名，按量）
+#   kind: subscription = 厂商订阅套餐专属余量查询
+# billing: payg=按量消费（余量=剩余金额）；subscription=订阅消费（余量=剩余套餐额度）
+# remaining: path=剩余值本体（JSON 点号路径，支持数组下标如 balance_infos[0].total_balance）；
+#            若 API 返回 limit+usage 而非剩余，填 limit 自动算 limit-usage
+# auth: type=bearer 时 key_env 存 API key 的环境变量名；type=none 免鉴权
+# warn_threshold: 低余量告警线（可选，命中即告警）
 usage_sources:
   - id: deepseek
     name: DeepSeek
-    type: api
-    balance_url: "https://api.deepseek.com/user/balance"
-    api_key_env: "DEEPSEEK_API_KEY"
+    billing: payg
+    kind: http-json
+    url: "https://api.deepseek.com/user/balance"
+    auth:
+      type: bearer
+      key_env: "DEEPSEEK_API_KEY"
+    remaining:
+      path: "balance_infos[0].total_balance"
+    unit: CNY
+    currency: CNY
+    warn_threshold: 10
   - id: aliyun-bailian
     name: 阿里云百炼
-    type: bss
-    access_key_id_env: "ALIYUN_ACCESS_KEY_ID"
-    access_key_secret_env: "ALIYUN_ACCESS_KEY_SECRET"
+    billing: subscription
+    kind: subscription
+    url: ""                            # 端点待用户提供，先占位
+    auth:
+      type: none
+    remaining:
+      path: ""
+    unit: token
 
-# 消耗卡（5h/7d 实际消耗）数据源：cc-switch 本地库 proxy_request_logs（只读聚合）
-cc_switch:
-  db_path: "~/.cc-switch/cc-switch.db"
+# 检测器注册表：cc_switch 可选（本机未装自动跳过，db_path 支持 ~ 展开）；
+# claude_sessions 扫会话记录；manual 恒生效（无配置项）
+detection:
+  cc_switch:
+    enabled: true
+    db_path: "~/.cc-switch/cc-switch.db"
+  claude_sessions:
+    enabled: true
 
 harnesses:
   claude-code:

@@ -46,20 +46,31 @@ const DEFAULT_CONFIG: AppConfig = {
     {
       id: 'deepseek',
       name: 'DeepSeek',
-      type: 'api',
-      balance_url: 'https://api.deepseek.com/user/balance',
-      api_key_env: 'DEEPSEEK_API_KEY'
+      billing: 'payg',
+      kind: 'http-json',
+      url: 'https://api.deepseek.com/user/balance',
+      auth: { type: 'bearer', key_env: 'DEEPSEEK_API_KEY' },
+      // path 带数组下标（balance_infos[0].total_balance），实现方（M13.3）需支持
+      remaining: { path: 'balance_infos[0].total_balance', limit: undefined },
+      unit: 'CNY',
+      currency: 'CNY',
+      warn_threshold: 10
     },
     {
+      // 阿里云百炼订阅套餐：端点待用户提供，先占位（M13.2+ 再接入）
       id: 'aliyun-bailian',
       name: '阿里云百炼',
-      type: 'bss',
-      access_key_id_env: 'ALIYUN_ACCESS_KEY_ID',
-      access_key_secret_env: 'ALIYUN_ACCESS_KEY_SECRET'
+      billing: 'subscription',
+      kind: 'subscription',
+      url: '',
+      auth: { type: 'none' },
+      remaining: { path: '', limit: undefined },
+      unit: 'token'
     }
   ],
-  cc_switch: {
-    db_path: '~/.cc-switch/cc-switch.db'
+  detection: {
+    cc_switch: { enabled: true, db_path: '~/.cc-switch/cc-switch.db' },
+    claude_sessions: { enabled: true }
   },
   harnesses: {
     'claude-code': {

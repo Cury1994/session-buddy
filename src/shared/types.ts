@@ -8,6 +8,8 @@
  * M3 引入：UsageRecord / BalanceDailySnapshot / ApprovalRecord / BalanceInfo（§6.12）。
  * M5 引入：ApprovalPayload / PendingApproval / ApprovalResponse / SessionStatus / SessionInfo（§6.12 / §5.3 / §6.8）。
  * M12 引入：ApprovalPayload 增 toolInput / permissionMode，tool/command 注释勘误（§6.12 / §6.14 审批镜像轮）。
+ * M13.1 引入：usage_sources 可插拔泛化（BillingMode / UsageSourceKind / HttpJsonSource / BssSource /
+ *   SubscriptionSource / DetectionConfig），替换并删除 ApiBalanceSource / BssBalanceSource / CcSwitchConfig（§6.1）。
  */
 
 // ─── 通用工具类型 ───
@@ -62,35 +64,73 @@ export interface WindowConfig {
   height: number
 }
 
-// ─── M13 用量源配置（2026-08-06 泛化，DESIGN §6.1 追加） ───
+// ─── M13 用量源配置（M13.1 泛化为可插拔配置驱动，2026-08-06，DESIGN §6.1 追加） ───
 
-/** 余额源类型：api=GET url+Bearer key（DeepSeek 式）；bss=阿里云 BSS QueryAccountBalance（HMAC-SHA1 签名） */
-export type UsageSourceKind = 'api' | 'bss'
+/** 计费形式：payg=按量消费（余量=剩余金额）；subscription=订阅消费（余量=剩余套餐额度） */
+export type BillingMode = 'payg' | 'subscription'
 
-/** API 式余额源（DeepSeek）：GET balance_url + Authorization: Bearer $api_key_env */
-export interface ApiBalanceSource {
-  id: string
-  name: string
-  type: 'api'
-  balance_url: string
-  /** 环境变量名，存 API key；缺省 DEEPSEEK_API_KEY */
-  api_key_env?: string
+/** 接入方式：http-json=通用 GET+JSON 提取（零代码适配 90% 厂商）；bss=阿里云 BSS 签名 RPC；subscription=厂商订阅套餐专属 */
+export type UsageSourceKind = 'http-json' | 'bss' | 'subscription'
+
+/** http-json 通用适配器的鉴权方式 */
+export interface HttpAuthSpec {
+  type: 'bearer' | 'none'
+  /** 环境变量名，存 key；type=bearer 时必填，缺省按 source.id 推断 */
+  key_env?: string
 }
 
-/** BSS 式余额源（阿里云百炼）：QueryAccountBalance，凭证走两个环境变量 */
-export interface BssBalanceSource {
+/** 余量提取：path=剩余值本体（JSON 点号路径）；若 API 返回 limit+usage 而非剩余，填 limit 自动算 limit-usage */
+export interface RemainingSpec {
+  path?: string
+  limit?: string
+}
+
+/** 通用 http-json 余量源（覆盖 DeepSeek/OpenAI/OpenRouter 等 90% 厂商） */
+export interface HttpJsonSource {
   id: string
   name: string
-  type: 'bss'
+  billing: BillingMode
+  kind: 'http-json'
+  url: string
+  auth: HttpAuthSpec
+  remaining: RemainingSpec
+  /** 显示单位：CNY/USD/次数/token 等 */
+  unit: string
+  /** 金额币种（billing=payg 时有意义） */
+  currency?: string
+  /** 低余量告警线（可选，命中即告警） */
+  warn_threshold?: number
+}
+
+/** 阿里云 BSS QueryAccountBalance（HMAC-SHA1 签名，按量） */
+export interface BssSource {
+  id: string
+  name: string
+  billing: 'payg'
+  kind: 'bss'
   access_key_id_env: string
   access_key_secret_env: string
 }
 
-export type UsageSourceConfig = ApiBalanceSource | BssBalanceSource
+/** 厂商订阅套餐专属余量查询 */
+export interface SubscriptionSource {
+  id: string
+  name: string
+  billing: 'subscription'
+  kind: 'subscription'
+  url: string
+  auth: HttpAuthSpec
+  remaining: RemainingSpec
+  unit: string
+  warn_threshold?: number
+}
 
-/** 消耗卡数据源：cc-switch 本地库（只读聚合 proxy_request_logs） */
-export interface CcSwitchConfig {
-  db_path: string // 支持 ~ 展开
+export type UsageSourceConfig = HttpJsonSource | BssSource | SubscriptionSource
+
+/** 检测器注册表配置：cc_switch 可选（无装自动跳过）；claude_sessions 扫会话记录；manual 恒生效（无配置项） */
+export interface DetectionConfig {
+  cc_switch: { enabled: boolean; db_path: string } // db_path 支持 ~ 展开
+  claude_sessions: { enabled: boolean }
 }
 
 /**
@@ -102,10 +142,10 @@ export interface AppConfig {
   harnesses: HarnessesConfig
   notifications: NotificationsConfig
   window: WindowConfig
-  /** M13：余额源列表（多 provider 惰性出卡） */
+  /** M13.1：余量源列表（可插拔：http-json 配置驱动 / bss / subscription，多 provider 惰性出卡） */
   usage_sources: UsageSourceConfig[]
-  /** M13：消耗卡数据源（cc-switch 本地库） */
-  cc_switch: CcSwitchConfig
+  /** M13.1：检测器注册表（cc_switch 可选 + claude_sessions 开关；manual 恒生效无配置项） */
+  detection: DetectionConfig
 }
 
 // ─── API 余额（DESIGN §6.7 / §6.12） ───

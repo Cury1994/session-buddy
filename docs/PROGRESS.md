@@ -577,35 +577,38 @@
 
 ---
 
-## M13 用量视图泛化（多 provider 阶段，2026-08-06 启动）
+## M13 用量视图泛化（多 provider 阶段，2026-08-06 启动 · 08-06 重构定稿）
 
 > 规模档：**L** ｜ 推进档位：**高速档**（用户选定分模块 subagent 推进）
-> 背景：用量视图当前为 DeepSeek 单 provider 硬编码（余额卡 + 30 天趋势）。用户要求泛化为**多 provider + 惰性出卡**，
-> 按卡片类型区分：余额卡（按量计费）/ 消耗卡（5h/7d 实际消耗）。
-> 数据源（已逐一核实，见下日志评估）：
->   - DeepSeek 余额：`api.deepseek.com/user/balance`（`DEEPSEEK_API_KEY`，M8 已工作）
->   - 百炼余额：阿里云 BSS `QueryAccountBalance`（`business.aliyuncs.com` v2017-12-14，HMAC-SHA1 签名，`AliyunBSSReadOnlyAccess` AccessKey；**区别于 `sk-sp-` 模型 key**）
->   - 消耗卡：**cc-switch 本地库** `~/.cc-switch/cc-switch.db` `proxy_request_logs`（5046 条真实请求级用量，按 provider 聚合 `total_cost_usd`）
-> 关键决策：订阅 5h/7d 消耗卡**不接各 provider 订阅 API**（用户实际 provider 均为按量计费、无该窗口），
-> 改从 cc-switch 日志聚合——真实、本地、零认证，且「调用过就出卡」字面成立。
+> 背景：用量视图当前为 DeepSeek 单 provider 硬编码（余额卡 + 30 天趋势）。用户要求泛化为**已调用过的 API 的余量展示**。
+> **08-06 重构定稿（用户确认，取代原消耗卡思路）**：
+>   - 展示模型：**API Usage 只显示「调用过的 API」**相关卡片。每卡 = 一个 API，计费形式区分 **按量消费（payg）** 与 **订阅消费（subscription）**。
+>   - 卡片两类：**余量卡**（配置齐全 + 凭证正常，按量=剩余金额 / 订阅=剩余套餐额度，带计费徽章 + 30 天趋势）；**槽位卡**（已调用但缺配置/缺凭证，卡内引导跳设置页填写参数，无数据也展示）。
+>   - **泛化核心**：quota-reader 注册表（http-json 通用适配器：GET+鉴权+JSON路径提取+limit 自动算剩余，覆盖 90% 厂商零代码；特殊签名厂商如阿里云 BSS / 百炼套餐写小适配器挂入）。
+>   - **「调用过」检测器注册表（detectors.ts，可插拔）**：cc-switch 检测器（读 proxy_request_logs，无 db 自动跳过）∪ claude-sessions 检测器（扫会话记录 model 名，任何 Claude Code 用户都有 ~/.claude/）∪ manual 检测器（配置声明，恒生效兜底）。**前端不展示检测源细节，后端自动按规则合并降级**（用户拍板）。
+>   - 数据源已核实：DeepSeek 余额 `api.deepseek.com/user/balance`（M8 已工作，¥10.77）；百炼为 token-plan 订阅（cost=0）；用户实际 provider：DeepSeek（按量 1116 请求）+ 阿里云百炼 token-plan（订阅 3190 请求）。
+> 反膨胀：百炼套餐专属 API 端点/凭证待用户提供（无则订阅卡留空态待端点，先搭框架）。
 
 ### M13 状态总览
 
 | 模块 | 状态 | 单测 | Code Review | 完成时间 | 备注 |
 |------|------|------|-------------|---------|------|
-| M13a 配置+共享类型泛化 | ⏳ 未开始 | — | — | | usage_sources 列表 + cc_switch_db |
-| M13b cc-switch 消耗读取 | ⏳ 未开始 | — | — | | cc-switch-usage.ts 聚合 5h/7d |
-| M13c 百炼余额 | ⏳ 未开始 | — | — | | aliyun-bss.ts HMAC-SHA1 签名 |
-| M13d 调度泛化 + db 接入 | ⏳ 未开始 | — | — | | startUsageChecker 遍历 sources |
-| M13e IPC + 渲染（多卡片惰性出卡） | ⏳ 未开始 | — | — | | UsageView + hook + preload |
-| M13f 集成测试 + review | ⏳ 未开始 | — | — | | E2E 逐项 + 批量 review |
+| M13.1 配置模型扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:20 | commit 待提交；usage_sources 计费/接入/提取 + detection 注册表 |
+| M13.2 检测器注册表 | ⏳ 未开始 | — | — | | cc-switch/claude-sessions/manual 合并降级 |
+| M13.3 quota-reader 注册表 | ⏳ 未开始 | — | — | | http-json 通用 + aliyun-bss + 百炼套餐 |
+| M13.4 db 扩展 | ⏳ 未开始 | — | — | | billing/unit + 每卡 30 天趋势 |
+| M13.5 调度泛化 | ⏳ 未开始 | — | — | | 遍历 called 逐个查 + 独立低余量告警 |
+| M13.6 IPC + 多卡 UI | ⏳ 未开始 | — | — | | 余量卡+槽位卡 + 设置页用量源表单 |
+| M13.7 文档 + 集成测试 | ⏳ 未开始 | — | — | | 添加厂商指南 + E2E |
 
 **遗留项登记表（M13 新增）**
 | 项 | 来源 | 计划收口 | 状态 |
 |----|------|---------|------|
-| 百炼余额真实凭证（阿里云 BSS AccessKeyId/Secret） | M13c | 用户提供后核销 | 🔄 待凭证 |
-| 消耗卡 trend 图（数据在 cc-switch，本期只做现值） | 反膨胀裁剪 | 延后 | ⏳ |
-| cc-switch 表结构耦合（升级改表 → 读失败降级保留上次） | M13b | 读取端 try/catch（NFR-3） | ⏳ |
+| 百炼套餐专属 API 端点/凭证 | M13.3 | 用户提供后核销 | 🔄 待用户 |
+| 百炼 BSS AccessKey（按量路径） | M13.3 | 用户提供后核销 | 🔄 待用户 |
+| cc-switch-usage.ts（M13b 遗留） | M13.2 | 改造为 cc-switch 检测器 | ⏳ |
+| 消耗卡 trend 图 | 反膨胀裁剪 | 延后 | ⏳ |
+| cc-switch 表结构耦合（升级改表） | M13.2 | 读取端 try/catch（NFR-3） | ⏳ |
 
 ---
 
@@ -615,6 +618,17 @@
 - 反膨胀结论：用户实际 provider（DeepSeek + 百炼）均为**按量计费**，无"订阅 5h/7d 窗口"；消耗卡改从 cc-switch 日志聚合
 - 用户决策（AskUserQuestion）：① 消耗卡数据源 = 读 cc-switch 日志 ② 百炼余额 = 本期就做（需 BSS AccessKey）③ 推进方式 = 分模块 ④ 百炼凭证 = 稍后用户提供（已告知 https://ram.console.aliyun.com/manage/ak 获取，需 `AliyunBSSReadOnlyAccess`）
 - 蓝图：见上方 M13 状态总览 + 模块表
+
+---
+
+### 2026-08-06 15:20:14 ｜ M13.1 ｜ 配置模型泛化 完成（commit 待补）
+- 派发：开发+测试合并 subagent；注入类型契约（BillingMode/HttpJsonSource/BssSource/SubscriptionSource/DetectionConfig）
+- 产出：types.ts 删 ApiBalanceSource/BssBalanceSource/CcSwitchConfig，新增可插拔联合类型；config.ts DEFAULT_CONFIG 同步（DeepSeek http-json + 百炼 subscription 占位 + detection 段）；config.yaml 同步
+- 验证全绿：npm run build 三入口零错误 + 双 typecheck 零错误；裸 node loadConfig() 6 组断言全过（字段齐全/detection 存在/providers.deepseek 保留/cc_switch 顶层清除）；grep 旧类型无残留
+- 关键约束遵守：providers.deepseek 过渡保留（M13.5 调度泛化才移除，不破坏现有编译）；M8 类型原样保留
+- 偏离：无。说明：裸 tsc -p tsconfig.web.json 报 TS6307 属存量基线（项目 typecheck 脚本带 --composite false）
+- 蓝图勘误：无
+- 收尾三件套：① commit 待补 ② 无新起实例、无孤儿 ③ 本日志 ✅
 
 ---
 
