@@ -162,6 +162,9 @@ function SessionCard({ session, approval }: SessionCardProps): React.JSX.Element
 
         <div className="micro-row">
           <span className="micro-text">Up {formatUptime(session.uptimeSec)}</span>
+          <span className="session-id" title={session.sessionId}>
+            ID {session.sessionId}
+          </span>
           {jumpHint !== null && <span className="jump-hint">{jumpHint}</span>}
         </div>
 
