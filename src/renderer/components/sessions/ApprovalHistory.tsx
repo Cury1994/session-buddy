@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 
 import type { ApprovalRecord } from '../../../shared/types'
 
@@ -30,6 +31,15 @@ function ApprovalHistory(): React.JSX.Element {
   const [records, setRecords] = useState<ApprovalRecord[]>([])
   const [loading, setLoading] = useState(false)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 自定义 hover tooltip：原生 title 在部分环境不可靠，改用 fixed 定位浮层，
+  // 鼠标进入行时定位在行下方，展示完整内容（工具 + 命令），不随滚动被裁剪。
+  const [tip, setTip] = useState<{ content: string; x: number; y: number } | null>(null)
+
+  const showTip = (e: ReactMouseEvent<HTMLLIElement>, r: ApprovalRecord): void => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setTip({ content: `${r.tool}\n${r.command}`, x: rect.left, y: rect.bottom + 6 })
+  }
 
   const load = useCallback((): void => {
     setLoading(true)
@@ -80,23 +90,33 @@ function ApprovalHistory(): React.JSX.Element {
           ) : records.length === 0 ? (
             <p className="placeholder-text">暂无审批记录</p>
           ) : (
-            <ul className="history-list">
-              {records.map((r) => (
-                <li key={r.id} className="history-row">
+            <>
+              <ul className="history-list">
+                {records.map((r) => (
+                <li
+                  key={r.id}
+                  className="history-row"
+                  onMouseEnter={(e) => showTip(e, r)}
+                  onMouseLeave={() => setTip(null)}
+                >
                   <span
                     className={`history-mark ${r.allowed ? 'ok' : 'deny'}`}
                     aria-label={r.allowed ? 'approved' : 'rejected'}
                   >
                     {r.allowed ? '✓' : '✗'}
                   </span>
-                  <span className="history-cmd" title={`[${r.tool}] ${r.command}`}>
-                    {r.command}
-                  </span>
+                  <span className="history-cmd">{r.command}</span>
                   <span className="history-session">{r.sessionName ?? '—'}</span>
                   <span className="history-time">{relativeTime(r.timestamp)}</span>
                 </li>
               ))}
-            </ul>
+              </ul>
+              {tip !== null && (
+                <div className="history-tooltip" style={{ left: tip.x, top: tip.y }}>
+                  <pre>{tip.content}</pre>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
