@@ -110,8 +110,12 @@ const TAIL_BYTES = 262144
  * 「执行中」判定窗口：进程存活且 transcript 最近写入（mtime）在此毫秒数内 → recentlyActive。
  * transcript 随 Claude Code 每轮活动更新，空闲会话停在提示符时停止写入，故 mtime 是
  * "正在执行任务"的廉价真源（无需额外解析）。仅对存活会话有意义。
+ *
+ * 15s = 5× 轮询间隔(3s)：兼顾及时性（停止写入 ≤15s 内翻「空闲」）与对短暂停顿的容忍
+ * （长工具执行中 transcript 可能几秒不写，窗口过小会误判空闲）。先前 60s 导致
+ * 「执行中→空闲」变更过慢（用户 2026-08-06 反馈）。
  */
-const ACTIVE_WINDOW_MS = 60_000
+const ACTIVE_WINDOW_MS = 15_000
 
 /**
  * 单次尾窗读同时提取的四件事（F2，见文件头说明）：
