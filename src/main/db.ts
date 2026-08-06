@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import Database from 'better-sqlite3'
 
-import type { ApprovalRecord, BalanceDailySnapshot, UsageRecord } from '../shared/types'
+import type { ApprovalRecord, BalanceDailySnapshot, BillingMode, UsageRecord } from '../shared/types'
 
 /**
  * M3 — 数据库封装（DESIGN §6.2）
@@ -17,6 +17,8 @@ import type { ApprovalRecord, BalanceDailySnapshot, UsageRecord } from '../share
  */
 
 // ─── Schema（DESIGN §6.2 逐字，列/索引定义完全一致；加 IF NOT EXISTS 以支持重复启动幂等建表） ───
+// M13.4：api_usage 增 billing/unit 两列（计费形式 + 显示单位，多卡用量视图）。
+// 已有库走 migrateApiUsageColumns 的 PRAGMA table_info + ALTER TABLE 幂等迁移（见下）。
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS api_usage (
@@ -25,7 +27,9 @@ CREATE TABLE IF NOT EXISTS api_usage (
     model            TEXT    NOT NULL DEFAULT 'all',
     balance          REAL    NOT NULL DEFAULT 0,
     balance_currency TEXT    NOT NULL DEFAULT 'CNY',
-    timestamp        TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+    timestamp        TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+    billing          TEXT    NOT NULL DEFAULT '',
+    unit             TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_usage_provider_time ON api_usage(provider, model, timestamp);
 
@@ -42,13 +46,18 @@ CREATE TABLE IF NOT EXISTS approval_history (
 CREATE INDEX IF NOT EXISTS idx_approval_time ON approval_history(timestamp DESC);
 `
 
+// M13.4：INSERT 含 billing/unit 列；recordUsage 可选参缺省写 ''（兼容旧 4 参调用方）。
 const INSERT_USAGE =
-  'INSERT INTO api_usage (provider, model, balance, balance_currency) VALUES (?, ?, ?, ?)'
+  'INSERT INTO api_usage (provider, model, balance, balance_currency, billing, unit) VALUES (?, ?, ?, ?, ?, ?)'
 
 // 每个 (provider, model) 取最新一行：用 WHERE id IN (SELECT MAX(id) ... GROUP BY)，
 // 规避 SQLite `SELECT *, MAX(id) ... GROUP BY` 的裸列语义不可靠问题。
 const SELECT_LATEST_USAGE =
   'SELECT * FROM api_usage WHERE id IN (SELECT MAX(id) FROM api_usage GROUP BY provider, model) ORDER BY provider, model'
+
+// M13.4：单 provider 最新一条（多卡视图"单卡查询"用，避免每卡全量扫 getLatestUsage）。
+const SELECT_LATEST_USAGE_BY_PROVIDER =
+  'SELECT * FROM api_usage WHERE provider = ? ORDER BY id DESC LIMIT 1'
 
 // 近 30 天每日余额快照：每天取 MAX(id)（当日最后一次快照）那行的 balance，按 day 升序。
 // 沿用 getLatestUsage 的 MAX(id) 分组风格（WHERE id IN 子查询），规避裸列聚合语义问题。
@@ -77,6 +86,8 @@ interface RawUsageRow {
   balance: number
   balance_currency: string
   timestamp: string
+  billing: string // M13.4：'' = 迁移前的旧行或旧 4 参调用方写入
+  unit: string // M13.4：同上
 }
 
 interface RawApprovalRow {
@@ -101,7 +112,9 @@ function toUsageRecord(row: RawUsageRow): UsageRecord {
     model: row.model,
     balance: row.balance,
     balanceCurrency: row.balance_currency,
-    timestamp: row.timestamp
+    timestamp: row.timestamp,
+    billing: row.billing, // M13.4 透传（'' = 旧行/旧调用方）
+    unit: row.unit
   }
 }
 
@@ -143,6 +156,7 @@ export class AppDatabase {
   // 惰性缓存的 prepared statements：首次使用时 prepare 后复用，避免 M6/M8 秒级轮询重复编译 SQL。
   private sInsertUsage: Database.Statement<unknown[]> | null = null
   private sLatestUsage: Database.Statement<unknown[], RawUsageRow> | null = null
+  private sLatestUsageByProvider: Database.Statement<unknown[], RawUsageRow> | null = null
   private s30DayBalance: Database.Statement<unknown[], RawDayRow> | null = null
   private sInsertApproval: Database.Statement<unknown[]> | null = null
   private sRecentApprovals: Database.Statement<unknown[], RawApprovalRow> | null = null
@@ -159,16 +173,45 @@ export class AppDatabase {
     this.db = new Database(this.path)
   }
 
-  /** 开 WAL + 建表/索引（幂等）。致命错误抛出。 */
+  /** 开 WAL + 建表/索引（幂等）+ api_usage 旧库迁移（幂等）。致命错误抛出。 */
   initDB(): void {
     this.db.pragma('journal_mode = WAL')
     this.db.exec(SCHEMA_SQL)
+    this.migrateApiUsageColumns()
   }
 
-  recordUsage(provider: string, model: string, balance: number, currency: string): void {
+  /**
+   * M13.4 幂等迁移：CREATE TABLE IF NOT EXISTS 对已有 api_usage 表不生效（开发期用户库
+   * 已存在但无 billing/unit 列），故建表后用 PRAGMA table_info 检查，缺列则 ALTER TABLE
+   * ADD COLUMN（NOT NULL 需常量默认值，'' 合法）。重复启动不重复加列；已有行新列默认 ''。
+   * 属 initDB 致命错误范畴：不捕获，直接抛。
+   */
+  private migrateApiUsageColumns(): void {
+    const cols = this.db.prepare('PRAGMA table_info(api_usage)').all() as Array<{ name: string }>
+    const names = new Set(cols.map((c) => c.name))
+    if (!names.has('billing')) {
+      this.db.exec("ALTER TABLE api_usage ADD COLUMN billing TEXT NOT NULL DEFAULT ''")
+    }
+    if (!names.has('unit')) {
+      this.db.exec("ALTER TABLE api_usage ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
+    }
+  }
+
+  /**
+   * 用量快照落库。M13.4：billing/unit 为可选参，缺省写 ''——现有调用方（services.ts）
+   * 仍传 4 参不受影响；M13.5 调度泛化后传 6 参记录计费形式与显示单位。
+   */
+  recordUsage(
+    provider: string,
+    model: string,
+    balance: number,
+    currency: string,
+    billing?: BillingMode,
+    unit?: string
+  ): void {
     try {
       const stmt = (this.sInsertUsage ??= this.db.prepare<unknown[]>(INSERT_USAGE))
-      stmt.run(provider, model, balance, currency)
+      stmt.run(provider, model, balance, currency, billing ?? '', unit ?? '')
     } catch (err) {
       console.warn(`[db] recordUsage 失败: ${(err as Error).message}`)
     }
@@ -183,6 +226,23 @@ export class AppDatabase {
     } catch (err) {
       console.warn(`[db] getLatestUsage 失败: ${(err as Error).message}`)
       return []
+    }
+  }
+
+  /**
+   * M13.4：单 provider 最新一条（多卡视图"单卡查询"用，避免每卡全量扫 getLatestUsage）。
+   * 无该 provider 记录返回 null。
+   */
+  getLatestUsageByProvider(provider: string): UsageRecord | null {
+    try {
+      const stmt = (this.sLatestUsageByProvider ??= this.db.prepare<unknown[], RawUsageRow>(
+        SELECT_LATEST_USAGE_BY_PROVIDER
+      ))
+      const row = stmt.get(provider)
+      return row ? toUsageRecord(row) : null
+    } catch (err) {
+      console.warn(`[db] getLatestUsageByProvider 失败: ${(err as Error).message}`)
+      return null
     }
   }
 

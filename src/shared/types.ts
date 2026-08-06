@@ -11,6 +11,7 @@
  * M13.1 引入：usage_sources 可插拔泛化（BillingMode / UsageSourceKind / HttpJsonSource / BssSource /
  *   SubscriptionSource / DetectionConfig），替换并删除 ApiBalanceSource / BssBalanceSource / CcSwitchConfig（§6.1）。
  * M13.2 引入：CalledApi（检测器发现的"调用过的 API"）；三类余量源补可选 detect_ids 桥接字段。
+ * M13.4 引入：UsageRecord 增可选 billing/unit（计费形式 + 显示单位，用量视图多卡泛化的 db 层支撑）。
  */
 
 // ─── 通用工具类型 ───
@@ -185,13 +186,17 @@ export interface BalanceInfo {
 
 // ─── API 用量 / 审批历史（DESIGN §6.12，db INTEGER/REAL → TS 映射） ───
 
-/** api_usage 表行（§6.2）→ UsageView 渲染 */
+/** api_usage 表行（§6.2）→ UsageView 渲染（M13.4：增可选 billing/unit，多卡用量视图按卡展示计费形式与单位） */
 export interface UsageRecord {
   provider: string
   model: string
   balance: number
   balanceCurrency: string
   timestamp: string // 本地时间 "YYYY-MM-DD HH:MM:SS"（db datetime('now','localtime')），渲染端按字面展示
+  /** 计费形式：'payg' / 'subscription'；'' 或 undefined = 旧行/旧调用方未记录（M13.4 新增，可选保持向后兼容） */
+  billing?: string
+  /** 显示单位：CNY/token/次数…；'' 或 undefined = 旧行/旧调用方未记录（M13.4 新增，可选保持向后兼容） */
+  unit?: string
 }
 
 /** get30DayBalance 聚合行（§6.2）→ TrendSparkline */

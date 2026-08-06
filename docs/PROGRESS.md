@@ -596,7 +596,7 @@
 | M13.1 配置模型扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:20 | commit 4329c0b；usage_sources 计费/接入/提取 + detection 注册表 |
 | M13.2 检测器注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 15:40 | commit c8643aa；cc-switch/transcript/manual 合并降级 |
 | M13.3 quota-reader 注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:00 | commit 14fa809；http-json 通用 + bss 签名 + subscription 占位 |
-| M13.4 db 扩展 | ⏳ 未开始 | — | — | | billing/unit + 每卡 30 天趋势 |
+| M13.4 db 扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:30 | commit 待补；billing/unit 列 + 幂等迁移 + 单卡查询 |
 | M13.5 调度泛化 | ⏳ 未开始 | — | — | | 遍历 called 逐个查 + 独立低余量告警 |
 | M13.6 IPC + 多卡 UI | ⏳ 未开始 | — | — | | 余量卡+槽位卡 + 设置页用量源表单 |
 | M13.7 文档 + 集成测试 | ⏳ 未开始 | — | — | | 添加厂商指南 + E2E |
@@ -646,6 +646,14 @@
 - 偏离：无（BSS 无真实 AK 联调过，代码注释已标明首次真实调用需核对时钟/AK 权限）
 - 遗留：百炼套餐端点（subscription 占位）、BSS AccessKey 待用户提供
 - 收尾三件套：① commit 14fa809 ② 无新起实例、无孤儿 ③ 本日志 ✅
+
+### 2026-08-06 16:30:51 ｜ M13.4 ｜ db 扩展 完成（commit 待补）
+- 派发：开发+测试合并 subagent；注入 billing/unit 维度 + 幂等迁移契约
+- 产出：db.ts——api_usage 加 billing/unit 两列（新库直出 + migrateApiUsageColumns 幂等迁移 PRAGMA+ALTER）；recordUsage 扩为可选 6 参（缺省 '' 兼容旧 4 参调用方）；RawUsageRow/toUsageRecord 透传；新增 getLatestUsageByProvider（单卡查询）；types.ts UsageRecord 加可选 billing/unit
+- 验证全绿：build 三入口 + 双 typecheck 零错误；迁移幂等（旧库加列 + 连续 3 次 initDB 无重复 + 新库直出）；6 参/4 参落库均正确；getLatestUsageByProvider 取最新；get30DayBalance 回归（provider 过滤互不串扰）；python3 sqlite3 10 行逐条核对——共 19 项断言
+- 运行时验证：better-sqlite3 为 Electron ABI，tsc 单独编译后 electron 跑测试脚本
+- 偏离：无（迁移函数命名 migrateApiUsageColumns 私有方法，与 initDB 生命周期一致）
+- 收尾三件套：① commit 待补 ② 无新起实例、无孤儿 ③ 本日志 ✅
 
 ---
 
