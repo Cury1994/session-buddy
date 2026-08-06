@@ -984,3 +984,193 @@
     line-height: 1.5;
   }
 }
+
+/* ============================================================
+ * M13.6 — 多卡用量视图 + 设置页用量源管理
+ * 色值对齐 :root token（--danger-red / --accent-blue / --success-green /
+ * --warning-yellow / --text-muted）；类名带 usage-/slot- 前缀，避免与 M8
+ * 单卡段（balance-*）与 M9 mini-badge 冲突。
+ * ============================================================ */
+@layer components {
+  /* ── 计费徽章基底（10px / 600 / 4px 胶囊，浅色底 + 同调边框） ── */
+  .usage-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  /* 按量：accent-blue 蓝调 */
+  .usage-badge-payg {
+    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+    color: var(--accent-blue);
+    border: 1px solid color-mix(in srgb, var(--accent-blue) 28%, transparent);
+  }
+  /* 订阅：success-green 绿调（浅底压深一档保对比度） */
+  .usage-badge-subscription {
+    background: color-mix(in srgb, var(--success-green) 14%, transparent);
+    color: color-mix(in srgb, var(--success-green) 65%, black);
+    border: 1px solid color-mix(in srgb, var(--success-green) 32%, transparent);
+  }
+  /* 未配置：warning-yellow 琥珀调 */
+  .usage-badge-missing-config {
+    background: color-mix(in srgb, var(--warning-yellow) 26%, transparent);
+    color: #8a6d00;
+    border: 1px solid color-mix(in srgb, var(--warning-yellow) 55%, transparent);
+  }
+  /* 缺凭证：橙调（warning 深化，与"未配置"区分） */
+  .usage-badge-missing-credential {
+    background: rgba(255, 149, 0, 0.13);
+    color: #b36200;
+    border: 1px solid rgba(255, 149, 0, 0.35);
+  }
+  /* 查询失败：danger-red 红调 */
+  .usage-badge-error {
+    background: color-mix(in srgb, var(--danger-red) 10%, transparent);
+    color: var(--danger-red);
+    border: 1px solid color-mix(in srgb, var(--danger-red) 30%, transparent);
+  }
+
+  /* 卡头右侧徽章组（计费 + 状态 + Live 横向排列） */
+  .usage-card-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  /* 余量大数字：28px / 700，符号 16px 顶对齐（M8 balance-display 同规格） */
+  .usage-remaining {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.15;
+  }
+  .usage-remaining-symbol {
+    font-size: 16px;
+    font-weight: 600;
+    vertical-align: top;
+    margin-right: 1px;
+  }
+  .usage-remaining-unit {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  /* 低余量警示：danger-red / 12px（token 对齐，P3-2 口径） */
+  .usage-warning {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--danger-red);
+    margin-top: 6px;
+  }
+
+  /* 元信息：币种/单位 + 更新时刻 */
+  .usage-meta {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  /* 趋势段：上细分割线 + 标签 + sparkline */
+  .usage-trend {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  .usage-trend-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  /* ── 槽位卡（missing-config / missing-credential / error） ── */
+  .slot-calls {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .slot-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 4px 0 10px;
+  }
+  .slot-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* ── 设置页用量源管理 ── */
+  .usage-sources-actions {
+    margin-bottom: 6px;
+  }
+  .usage-source-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 6px;
+  }
+  .usage-source-info {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .usage-source-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .usage-source-kind {
+    font-size: 10px;
+    color: rgba(0, 0, 0, 0.4);
+  }
+  /* 聚焦行脉冲高亮（accent-blue 两闪后由 JS 移除类） */
+  @keyframes usage-highlight-pulse {
+    0%,
+    100% {
+      background: transparent;
+    }
+    50% {
+      background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+    }
+  }
+  .usage-source-highlight {
+    animation: usage-highlight-pulse 0.7s ease-in-out 3;
+  }
+
+  /* ── 新增/编辑表单 ── */
+  .usage-form {
+    padding: 2px 0 0;
+  }
+  .usage-form-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 8px;
+  }
+  .usage-form-error {
+    font-size: 11px;
+    color: var(--danger-red);
+    margin: 2px 0 8px;
+  }
+  .usage-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 2px;
+  }
+}

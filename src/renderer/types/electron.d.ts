@@ -19,13 +19,15 @@ import type {
   DeepPartial,
   PendingApproval,
   SessionInfo,
-  UsageRecord
+  UsageCard
 } from '../../shared/types'
 
 export interface ElectronAPI {
   // ── Request/Response（§7 逐字） ──
-  getUsageData(): Promise<UsageRecord[]>
-  getBalanceHistory(): Promise<BalanceDailySnapshot[]>
+  /** 最新用量卡（M13.5 起为 UsageCard[]，取代 M8 的 UsageRecord[] 单 provider 余额） */
+  getUsageData(): Promise<UsageCard[]>
+  /** 指定用量源的 30 天余额走势（M13.6 起逐卡传 sourceId） */
+  getBalanceHistory(sourceId: string): Promise<BalanceDailySnapshot[]>
   getSessionsData(): Promise<SessionInfo[]>
   getApprovalHistory(): Promise<ApprovalRecord[]>
   getConfig(): Promise<AppConfig>
@@ -54,7 +56,7 @@ export interface ElectronAPI {
   getAlwaysOnTop(): Promise<boolean>
 
   // ── Push events → 返回 unsubscribe 函数（§7 逐字） ──
-  onUsageUpdated(cb: (data: UsageRecord[]) => void): () => void
+  onUsageUpdated(cb: (data: UsageCard[]) => void): () => void
   onSessionsUpdated(cb: (sessions: SessionInfo[]) => void): () => void
   /** 运行时负载实为 PendingApproval（含 id，§5.3）；类型按 §7 声明为 ApprovalPayload */
   onApprovalPending(cb: (data: ApprovalPayload) => void): () => void

@@ -9,7 +9,7 @@ import type {
   DeepPartial,
   PendingApproval,
   SessionInfo,
-  UsageRecord
+  UsageCard
 } from '../shared/types'
 
 /**
@@ -40,11 +40,12 @@ function subscribe<T>(channel: string, cb: (data: T) => void): () => void {
 const api = {
   // ── Request/Response（§7，11 invoke） ──
 
-  /** 最新余额快照（usage:get → db.getLatestUsage） */
-  getUsageData: (): Promise<UsageRecord[]> => ipcRenderer.invoke('usage:get'),
+  /** 最新用量卡（usage:get → 调度器缓存 UsageCard[]，M13.5 泛化；首轮 tick 前为 []） */
+  getUsageData: (): Promise<UsageCard[]> => ipcRenderer.invoke('usage:get'),
 
-  /** 30 天余额走势（usage:history → db.get30DayBalance） */
-  getBalanceHistory: (): Promise<BalanceDailySnapshot[]> => ipcRenderer.invoke('usage:history'),
+  /** 30 天余额走势（usage:history → db.get30DayBalance(sourceId) 逐卡取趋势） */
+  getBalanceHistory: (sourceId: string): Promise<BalanceDailySnapshot[]> =>
+    ipcRenderer.invoke('usage:history', sourceId),
 
   /** 活跃 session 列表（sessions:get → scanner 缓存） */
   getSessionsData: (): Promise<SessionInfo[]> => ipcRenderer.invoke('sessions:get'),
@@ -123,8 +124,8 @@ const api = {
 
   // ── Push events（§7，返回 unsubscribe 函数） ──
 
-  /** 余额更新（services.ts 每轮余额查询后 push） */
-  onUsageUpdated: (cb: (data: UsageRecord[]) => void): (() => void) =>
+  /** 用量卡更新（services.ts 每轮多卡余量查询后 push UsageCard[]，M13.5） */
+  onUsageUpdated: (cb: (data: UsageCard[]) => void): (() => void) =>
     subscribe('usage:updated', cb),
 
   /** Session 列表更新（services.ts 每轮扫描后 push，默认 3s） */

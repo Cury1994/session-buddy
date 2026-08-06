@@ -598,7 +598,7 @@
 | M13.3 quota-reader 注册表 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:00 | commit 14fa809；http-json 通用 + bss 签名 + subscription 占位 |
 | M13.4 db 扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:30 | commit 91835dd；billing/unit 列 + 幂等迁移 + 单卡查询 |
 | M13.5 调度泛化 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:50 | commit 450dcb8；startUsageChecker 多卡 + 全局最低告警线 + per-card 告警 |
-| M13.6 IPC + 多卡 UI | ⏳ 未开始 | — | — | | 余量卡+槽位卡 + 设置页用量源表单 |
+| M13.6 IPC + 多卡 UI | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-07 10:30 | commit 待补；多卡渲染 + 槽位卡引导 + 用量源表单 + Tailwind 坑 |
 | M13.7 文档 + 集成测试 | ⏳ 未开始 | — | — | | 添加厂商指南 + E2E |
 
 **遗留项登记表（M13 新增）**
@@ -663,6 +663,15 @@
 - 备注：首轮测试挂 6 条为测试脚本自身期望值错误（A 卡持续低位不重复告警属正确；槽位卡混入 payload 属预期），修正后全绿，非代码问题
 - 蓝图勘误：无（computeTrayColor 签名不变，warnThreshold 语义改全局最低线，注释已注明）
 - 收尾三件套：① commit 450dcb8 ② 无新起实例、无孤儿（pgrep 匹配为命令自身 shell 包装）③ 本日志 ✅
+
+### 2026-08-07 10:30:12 ｜ M13.6 ｜ IPC + 多卡 UI 完成（commit 待补）
+- 派发：开发+测试合并 subagent；**两次中断**（API 502 在 Tailwind 排查时 / 续接后正常收尾），均 SendMessage 续接原 agent（07-29 纪律）
+- 产出：preload/d.ts getUsageData→UsageCard[]、getBalanceHistory(sourceId)、onUsageUpdated→UsageCard[]；useUsageData 多卡 state + config 派生 defaultThreshold 兜底线；**UsageCardCard.tsx 新建**（四形态卡：ok/missing-config/missing-credential/error + 计费徽章 + 按需趋势模块缓存）；UsageView 多卡渲染 + onOpenSettings 钩子；SettingsView 用量源管理卡（列表+运行时状态标记 + 新增/编辑表单 kind 联动 + focusUsageSource 聚焦）；App settingsFocus state 传递消费清除；globals.css M13.6 段
+- 验证全绿：build 三入口 + 双 typecheck 零错误（主对话独立复验）；隔离实例 GUI 实测（HOME=/tmp + port 18599，未触碰用户实例 18456）——多卡渲染（DeepSeek ¥9.78 + 百炼槽位 + 2 测试卡）/ 30 点趋势 / 缺凭证态 missingHint / 跳设置聚焦（编辑表单预填）/ 表单新增编辑写回 reschedule / 计费徽章蓝绿 / 低余量红字真实触发
+- **【环境坑·Tailwind 3.4】`@layer components` 内类名字符串未在源码字面出现即被构建剥离**：`usage-badge-${card.billing}` 模板拼接 → usage-badge-payg/subscription 被丢弃（零报错、运行时无样式）。修复：`BILLING_BADGE_CLASS` 字面映射（UsageCardCard 导出，SettingsView 复用），构建后逐类核对全在
+- 偏离：limit 字段按实际类型为 JSON 点号路径字符串（quota-reader 对 remaining.limit 做 getPath，非数值）；低余量判定用 per-card warnThreshold（config 最低线仅兜底）
+- 清理：验证实例 18599/9223 已释放，无孤儿；用户实例未触碰（18456 = pid 596626 health OK）；/tmp/hm-m136-home 已删
+- 收尾三件套：① commit 待补 ② 无新起实例、无孤儿 ③ 本日志 ✅
 
 ---
 
