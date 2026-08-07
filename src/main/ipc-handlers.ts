@@ -9,10 +9,11 @@ import { getAutoApprove, setAutoApprove } from './server'
 import type { ApprovalQueue } from './approval-queue'
 import type { ClaudeCodeSessionScanner } from './claude-sessions'
 import type { AppDatabase } from './db'
+import type { SessionDetailScanner } from './session-detail'
 import type { ManagedTray } from './tray'
 import type { ManagedWindow } from './window'
 import type { DeepPartial } from './config'
-import type { AppConfig, ApprovalResponse, UsageCard } from '../shared/types'
+import type { AppConfig, ApprovalResponse, SessionDetail, UsageCard } from '../shared/types'
 
 /**
  * M7 — IPC 通道集中注册（DESIGN §6.11 / §7）
@@ -28,7 +29,8 @@ import type { AppConfig, ApprovalResponse, UsageCard } from '../shared/types'
  *   颜色优先级协议刷新）。
  *
  * 通道一览（§6.11）：
- *   invoke: usage:get / usage:history / sessions:get / history:get /
+ *   invoke: usage:get / usage:history / sessions:get / sessions:detail（M16 B1）/
+ *           history:get /
  *           config:get / config:save / app:refresh / app:quit /
  *           session:jump-terminal / session:terminate / approval:respond /
  *           approval:get（P1-3 挂载补拉 seed）/ app:toggle-pin /
@@ -44,6 +46,8 @@ import type { AppConfig, ApprovalResponse, UsageCard } from '../shared/types'
 export interface IpcHandlerDeps {
   db: AppDatabase
   scanner: ClaudeCodeSessionScanner
+  /** M16 B1：会话细节增量扫描器（sessions:detail 数据源；scanner 每轮 discoverSessions 已喂 scan） */
+  detailScanner: SessionDetailScanner
   approvalQueue: ApprovalQueue
   /** 当前未被 handler 直接使用（颜色 push 在 tray.ts 内部完成），保留供后续模块扩展 */
   tray: ManagedTray
@@ -142,6 +146,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   /** 活跃 session（scanner 缓存的同步读取，§5.2） */
   ipcMain.handle('sessions:get', () => scanner.getSessions())
+
+  /**
+   * 会话展开详情（M16 B1，F2 任务清单 / F3 子 Agent / F4 消息尾流）：
+   * 只读 detailScanner 增量缓存（scanner 每轮 discoverSessions 已对每个活跃会话喂 scan，
+   * 本 handler 不触发任何文件 IO）。入参 sessionId 非 string/空 → 空载荷。
+   */
+  ipcMain.handle('sessions:detail', (_event, sessionId: unknown): SessionDetail => {
+    if (typeof sessionId !== 'string' || sessionId === '') {
+      return { tasks: [], agents: [], messages: [] }
+    }
+    return deps.detailScanner.getDetail(sessionId)
+  })
 
   /** 审批历史（limit 缺省 → 全部，滚动展示；传正数则限最近 N 条） */
   ipcMain.handle('history:get', (_event, limit?: number) => {

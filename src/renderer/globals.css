@@ -1174,3 +1174,354 @@
     margin-top: 2px;
   }
 }
+
+/* ============================================================
+ * M16 — Sessions 迭代 B2（SessionCard 分层卡，基准原型
+ * prototype-sessions-v1.html 逐段翻译，窗口 420px）：
+ *   F1 当前动作行（.action-row：tool 蓝 spinner / waiting 黄暂停）
+ *   F5 上下文告警块（.ctx-warn，ctxPct ≥ 80）
+ *   展开开关（.expand-row）+ 详情区（.session-detail：
+ *     F2 任务进度 .task-* / F3 子 Agent .agent-* / F4 消息尾流 .msg-*）
+ * 色值：紧急红走 var(--danger-red) color-mix 派生（P3-2 口径）；
+ * 任务绿 #00e676 / 进行中黄 #ffab00 沿用原型；深色终端 #17181c。
+ * 所有类名在 TSX 源码中以完整字面量出现（Tailwind 3.4 @layer
+ * components 剥离坑，M13.6）。
+ * ============================================================ */
+
+/* F1 spinner 旋转（0.9s 线性循环，原型 .action .spinner 同源） */
+@keyframes action-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* F2 in_progress 任务黄点脉冲（opacity 呼吸，1.4s） */
+@keyframes task-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@layer components {
+  /* ── F1 当前动作行（徽章行下、lastActivity 上；tool=蓝加载 / waiting=黄暂停） ── */
+  .action-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.035);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 8px;
+    padding: 7px 9px;
+    margin-bottom: 8px;
+  }
+  .action-spinner {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: action-spin 0.9s linear infinite;
+  }
+  .action-label {
+    flex-shrink: 0;
+  }
+  /* 工具名/命令：monospace 单行截断（title 全文 tooltip） */
+  .action-cmd {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* waiting 暂停态：暖黄底 */
+  .action-row.paused {
+    background: color-mix(in srgb, var(--warning-yellow) 13%, transparent);
+    border-color: color-mix(in srgb, var(--warning-yellow) 42%, transparent);
+    color: #8a6d1a;
+  }
+  .action-pause-ico {
+    color: #ffab00;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  /* ── F5 上下文告警块（ctxPct ≥ 80；紧急红 token 派生，无按钮） ── */
+  .ctx-warn {
+    background: color-mix(in srgb, var(--danger-red) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger-red) 26%, transparent);
+    border-radius: 9px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+  }
+  .ctx-warn-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: color-mix(in srgb, var(--danger-red) 78%, black);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ctx-warn-desc {
+    font-size: 11px;
+    color: color-mix(in srgb, var(--danger-red) 62%, black);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  /* ── 展开开关（原型 .expand：顶部细分割线 + 居中蓝字） ── */
+  .expand-row {
+    margin-top: 9px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    padding-top: 8px;
+    text-align: center;
+  }
+  .expand-btn {
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--accent-blue);
+    cursor: default;
+    padding: 0;
+  }
+  .expand-btn:hover {
+    color: #0062cc;
+  }
+
+  /* ── 详情区容器（顶部虚线分割；三段纵向排列） ── */
+  .session-detail {
+    margin-top: 10px;
+    border-top: 1px dashed rgba(0, 0, 0, 0.09);
+    padding-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  /* 详情区单个区块（任务/子Agent/对话）分组容器；纵向间距由 .session-detail 的 gap 承担 */
+  .detail-sec {
+    display: flex;
+    flex-direction: column;
+  }
+  .detail-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 7px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .detail-ico {
+    color: rgba(0, 0, 0, 0.4);
+  }
+  /* 空态/加载/失败：居中灰字斜体（.detail-error 覆色红） */
+  .detail-empty {
+    font-size: 11.5px;
+    color: rgba(0, 0, 0, 0.4);
+    text-align: center;
+    padding: 14px 0;
+    font-style: italic;
+  }
+  .detail-error {
+    color: var(--danger-red);
+  }
+
+  /* ── F2 任务进度（完成数/总数 + 绿进度条 + 三态条目） ── */
+  .task-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .task-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .task-progress-fill {
+    height: 100%;
+    background: #00e676;
+    border-radius: 99px;
+    transition: width 0.3s ease;
+  }
+  .task-progress-num {
+    font-weight: 700;
+    color: var(--text-main);
+    flex-shrink: 0;
+  }
+  .task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .task-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.025);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 7px;
+    padding: 6px 8px;
+  }
+  .task-check {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    flex: 0 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: #ffffff;
+    box-sizing: border-box;
+  }
+  .task-item.done .task-check {
+    background: #00e676;
+  }
+  .task-item.run .task-check {
+    background: transparent;
+    border: 2px solid #ffab00;
+  }
+  .task-item.run .task-check::after {
+    content: '';
+    width: 5px;
+    height: 5px;
+    background: #ffab00;
+    border-radius: 50%;
+    animation: task-dot-pulse 1.4s ease-in-out infinite;
+  }
+  .task-item.pend .task-check {
+    border: 2px solid rgba(0, 0, 0, 0.2);
+  }
+  .task-text {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-item.done .task-text {
+    color: rgba(0, 0, 0, 0.4);
+    text-decoration: line-through;
+  }
+  .task-item.run .task-text {
+    font-weight: 600;
+  }
+
+  /* ── F3 子 Agent（类型头像 + 名/描述 + 状态标签） ── */
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.025);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 8px;
+    padding: 7px 9px;
+    margin-bottom: 6px;
+  }
+  .agent-row:last-child {
+    margin-bottom: 0;
+  }
+  .agent-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: #e7e9ff;
+    color: #5b5bd6;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 20px;
+  }
+  .agent-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .agent-name {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agent-desc {
+    font-size: 10.5px;
+    color: rgba(0, 0, 0, 0.4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agent-status {
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 2px 7px;
+    border-radius: 99px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .agent-status.running {
+    background: #f3f9ec;
+    color: #4c9a2f;
+  }
+  .agent-status.done {
+    background: rgba(0, 0, 0, 0.05);
+    color: rgba(0, 0, 0, 0.4);
+  }
+
+  /* ── F4 最近对话（深色终端风：user 头红 / assistant 头蓝，文本灰白） ── */
+  .msg-log {
+    background: #17181c;
+    border-radius: 9px;
+    padding: 9px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    max-height: 150px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .msg-line {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+  .msg-line:last-child {
+    margin-bottom: 0;
+  }
+  .msg-who {
+    flex: 0 0 auto;
+    font-weight: 700;
+    color: #7aa2f7;
+  }
+  .msg-line.user .msg-who {
+    color: #f7768e;
+  }
+  .msg-text {
+    flex: 1;
+    min-width: 0;
+    color: #c9d1e0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}

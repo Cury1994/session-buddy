@@ -9,6 +9,7 @@ import { ApprovalQueue } from './approval-queue'
 import { initNotifications } from './notifications'
 import { createServer } from './server'
 import { ClaudeCodeSessionScanner } from './claude-sessions'
+import { SessionDetailScanner } from './session-detail'
 import { getCachedUsageCards, startUsageChecker, startSessionScanner } from './services'
 import { registerIpcHandlers } from './ipc-handlers'
 import { ensureHookRegistered } from './hook-installer'
@@ -91,7 +92,10 @@ if (!gotTheLock) {
       // usageChecker 内部经 quota-reader + detectors 泛化轮询所有 usage_sources
       // （取代 M6 DeepSeekProvider 单卡，deepseek.ts 已删）。
       // ClaudeCodeSessionScanner 持 approvalQueue 引用（合并 hasPendingApproval，§6.8.2 step 4）。
-      const sessionScanner = new ClaudeCodeSessionScanner(config, approvalQueue)
+      // M16 B1：SessionDetailScanner 双路注入——scanner 构造器（每轮 discoverSessions 对每个
+      // 活跃会话喂 scan + 推导 currentAction）与 IPC deps（sessions:detail 只读其缓存）。
+      const detailScanner = new SessionDetailScanner()
+      const sessionScanner = new ClaudeCodeSessionScanner(config, approvalQueue, detailScanner)
 
       // getSessions 注入 scanner 缓存的同步读取（server /api/sessions 用，§5.2）
       managedServer = createServer({
@@ -160,6 +164,7 @@ if (!gotTheLock) {
       registerIpcHandlers({
         db: database,
         scanner: sessionScanner,
+        detailScanner,
         approvalQueue,
         tray: managedTray,
         window: managedWindow,

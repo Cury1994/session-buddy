@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
 import type { ApprovalQueue } from './approval-queue'
+import type { SessionDetailScanner } from './session-detail'
 import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
 
 /**
@@ -328,8 +329,9 @@ const ACTIVITY_MAX = 120
  *   ③ 折叠全部空白（含换行）为单空格 → 单行摘要（卡片单行 ellipsis 展示）
  *   ④ 超 ACTIVITY_MAX 字符 → 截断 + "…"
  * 清洗后为空返回 null（调用方据此跳过该记录继续逆扫）。
+ * 导出供 session-detail.ts 复用（M16 B1：消息尾流清洗同源，避免两处规则漂移）。
  */
-function toActivity(text: unknown): string | null {
+export function toActivity(text: unknown): string | null {
   if (typeof text !== 'string') return null
   let t = text.replace(
     /<(?:system-reminder|local-command-caveat)>[\s\S]*?<\/(?:system-reminder|local-command-caveat)>/g,
@@ -345,8 +347,9 @@ function toActivity(text: unknown): string | null {
  * 从 message.content 提取可读文本（F2 lastActivity 与 firstUserText 共用取块逻辑）：
  *   content 为 string → 直接返回；为 block 数组 → 取第一个 type==="text" 块的 text；
  *   tool_result 等无 text 块的记录 → null（调用方跳过该记录）。
+ * 导出供 session-detail.ts 复用（M16 B1）。
  */
-function extractContentText(content: unknown): string | null {
+export function extractContentText(content: unknown): string | null {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     for (const b of content) {
@@ -749,10 +752,16 @@ export class ClaudeCodeSessionScanner {
   private readonly projectsDirs: string[]
   private readonly settingsPath: string
   private readonly approvalQueue: ApprovalQueue
+  /** M16 B1：会话细节增量扫描器（tasks/agents/messages/currentAction 真源，index.ts 注入） */
+  private readonly detailScanner: SessionDetailScanner
   /** 调度器每轮写入，供 server getSessions 同步读取 */
   private latestSessions: SessionInfo[] = []
 
-  constructor(config: AppConfig, approvalQueue: ApprovalQueue) {
+  constructor(
+    config: AppConfig,
+    approvalQueue: ApprovalQueue,
+    detailScanner: SessionDetailScanner
+  ) {
     const cc = config.harnesses['claude-code']
     const dirs = (cc.config_dirs && cc.config_dirs.length > 0 ? cc.config_dirs : ['~/.claude']).map(
       expandHome
@@ -761,6 +770,7 @@ export class ClaudeCodeSessionScanner {
     this.projectsDirs = dirs.map((d) => join(d, 'projects'))
     this.settingsPath = expandHome(cc.settings_path || '~/.claude/settings.json')
     this.approvalQueue = approvalQueue
+    this.detailScanner = detailScanner
   }
 
   /** 同步读取上一轮扫描缓存（createServer 的 getSessions 注入口用） */
@@ -838,6 +848,20 @@ export class ClaudeCodeSessionScanner {
     // F2：尾窗一次读提取三事（usedTokens / lastCwd / lastModel，见文件头与 tailFacts 注释）
     const tail = transcript ? tailFacts(transcript) : ZERO_TAIL
 
+    // M16 B1：增量细节扫描 + currentAction 推导（真源 = SessionDetailScanner 增量缓存）。
+    // scan() 每轮只读新增 delta（compact 重写自动全量重建），getCurrentAction 只读缓存状态，
+    // 均不重复 tailFacts 的尾窗逻辑（ctxPct 不变量 B 不受影响）。任何异常降级 null，
+    // 绝不影响会话列表主链路（NFR-3）。
+    let currentAction: SessionInfo['currentAction'] = null
+    if (transcript !== null && sessionId !== '') {
+      try {
+        this.detailScanner.scan(transcript, sessionId)
+        currentAction = this.detailScanner.getCurrentAction(transcript, sessionId)
+      } catch {
+        currentAction = null
+      }
+    }
+
     // 显示 cwd（F2）：transcript 尾读的最后一条 cwd（Claude Code 随实际工作目录动态更新，
     // 是"当前真实项目路径"真源）→ jsonCwd（启动目录）降级；两者统一 4096 截断
     const cwd = (tail.lastCwd !== null ? tail.lastCwd : jsonCwd).slice(0, 4096)
@@ -910,7 +934,7 @@ export class ClaudeCodeSessionScanner {
       hasPendingApproval,
       recentlyActive,
       lastActivity: tail.lastActivity ?? '', // F2：最近可读任务内容（扫不到为空串，卡片据此条件渲染）
-      currentAction: null // M16 占位：B1 增量细节扫描器实现真实推导（末条 tool_use 无 tool_result → tool / 否则 waiting）
+      currentAction // M16 B1：增量细节扫描器推导（末条 tool_use 无 tool_result → tool / 否则 waiting / 无法确定 null）
     }
   }
 }
