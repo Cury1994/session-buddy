@@ -18,6 +18,7 @@ import type {
   BalanceDailySnapshot,
   DeepPartial,
   PendingApproval,
+  SessionDetail,
   SessionInfo,
   UsageCard
 } from '../../shared/types'
@@ -29,6 +30,8 @@ export interface ElectronAPI {
   /** 指定用量源的 30 天余额走势（M13.6 起逐卡传 sourceId） */
   getBalanceHistory(sourceId: string): Promise<BalanceDailySnapshot[]>
   getSessionsData(): Promise<SessionInfo[]>
+  /** 会话展开详情（M16，sessions:detail → 增量细节扫描器缓存：任务/子Agent/消息尾流） */
+  getSessionDetail(sessionId: string): Promise<SessionDetail>
   getApprovalHistory(): Promise<ApprovalRecord[]>
   getConfig(): Promise<AppConfig>
   saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>

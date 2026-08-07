@@ -909,7 +909,8 @@ export class ClaudeCodeSessionScanner {
       startedAt,
       hasPendingApproval,
       recentlyActive,
-      lastActivity: tail.lastActivity ?? '' // F2：最近可读任务内容（扫不到为空串，卡片据此条件渲染）
+      lastActivity: tail.lastActivity ?? '', // F2：最近可读任务内容（扫不到为空串，卡片据此条件渲染）
+      currentAction: null // M16 占位：B1 增量细节扫描器实现真实推导（末条 tool_use 无 tool_result → tool / 否则 waiting）
     }
   }
 }

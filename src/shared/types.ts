@@ -309,4 +309,44 @@ export interface SessionInfo {
   hasPendingApproval: boolean // approvalQueue 中存在匹配项
   recentlyActive: boolean // 进程存活且 transcript 最近写入（mtime ≤ ACTIVE_WINDOW_MS，§6.8）→ 执行中
   lastActivity: string // 最近一条可读对话/任务内容（transcript 尾读，截断 120；无则空串）
+  /**
+   * M16 F1：当前动作（增量细节扫描器从 transcript 末条记录推导，非 tailFacts）。
+   *   { kind:'tool',    label:"Bash: npm run build" } —— 末条为 tool_use 且无对应 tool_result（正在执行某工具）
+   *   { kind:'waiting', label:"等待用户输入" }        —— 末条为 assistant 文本/已无 pending 工具（等你输入）
+   *   null —— 无法确定（transcript 缺失/空）
+   */
+  currentAction: { kind: 'tool' | 'waiting'; label: string } | null
+}
+
+// ─── M16 Sessions 迭代：展开详情区载荷（F2 任务 / F3 子 Agent / F4 消息尾流） ───
+
+/** F2：会话真实任务清单的一项（从 TaskCreate/TaskUpdate 工具调用序列重建） */
+export interface SessionTask {
+  taskId: string
+  content: string // subject（TaskCreate 的 input.subject）
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+/** F3：一次子 Agent 派发（Agent tool_use 事件；tool_result 到达即 done） */
+export interface SubAgentRef {
+  id: string // tool_use.id（tool_result 的 tool_use_id 对应）
+  type: string // subagent_type（general-purpose / Plan / claude-code-guide / ...）
+  description: string // Agent tool_use 的 input.description
+  status: 'running' | 'done'
+}
+
+/** F4：最近一条消息（原始格式，无多 agent 对话框架） */
+export interface SessionMessage {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+/**
+ * 展开卡时按需拉取的详情载荷（M16，sessions:detail IPC）。
+ * tasks/agents 为全量，messages 为最近 N 条（oldest→newest）。
+ */
+export interface SessionDetail {
+  tasks: SessionTask[]
+  agents: SubAgentRef[]
+  messages: SessionMessage[]
 }

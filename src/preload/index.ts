@@ -8,6 +8,7 @@ import type {
   BalanceDailySnapshot,
   DeepPartial,
   PendingApproval,
+  SessionDetail,
   SessionInfo,
   UsageCard
 } from '../shared/types'
@@ -49,6 +50,10 @@ const api = {
 
   /** 活跃 session 列表（sessions:get → scanner 缓存） */
   getSessionsData: (): Promise<SessionInfo[]> => ipcRenderer.invoke('sessions:get'),
+
+  /** 会话展开详情（M16，sessions:detail → 增量细节扫描器缓存：任务/子Agent/消息尾流） */
+  getSessionDetail: (sessionId: string): Promise<SessionDetail> =>
+    ipcRenderer.invoke('sessions:detail', sessionId),
 
   /** 全部审批历史（history:get → db.getRecentApprovals，无 limit 即全部） */
   getApprovalHistory: (): Promise<ApprovalRecord[]> => ipcRenderer.invoke('history:get'),

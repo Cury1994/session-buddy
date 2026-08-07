@@ -89,7 +89,7 @@ const DEFAULT_CONFIG: AppConfig = {
     }
   },
   notifications: { enabled: true, approve_timeout_sec: 60 },
-  window: { width: 340, height: 650 }
+  window: { width: 420, height: 650 }
 }
 
 // ─── 工具 ───

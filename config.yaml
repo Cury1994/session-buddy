@@ -74,5 +74,5 @@ notifications:
   approve_timeout_sec: 60
 
 window:                               # 尺寸以设计资料为准，见 DESIGN §2.9
-  width: 340
+  width: 420
   height: 650
