@@ -22,9 +22,9 @@
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）｜ **M15 厂商 host 归并 + 内置 registry ✅**（2026-08-07）
 
-**当前阶段**：**M13 用量视图泛化完成（7/7）** — API Usage 改为展示"调用过的 API 的余量"多卡（按量/订阅 + 余量卡/槽位卡 + 设置页用量源管理）；可插拔 quota-reader 注册表 + 检测器注册表实现"别人加新厂商零代码"（E2E 实证）；遗留：百炼套餐端点 + BSS AccessKey 待用户提供（卡留 missing-config/待凭证槽位）
+**当前阶段**：**M15 厂商（URL host）归并 + 内置厂商 registry 完成** — ① 归并键从 model 名改为厂商 URL hostname（cc-switch 检测器按 provider base_url 归并，同 host 合并成一张卡；claude-sessions 检测器改读 settings base_url，跳过本地代理）；② 仅成功调用（status_code 2xx）出余量卡；③ 内置 DeepSeek 模板 registry——未配置时检测到调用即自动出余量卡（零配置）；④ 卡片名用厂商名非 model 名。遗留：百炼套餐端点 + BSS AccessKey 待用户提供（卡留 missing-config/待凭证槽位）
 **归档后修订**：
 - 2026-07-31 上午 session 显示名修复（3b0693e，transcript 首条用户消息优先）
 - 2026-07-31 下午 会话卡片 6 项反馈修复轮（cdf4130 + a0086b0 + hook 注册）——详见日志末条
@@ -686,3 +686,19 @@
 ---
 
 **D1/D2/D3/D4 延后项暂缓**（M13 优先，用户本次指令）。原"下一步"文案见 git 历史。
+
+### 2026-08-07 11:31:00 ｜ M15 ｜ 厂商（URL host）归并 + 内置厂商 registry 完成（commit 待补）
+- **背景**：API Usage 视图按 model 名拆卡，deepseek-v4-flash-0731 / qwen3.8-max-preview（实际走百炼端点）被拆成独立槽位卡。用户要求：**一个真实调用 URL = 一张余量卡**，走同一 URL 的 model 不拆卡；仅成功调用出卡；DeepSeek 等只需 key 的厂商零配置直接展示余量
+- **实测数据**：cc-switch proxy_request_logs 里两 model 的 provider_id 都是百炼（c3c29ba1-...）：deepseek-v4-flash-0731(598 成功) / qwen3.8-max-preview(2658 成功)——顶了 deepseek 前缀的 model 名，实际走 `token-plan.cn-beijing.maas.aliyuncs.com`；providers 表 settings_config.env.ANTHROPIC_BASE_URL 是真实厂商 URL
+- **产出**：
+  - cc-switch-usage.ts：`urlHost()`（URL→hostname，去端口）、`getProviderHostMap()`（provider_id→{host,name}，解析 settings_config 取 BASE_URL）、detectCalled 改按 host 归并（同 host calls 累加）+ **status_code 2xx 成功过滤**；getConsumption 同步成功过滤
+  - detectors.ts：claude-sessions 检测器改读 settings base_url → hostname（不再扫 transcript model）；**跳过本地代理 host**（127.0.0.1/localhost/0.0.0.0/::1，本机有 cc-switch 时 settings 是代理地址）；删 transcript 尾读/glob 辅助
+  - **vendor-registry.ts 新建**：`VENDOR_TEMPLATES` 静态表 + `matchVendor(host)`，首批只放 DeepSeek（经实测），其余注释占位不塞猜测值
+  - services.ts：buildUsageCards 匹配加 **url host 匹配**（有 url 的 source 自动按 host 吸收）+ **registry fallback**（未配置时命中内置模板→自动出余量卡，零配置）
+  - config.yaml + config.ts DEFAULT_CONFIG：aliyun-bailian detect_ids 两 UUID→改 host；deepseek 删 detect_ids（url host 匹配兜底）
+- **验证全绿**：
+  - typecheck node+web + electron-vite build 零错误
+  - 裸 node：urlHost/matchVendor 全过；python 复现 host 归并——百炼两 provider 合并 calls=3364 + DeepSeek 1446，**无 model 名卡**
+  - **隔离实例 GUI（CDP 9333）实测**：正常 config → DeepSeek 余量卡 ¥8.37 + 百炼订阅·未配置（detect_ids=host 桥接）；**无 model 名卡、无 127.0.0.1 代理垃圾卡**；零配置（删 deepseek source）→ registry fallback 自动出 DeepSeek 余量卡 ✓
+- **【环境坑·urlHost 返坑】**：`new URL().host` 对 `http://127.0.0.1:15721` 返回 `127.0.0.1:15721`（**带端口**），LOOPBACK 匹配不上 → 首次 GUI 验证出现 127.0.0.1:15721 垃圾卡。改 `.hostname`（去端口）后消失。真实厂商 URL 无端口，hostname 即正确归并键
+- 收尾：用户实例 PID 738520 health OK；commit 待补；本日志 ✅

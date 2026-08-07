@@ -54,9 +54,9 @@ const DEFAULT_CONFIG: AppConfig = {
       remaining: { path: 'balance_infos[0].total_balance', limit: undefined },
       unit: 'CNY',
       currency: 'CNY',
-      warn_threshold: 10,
-      // M13.2 检测桥接：cc-switch 里 DeepSeek 的 provider_id 是 'default'
-      detect_ids: ['default']
+      warn_threshold: 10
+      // M15：detect_ids 已删——cc-switch 检测结果按 url host 归并，本源 url host
+      // (api.deepseek.com) 自动匹配，无需手配桥接（见 services.buildUsageCards）
     },
     {
       // 阿里云百炼订阅套餐：端点待用户提供，先占位（M13.2+ 再接入）
@@ -68,8 +68,9 @@ const DEFAULT_CONFIG: AppConfig = {
       auth: { type: 'none' },
       remaining: { path: '', limit: undefined },
       unit: 'token',
-      // M13.2 检测桥接：百炼在 cc-switch 有两个 provider（coding 模型 / AIgC 模型，UUID）
-      detect_ids: ['c3c29ba1-57b2-4171-bfdf-6d1e01a55b8e', '1373c51d-40fb-4e04-b814-4491c7cefa74']
+      // M15：detect_ids 改为 host——cc-switch 按 host 归并后，两个百炼 provider
+      // (coding/AIgC 模型) 共享 base_url host，合并成一张卡；本源 url 空，靠 detect_ids 桥接
+      detect_ids: ['token-plan.cn-beijing.maas.aliyuncs.com']
     }
   ],
   detection: {

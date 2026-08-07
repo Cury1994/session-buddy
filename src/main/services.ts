@@ -2,6 +2,8 @@ import { detectCalled } from './detectors'
 import { notifyUsageLow } from './notifications'
 import { readQuota } from './quota-reader'
 import { computeGlobalWarnThreshold, computeTrayColor } from './server'
+import { matchVendor } from './vendor-registry'
+import { urlHost } from './cc-switch-usage'
 
 import type { BrowserWindow } from 'electron'
 import type { ApprovalQueue } from './approval-queue'
@@ -142,9 +144,11 @@ async function buildSourceCard(db: AppDatabase, source: UsageSourceConfig): Prom
 /**
  * 构建本轮全部用量卡（导出供测试；tick 每轮调用一次）：
  *   1. usage_sources 顺序逐个 buildSourceCard（配置声明序 = 展示序）
- *   2. matchedIds = 所有 source 的 id + detect_ids（被 source 吸收的检测标识）
- *   3. detectCalled 中未被吸收的项 → 槽位卡（status=missing-config，引导补配置；
- *      billing 记 'payg'，带 cc-switch 证据的 calls）
+ *   2. matchedIds = 所有 source 的 id + detect_ids + url host（M15：有 url 的 source
+ *      自动按 url host 匹配检测结果，无需手配 detect_ids=[host]）
+ *   3. detectCalled 中未被吸收的项 → registry fallback：命中内置厂商模板（如 DeepSeek）
+ *      则用模板生成 source 走 buildSourceCard 出余量卡（零配置）；未命中 → 槽位卡
+ *      （status=missing-config，引导补配置；billing 记 'payg'，带 cc-switch 证据的 calls）
  * ok 卡在 buildSourceCard 内落库（见该函数注释）。NFR-3：单个畸形 source 只降级
  * 该卡为 error，不中断整轮构建。
  */
@@ -160,6 +164,10 @@ export async function buildUsageCards(db: AppDatabase, config: AppConfig): Promi
     if (!source || typeof source.id !== 'string' || source.id === '') continue
     matchedIds.add(source.id)
     for (const detectId of source.detect_ids ?? []) matchedIds.add(detectId)
+    // M15 url host 匹配：有 url 的 source（http-json / url 非空 subscription）按 host 吸收检测结果
+    if ('url' in source && typeof source.url === 'string' && source.url.trim() !== '') {
+      matchedIds.add(urlHost(source.url))
+    }
 
     try {
       cards.push(await buildSourceCard(db, source))
@@ -169,9 +177,29 @@ export async function buildUsageCards(db: AppDatabase, config: AppConfig): Promi
     }
   }
 
-  // 检测到了但未被任何 usage_source 吸收 → 槽位卡（追加在配置声明卡之后）
+  // 检测到了但未被任何 usage_source 吸收 → registry fallback / 槽位卡（追加在配置声明卡之后）
   for (const called of detected) {
     if (matchedIds.has(called.id)) continue
+
+    // M15 零配置：命中内置厂商模板（host 精确匹配）→ 用模板生成 source 走正常余量查询
+    const templated = matchVendor(called.id)
+    if (templated) {
+      matchedIds.add(called.id)
+      matchedIds.add(templated.id)
+      try {
+        cards.push(await buildSourceCard(db, templated))
+      } catch (err) {
+        console.warn(`[services] registry 厂商 ${called.id} buildSourceCard 失败: ${(err as Error).message}`)
+        cards.push({
+          sourceId: templated.id,
+          name: templated.name,
+          billing: templated.billing,
+          status: 'error'
+        })
+      }
+      continue
+    }
+
     const slot: UsageCard = {
       sourceId: called.id,
       name: called.name,
