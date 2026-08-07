@@ -22,7 +22,7 @@
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）｜ **M14 hook 自动注册 ✅**（2026-08-07）｜ **M15 厂商 host 归并 + 内置 registry ✅**（2026-08-07）
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）｜ **M14 hook 自动注册 ✅**（2026-08-07）｜ **M15 厂商 host 归并 + 内置 registry ✅**（2026-08-07）｜ **M16 Sessions 页迭代 ✅**（2026-08-07~08：F1 当前动作 + F2 任务清单 + F3 子Agent面板 + F4 消息尾流 + F5 上下文告警 + 窗口420）
 
 **当前阶段**：**M15 厂商（URL host）归并 + 内置厂商 registry 完成** — ① 归并键从 model 名改为厂商 URL hostname（cc-switch 检测器按 provider base_url 归并，同 host 合并成一张卡；claude-sessions 检测器改读 settings base_url，跳过本地代理）；② 仅成功调用（status_code 2xx）出余量卡；③ 内置 DeepSeek 模板 registry——未配置时检测到调用即自动出余量卡（零配置）；④ 卡片名用厂商名非 model 名。遗留：百炼套餐端点 + BSS AccessKey 待用户提供（卡留 missing-config/待凭证槽位）
 **归档后修订**：
@@ -712,3 +712,57 @@
   - **隔离实例 GUI（CDP 9333）实测**：正常 config → DeepSeek 余量卡 ¥8.37 + 百炼订阅·未配置（detect_ids=host 桥接）；**无 model 名卡、无 127.0.0.1 代理垃圾卡**；零配置（删 deepseek source）→ registry fallback 自动出 DeepSeek 余量卡 ✓
 - **【环境坑·urlHost 返坑】**：`new URL().host` 对 `http://127.0.0.1:15721` 返回 `127.0.0.1:15721`（**带端口**），LOOPBACK 匹配不上 → 首次 GUI 验证出现 127.0.0.1:15721 垃圾卡。改 `.hostname`（去端口）后消失。真实厂商 URL 无端口，hostname 即正确归并键
 - 收尾：用户实例 PID 738520 health OK；commit 193a0e5 ✅；本日志 ✅
+
+---
+
+## M16 Sessions 页迭代（2026-08-07 启动 · 08-08 完成）
+
+> 规模档：**L** ｜ 推进档位：**高速档** + C 方案契约先行并行（C1→B1∥B2→M16.5）
+> 背景：用户要求 Sessions 页升级——看到每个会话的任务执行情况（任务进度 / 父子 agent 协作 / 对话情况），
+> 保证会话健康 + 上下文超限前的提醒和建议。原型 prototype-sessions-v1.html（仅真实落地功能，已入库）。
+> 用户拍板：去掉 F5 告警块里的"跳转终端/开新会话"按钮；窗口 420；阈值写死 80%；F5 只做卡片内警示（不碰托盘色链）。
+
+### 状态总览
+
+| 模块 | 状态 | 验证 | 完成时间 | 备注 |
+|------|------|------|---------|------|
+| C1 契约层 | ✅ | build+typecheck 绿 | 2026-08-07 16:05 | commit 4e65d4f；types/preload/d.ts/config 窗口420 |
+| B1 后端增量扫描器 | ✅ | 裸node 21/21 + typecheck | 2026-08-07 16:20 | session-detail.ts；taskId 真源勘误 |
+| B2 前端重构 | ✅ | 主对话接管 GUI E2E | 2026-08-08 00:08 | SessionCard + 三子组件；subagent 网关报错接管 |
+| M16.5 集成 E2E | ✅ | 隔离实例 CDP 全项 | 2026-08-08 00:11 | F1–F5 全过；commit dd2f51f |
+
+### 2026-08-07 16:05 ｜ C1 ｜ 契约层 完成（commit 4e65d4f）
+- types.ts：SessionInfo 增 `currentAction: {kind:'tool'|'waiting'; label:string}|null`；新增 SessionTask/SubAgentRef/SessionMessage/SessionDetail 载荷
+- preload + electron.d.ts：新 `sessions:detail(sessionId)` invoke
+- config.ts + config.yaml：window 默认 340→420
+- 契约冻结（build + 双 typecheck 绿）；claude-sessions 先加 `currentAction:null` 占位过编译，B1 填真源
+
+### 2026-08-07 16:20 ｜ B1 ｜ 后端增量细节扫描器 完成（subagent + 主对话 diff 复核）
+- **session-detail.ts 新建**（SessionDetailScanner）：每会话增量缓存（tasks/agents/pendingTools/pendingTaskCreates/messages 环形 N=50 + knownSize/knownIno）。scan 只读新增 delta（openSync/readSync 从 knownSize 偏移，换行对齐）；**compact 重写（size 回退/inode 变化）→ 全量重建**；getDetail/getCurrentAction 只读缓存不重读 transcript。容量上限 512 会话 LRU 淘汰。
+- claude-sessions.ts：注入 detailScanner，parseSessionFile 调 scan + getCurrentAction 填 SessionInfo（try/catch 降级 null，NFR-3）。**tailFacts/scanTailFacts/usedTokens 一字未动**（ctxPct 不变量 B 零回归）。
+- ipc-handlers.ts：`sessions:detail`（sessionId 非 string/空 → 空载荷）；index.ts 实例化 + 双路注入。
+- **测试 21/21**（裸 node 编译 out/m16-test + electron 跑）：真实 transcript（aa331775）3 条任务 status 逐条核对 / 真实 Agent 派发 done / messages 环形上限 / 合成 currentAction 状态机（tool→waiting→用户打断清 pending→null）/ compact 全量重建等价性 / 增量分片≡全量深度相等 / 边界。
+- **蓝图勘误（taskId 真源，关键）**：蓝图写「TaskCreate tool_use id 即任务 id」，实测 TaskUpdate.input.taskId 是顺序编号 "1"/"2"/"3"（toolu_* 永不匹配），编号真源在 TaskCreate 的 tool_result 文本 "Task #N created" → 本实现以 tool_result 编号为准，解析失败降级 tool_use id。**另**：currentAction 判「存在任一未回应 tool_use」，且用户新文本消息（不含 tool_result）清除陈旧 pending（Esc 打断后永无 result 的漂移）。
+
+### 2026-08-08 00:08 ｜ B2 ｜ 前端重构（subagent 两次 API 网关报错后主对话接管）
+- SessionCard.tsx：F1 状态行（tool→蓝 spinner "正在运行 <label>" / waiting→黄 "⏸ 等待用户输入" / null 不渲染，位于徽章行下 lastActivity 上）+ **F5 告警块**（ctxPct≥80 → 红块"⚠ 上下文即将耗尽 (N%)"+建议文案，无按钮）+ 展开开关 + 详情区（sessions:detail 按需拉取，结果驻留 state 收起再展开不重复请求；loading/error/空 sessionId 空态）。
+- 三子组件：TaskList（完成数/总数+绿进度条+三态条目，空态"无任务清单"）/ AgentPanel（类型首字母头像+type+description+运行中/已返回，空态"无子 Agent"）/ MessageTail（深色终端风 user 红/assistant 蓝，空态"无近期对话"）。类名全字面量（避 Tailwind 3.4 剥离坑）。
+- globals.css：+351 行（action-row/ctx-warn/session-detail/detail-sec/task-*/agent-*/msg-* 等）。
+- **B2 执行中断 3 次**（同为 `reasoning_effort` 参数被网关 400 拒绝，非代码问题）；SendMessage 续接两次仍复现 → 主对话接管剩余验证。代码已在工作区，编译绿 + CSS 类全在（构建产物逐类核对，主对话补了缺失的 `.detail-sec` 最小定义）。
+
+### 2026-08-08 00:11 ｜ M16.5 ｜ 集成 E2E 通过（隔离实例 HOME=/tmp/hm-m16-home + port 18599 + CDP 9334）
+- **F1** currentAction 真数据：/api/sessions 里两真实会话均 `{"kind":"waiting","label":"等待用户输入"}`（idle），DOM 显"⏸ 等待用户输入" ✓
+- **F2** 展开首卡：TaskList 空态"无任务清单"（该会话无任务工具，正确降级）✓
+- **F3** AgentPanel：4 个**真实子 Agent**（Explore×3 + Plan×1，含 description，全"已返回"）✓
+- **F4** MessageTail：真实对话尾流（CLAUDE 行）+ 空态 ✓
+- **F5** 合成高 ctx 会话（/tmp/hm-m16-fake，usage 850000 token → 1M 窗口 85%）：DOM 显"Ctx: 85%" + 红块"⚠ 上下文即将耗尽 (85%)"；真实会话 20%/22% 无告警 ✓
+- **窗口 420**：截图 840×1300 = 420×650 的 2x，确认生效 ✓
+- 回归：build + 双 typecheck 绿；2 张截图 /tmp/hm_m16_collapsed_warn.png / expanded_detail.png
+- **清理**：隔离实例 SIGTERM、/tmp/hm-m16-home+fake+cdp 脚本+日志全删、18599/9334 释放。
+
+### ⚠ 本会话事故记录（必须整改）
+- **pkill -f 误杀用户常驻实例**：隔离实例与用户实例都从 /home/cury/harness-monitor 启动，`pkill -f 'harness[-]monitor'` 同时匹配两者 → 用户 18456 实例被误杀。已用真实 HOME 重启恢复（health 200，现跑含 M16 的新构建）。**教训：清理验证实例必须用精确 pid 或隔离标识（如 HOME 环境变量路径特征），严禁裸 `pkill -f` 该项目名**（PROGRESS 既有 pkill 自匹配陷阱①②亦未预防此横向误杀）。真实 monitor.db 未受影响（隔离实例走 /tmp HOME，651KB 完好）。
+- **B2 subagent 网关报错**：`reasoning_effort` 参数被 400 拒绝，3 次（SendMessage 续接 2 次仍复现）→ 主对话接管验证。非代码问题；高速档纪律"SendMessage 续接"在此失效于网关层，改为主对话接管，未另起炉灶。
+
+- 收尾三件套：① commit 4e65d4f（C1）+ dd2f51f（B1/B2/E2E）✅ ② 无孤儿（用户实例 18456 health OK，隔离实例已清）③ 本日志 ✅
+- 遗留：四态灯原"执行中/空闲"语义与 F1 currentAction 并存（不冲突，F1 更细）；aiTitle 会话名升级（C1 顺带发现，未做，延后）；上下文告警阈值写死 80（进配置延后）。

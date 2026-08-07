@@ -1,6 +1,15 @@
 # harness-monitor — 设计文档
 
-> 版本 v3.4 | 2026-08-07 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
+> 版本 v3.5 | 2026-08-08 | macOS 浅色毛玻璃 UI · 420px 桌面悬浮挂件
+>
+> **v3.5 变更**（2026-08-07~08 M16 Sessions 页迭代，实测驱动）：
+> ① **窗口 420×650**（v3.4 及以前为 340；§2.9 尺寸与 config 同步改，Sessions 展开区信息量大）；
+> ② **SessionInfo 增 `currentAction`**（t: `{kind:'tool'|'waiting'; label}`，增量细节扫描器从 transcript 末条记录推导，非 tailFacts）——F1 卡片"正在运行 <label> / ⏸ 等待用户输入"；
+> ③ **新 §6.17 会话细节增量扫描器**（session-detail.ts）：每会话增量缓存（tasks/agents/messages 环形 N=50），只读新增 delta，compact 重写（size 回退/inode 变化）全量重建；**F2 任务清单**（TaskCreate/Update 重建）、**F3 子 Agent 面板**（Agent tool_use + tool_result）、**F4 消息尾流**；
+> ④ **新 IPC `sessions:detail(sessionId)` → SessionDetail**（展开卡按需拉取，3s push 保持轻量）；
+> ⑤ **F5 上下文告警**：ctxPct ≥ 80 卡片内红色警示块（建议 /compact 或开新会话，**无按钮**——用户拍板去掉跳转/新会话按钮；阈值写死 80，进配置延后；F5 只做卡片内警示，不碰托盘色优先级链）；
+> ⑥ **蓝图勘误（taskId 真源）**：TaskUpdate.input.taskId 是顺序编号 "1"/"2"/"3" 而非 tool_use id，编号真源在 TaskCreate 的 tool_result 文本 "Task #N created" → 扫描器以 tool_result 编号为准；
+> ⑦ 原型 `docs/prototype-sessions-v1.html`（仅真实落地功能，多 agent 编排/压缩按钮等假功能已反膨胀剔除）。
 >
 > **v3.4 变更**（2026-08-06~07 M13 用量视图泛化为多卡余量展示，实测驱动）：
 > ① **展示模型**：API Usage 只显示「调用过的 API」相关卡片，计费形式分 **按量（payg，余量=剩余金额）** 与 **订阅（subscription，余量=剩余套餐额度）**；卡片两类——**余量卡**（配置齐全+凭证正常，计费徽章+余量+30 天趋势+低余量警示）与 **槽位卡**（已调用但缺配置/缺凭证，卡内引导跳设置页填写，无数据也展示）；
