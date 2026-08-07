@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { join } from 'node:path'
 
 import { loadConfig } from './config'
 import { createMainWindow } from './window'
@@ -10,6 +11,7 @@ import { createServer } from './server'
 import { ClaudeCodeSessionScanner } from './claude-sessions'
 import { getCachedUsageCards, startUsageChecker, startSessionScanner } from './services'
 import { registerIpcHandlers } from './ipc-handlers'
+import { ensureHookRegistered } from './hook-installer'
 
 import type { ManagedTray } from './tray'
 import type { ManagedWindow } from './window'
@@ -59,6 +61,19 @@ if (!gotTheLock) {
 
     managedWindow = createMainWindow(config)
     managedTray = createTray(config, managedWindow.win)
+
+    // ─── M14：PreToolUse hook 自动注册（后端启动即幂等确保，DESIGN §6.13）───
+    // 审批链路第一环：Claude Code 工具调用 → hook(approve.sh) → POST /approve →
+    // server 入队 → push 弹卡。hook 一旦被清空，server 在跑也收不到审批请求
+    // （2026-08-07 实测回归）。此处解析 settings_path 合并注册 approve.sh，
+    // 已注册则不动（幂等），失败 warn + 跳过（NFR-3，不阻断启动）。
+    try {
+      const ccSettings = config.harnesses?.['claude-code']?.settings_path || '~/.claude/settings.json'
+      const approveScript = join(app.getAppPath(), 'resources', 'hooks', 'approve.sh')
+      ensureHookRegistered(ccSettings, approveScript)
+    } catch (err) {
+      console.warn(`[main] hook 自动注册异常（不影响启动）: ${(err as Error).message}`)
+    }
 
     // ─── M5：数据库 + 审批队列 + 通知 + HTTP Server ───
     // AppDatabase 用默认路径（Linux: ~/.config/harness-monitor/monitor.db，§6.2）。
