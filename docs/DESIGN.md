@@ -1,6 +1,14 @@
 # harness-monitor — 设计文档
 
-> 版本 v3.3 | 2026-08-03 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
+> 版本 v3.4 | 2026-08-07 | macOS 浅色毛玻璃 UI · 340px 桌面悬浮挂件
+>
+> **v3.4 变更**（2026-08-06~07 M13 用量视图泛化为多卡余量展示，实测驱动）：
+> ① **展示模型**：API Usage 只显示「调用过的 API」相关卡片，计费形式分 **按量（payg，余量=剩余金额）** 与 **订阅（subscription，余量=剩余套餐额度）**；卡片两类——**余量卡**（配置齐全+凭证正常，计费徽章+余量+30 天趋势+低余量警示）与 **槽位卡**（已调用但缺配置/缺凭证，卡内引导跳设置页填写，无数据也展示）；
+> ② **泛化核心 §6.15 quota-reader 注册表**：`readQuota(source)` 按 `kind` 分发（`http-json` 通用 GET+鉴权+JSON 路径提取+limit 自动算剩余，配置驱动零代码覆盖 90% 厂商 / `bss` 阿里云 BSS HMAC-SHA1 / `subscription` 订阅套餐占位）；统一 `QuotaInfo` 返回；
+> ③ **「调用过」检测器 §6.16**：`detectCalled(config)` 可插拔合并——manual(usage_sources 恒生效) ∪ cc-switch(proxy_request_logs provider 分组，无 db 自动跳过) ∪ claude-sessions(会话记录 model)；`detect_ids` 桥接 cc-switch provider_id ↔ usage_source.id；前端不展示检测源，后端自动降级；
+> ④ **调度泛化**：`startBalanceChecker` → `startUsageChecker`（遍历 usage_sources 逐个 readQuota → 落库 billing/unit → push `UsageCard[]` → per-card 低余量告警）；托盘红判定用**全局最低告警线**（min 所有源 warn_threshold）；`api_usage` 加 `billing`/`unit` 列（幂等迁移）；DeepSeekProvider（deepseek.ts）删除，http-json 取代；
+> ⑤ **§6.1 配置**：`usage_sources` 扩展 billing/kind/auth/remaining/unit/warn_threshold/detect_ids；新增 `detection`（cc_switch/claude_sessions）与 `usage_poll_interval_min`；`providers.deepseek` 过渡保留（渲染端 M13.6 后仍读写，待后续清理）；
+> ⑥ 接入指南见 `docs/API_USAGE_GUIDE.md`（零代码 http-json 配置示例 + 适配器/检测器扩展示例）。
 >
 > **v3.3 变更**（2026-08-03 审批镜像轮，实测驱动）：① §5.3 审批流重绘——POST /approve 前置镜像过滤（passthrough/ask 二分）+ 批准输出权限 JSON 压制终端二问；② 新 §6.14 permission-mirror（四层规则合并求值 + 命令摘要单一真源）；③ §6.13 approve.sh 改全工具薄中继 + 快速通道 + hook 输入 schema 两路兼容（2.1.207 顶层 tool_input 实测勘误）；④ §6.12 ApprovalPayload + toolInput/permissionMode、tool 改实际工具名。决策依据：2026-08-03 01:26 零干扰实测（会话全新命令 sha256sum）确认 hook stdout `hookSpecificOutput.permissionDecision:"allow"` **生效**——此前"三格式全被忽略"的实测结论被每轮紧随的复原命令之原生弹窗污染；故采 **Plan A**（工具批准 → 输出权限 JSON，settings 文件零侵入，一次性批准语义；永久化见 TASKS §13 D4）。
 >

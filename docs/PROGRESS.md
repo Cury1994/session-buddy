@@ -599,7 +599,7 @@
 | M13.4 db 扩展 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:30 | commit 91835dd；billing/unit 列 + 幂等迁移 + 单卡查询 |
 | M13.5 调度泛化 | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-06 16:50 | commit 450dcb8；startUsageChecker 多卡 + 全局最低告警线 + per-card 告警 |
 | M13.6 IPC + 多卡 UI | ✅ 完成 | 通过 | 通过(轻量) | 2026-08-07 10:30 | commit 51d588d；多卡渲染 + 槽位卡引导 + 用量源表单 + Tailwind 坑 |
-| M13.7 文档 + 集成测试 | ⏳ 未开始 | — | — | | 添加厂商指南 + E2E |
+| M13.7 文档 + 集成测试 | ✅ 完成 | 通过 | E2E 即验收 | 2026-08-07 11:20 | commit 待补；E2E 6/6 + 接入指南 + 原型入库 |
 
 **遗留项登记表（M13 新增）**
 | 项 | 来源 | 计划收口 | 状态 |
@@ -672,6 +672,16 @@
 - 偏离：limit 字段按实际类型为 JSON 点号路径字符串（quota-reader 对 remaining.limit 做 getPath，非数值）；低余量判定用 per-card warnThreshold（config 最低线仅兜底）
 - 清理：验证实例 18599/9223 已释放，无孤儿；用户实例未触碰（18456 = pid 596626 health OK）；/tmp/hm-m136-home 已删
 - 收尾三件套：① commit 51d588d ② 无新起实例、无孤儿 ③ 本日志 ✅
+
+### 2026-08-07 11:20:44 ｜ M13.7 ｜ 文档 + 集成测试 完成（commit 待补）
+- 集成测试派发 subagent（后台），主对话同步写文档；测试结束 6/6 全过，无新缺陷
+- **E2E 验收（隔离实例 HOME=/tmp/hm-m137-home + port 18601 + CDP 9225，用户实例 18456 未触碰）**：
+  ① 检测全链路：detectCalled 8 条（百炼 cc-switch 3462 + DeepSeek 1431 + 3 transcript model + manual 3 项）；AIgC 零调用不出卡 ✓ ② 卡片生成：6 卡齐渲染（DeepSeek ok ¥8.58~9.01 + 百炼 missing-config + OpenRouter Mock ok + 3 transcript 槽位卡），db 落库 billing/unit ✓ ③ **泛化核心实证**：GUI 新增 http-json 源（mock {usage:100,limit:500}）→ saveConfig → reschedule → 新卡 Live $400.00（500−100 自动算）——"别人加新厂商零代码"成立 ✓ ④ 槽位卡跳设置聚焦（编辑表单预填 + 新增表单 name 预填）✓ ⑤ 回归全项：审批流（approve→respond→落库 tool/allowed/时间戳）/ Sessions 真实卡 / **托盘色 D-Bus 像素实测 红#ff5252→绿#00e676→橙#ffab00→绿→红**（改阈值 10→5→10 全程联动）/ 单实例锁 / SIGTERM 零残留 ✓ ⑥ 7 张截图
+- 无新缺陷；既有已知项 P3-5（server.ts 审批侧旧阈值快照，主对话已裁定不修）再次观察到，未改代码
+- 文档产出：**API_USAGE_GUIDE.md**（接入指南：http-json 零代码配置示例 ×3 + JSON 路径语法 + 适配器/检测器扩展示例 + FAQ）+ DESIGN.md v3.4 头部变更注记 + 原型 prototype-api-usage.html 入库
+- 环境坑（测试侧）：① 窗口 blur→hide + GNOME 焦点争夺致测试窗中途隐藏（pin + second-instance wake 解决）② pkill 自匹配陷阱再现两次 ③ 用户实机操作会点到 alwaysOnTop 测试窗
+- 清理：隔离实例 SIGTERM 终止、18601/18699/9225 全释放、/tmp/hm-m137-home + 测试脚本/日志已删（含 M13.6 漏删的 /tmp/hm-m136.log）；截图保留 /tmp/hm_m137_*.png；用户实例 18456（pid 596626）未触碰 health 正常；仓库 config.yaml 未污染
+- 收尾三件套：① commit 待补 ② 无孤儿（用户实例健康在听）③ 本日志 ✅
 
 ---
 
