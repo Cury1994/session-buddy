@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>API Usage · 原型 v3（完全沿用 token-monitor 设计）</title>
+<style>
+  :root {
+    --widget-bg: rgba(245, 245, 250, 0.72);
+    --widget-border: rgba(255, 255, 255, 0.4);
+    --app-bg: transparent;
+    --accent: #007aff;
+    --text: rgba(0, 0, 0, 0.85);
+    --muted: rgba(0, 0, 0, 0.55);
+    --red: #ff3b30;
+    --yellow: #d9a400;
+    --line: rgba(0, 0, 0, 0.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 16px;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    background: linear-gradient(135deg, #3a4a7d 0%, #6a7bd6 45%, #a8b8e8 100%);
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    color: var(--text); gap: 14px;
+  }
+  .page-hint {
+    font-size: 12px; color: rgba(255,255,255,0.92); text-align: center;
+    background: rgba(0,0,0,0.3); padding: 6px 12px; border-radius: 8px; line-height: 1.6; max-width: 460px;
+  }
+  .widget-window {
+    width: 340px; height: 640px;
+    background: var(--widget-bg);
+    backdrop-filter: blur(25px) saturate(180%);
+    border: 1px solid var(--widget-border); border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .widget-header {
+    height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; border-bottom: 1px solid var(--line);
+  }
+  .window-controls { display: flex; gap: 6px; }
+  .light { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1); }
+  .light.red { background: #ff5f57; } .light.yellow { background: #febc2e; } .light.green { background: #28c840; }
+  .widget-title { font-size: 13px; font-weight: 600; }
+  .content-area { flex: 1; overflow-y: auto; padding: 12px 16px 20px; }
+  .content-area::-webkit-scrollbar { width: 4px; }
+  .content-area::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
+
+  /* ═══ token-monitor 图标：mask 单色剪影 + currentColor ═══ */
+  .row-icon {
+    display: inline-block; width: 12px; height: 12px; flex: 0 0 auto;
+    background-color: currentColor;
+    -webkit-mask-position: center; mask-position: center;
+    -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    vertical-align: middle;
+  }
+  .row-icon-claude      { -webkit-mask-image: url(../../token-monitor/assets/icons/claude.svg);      mask-image: url(../../token-monitor/assets/icons/claude.svg); }
+  .row-icon-codex       { -webkit-mask-image: url(../../token-monitor/assets/icons/codex.svg);       mask-image: url(../../token-monitor/assets/icons/codex.svg); }
+  .row-icon-deepseek    { -webkit-mask-image: url(../../token-monitor/assets/icons/deepseek.svg);    mask-image: url(../../token-monitor/assets/icons/deepseek.svg); }
+  .row-icon-qwen        { -webkit-mask-image: url(../../token-monitor/assets/icons/qwen.svg);        mask-image: url(../../token-monitor/assets/icons/qwen.svg); }
+  .row-icon-kimi        { -webkit-mask-image: url(../../token-monitor/assets/icons/kimi.svg);        mask-image: url(../../token-monitor/assets/icons/kimi.svg); }
+  .row-icon-grok        { -webkit-mask-image: url(../../token-monitor/assets/icons/grok.svg);        mask-image: url(../../token-monitor/assets/icons/grok.svg); }
+  .row-icon-minimax     { -webkit-mask-image: url(../../token-monitor/assets/icons/minimax.svg);     mask-image: url(../../token-monitor/assets/icons/minimax.svg); }
+  .row-icon-openrouter  { -webkit-mask-image: url(../../token-monitor/assets/icons/openrouter.svg);  mask-image: url(../../token-monitor/assets/icons/openrouter.svg); }
+  .row-icon-zai         { -webkit-mask-image: url(../../token-monitor/assets/icons/zai.svg);         mask-image: url(../../token-monitor/assets/icons/zai.svg); }
+  .row-icon-volcengine  { -webkit-mask-image: url(../../token-monitor/assets/icons/volcengine.svg);  mask-image: url(../../token-monitor/assets/icons/volcengine.svg); }
+  .row-icon-gemini      { -webkit-mask-image: url(../../token-monitor/assets/icons/gemini.svg);      mask-image: url(../../token-monitor/assets/icons/gemini.svg); }
+  .row-icon-mistral     { -webkit-mask-image: url(../../token-monitor/assets/icons/mistral.svg);     mask-image: url(../../token-monitor/assets/icons/mistral.svg); }
+  .row-icon-copilot     { -webkit-mask-image: url(../../token-monitor/assets/icons/copilot.svg);     mask-image: url(../../token-monitor/assets/icons/copilot.svg); }
+  .row-icon-cursor      { -webkit-mask-image: url(../../token-monitor/assets/icons/cursor.svg);      mask-image: url(../../token-monitor/assets/icons/cursor.svg); }
+  .row-icon-antigravity { -webkit-mask-image: url(../../token-monitor/assets/icons/antigravity.svg); mask-image: url(../../token-monitor/assets/icons/antigravity.svg); }
+  .row-icon-ollama      { -webkit-mask-image: url(../../token-monitor/assets/icons/ollama.svg);      mask-image: url(../../token-monitor/assets/icons/ollama.svg); }
+  .row-icon-moonshot    { -webkit-mask-image: url(../../token-monitor/assets/icons/moonshot.svg);    mask-image: url(../../token-monitor/assets/icons/moonshot.svg); }
+  .row-icon-thirdparty  { -webkit-mask-image: url(../../token-monitor/assets/icons/newapi.svg);      mask-image: url(../../token-monitor/assets/icons/newapi.svg); }
+
+  /* ═══ token-monitor home 模块 ═══ */
+  .home-module { margin-bottom: 20px; }
+  .home-module-title {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 10px;
+  }
+  .strip { border-top: 1px solid var(--line); margin: 0 -16px; padding: 0 16px; }
+
+  /* — Limits 模块：账户卡（图标+名称 + 2列窗口） — */
+  .home-limit-account { display: grid; gap: 4px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .home-limit-account:first-child { border-top: none; }
+  .home-limit-account-head { display: grid; grid-template-columns: 12px minmax(0,1fr); gap: 8px; align-items: center; }
+  .home-list-name { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-limit-windows { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin-left: 20px; }
+  .home-limit-window { display: grid; gap: 3px; min-width: 0; }
+  .home-limit-window-line { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
+  .home-limit-window-label { overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+  .home-list-value { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .home-limit-window .home-list-value { font-size: 10px; line-height: 1.1; }
+  .home-limit-reset { overflow: hidden; color: var(--muted); font-size: 9px; line-height: 1.1; opacity: 0.82; text-overflow: ellipsis; white-space: nowrap; }
+  .home-limit-value-low { color: var(--yellow); }
+  .home-limit-value-critical { position: relative; padding-left: 8px; color: var(--red); }
+  .home-limit-value-critical::before { position: absolute; top: 50%; left: 0; width: 4px; height: 4px; border-radius: 50%; background: currentColor; content: ''; transform: translateY(-50%); }
+  .provider-tags { display: flex; gap: 4px; margin-left: 20px; margin-top: 3px; }
+  .ptag { font-size: 9px; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,0.05); color: var(--muted); font-weight: 500; }
+
+  /* — Models 模块：每模型一行（图标+名称+token+占比） — */
+  .home-list-row { display: grid; grid-template-columns: 12px minmax(0,1fr) auto auto; gap: 8px; align-items: baseline; padding: 6px 0; }
+  .home-list-row .home-list-name { font-size: 11px; font-weight: 500; }
+  .home-list-value { text-align: right; }
+  .home-list-aux { font-size: 10px; color: var(--muted); text-align: right; min-width: 34px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+  <div class="page-hint">完全沿用 token-monitor 设计：上=Limits 模块（图标+名称+2列窗口+reset），下=Models 模块。全部厂商图标 + 自带配色，无需手动配置。</div>
+  <div class="widget-window">
+    <div class="widget-header">
+      <div class="window-controls">
+        <span class="light red"></span><span class="light yellow"></span><span class="light green"></span>
+      </div>
+      <div class="widget-title">Harness Monitor</div>
+      <span style="color:var(--muted);font-size:12px">📌</span>
+    </div>
+
+    <div class="content-area">
+
+      <!-- ═══ Limits 模块：所有已调用厂商账户，每卡一个 host ═══ -->
+      <div class="home-module">
+        <div class="home-module-title">Limits · 已调用 API</div>
+
+        <!-- DeepSeek 按量 -->
+        <div class="home-limit-account">
+          <div class="home-limit-account-head">
+            <span class="row-icon row-icon-deepseek" style="color:#4d6bfe"></span>
+            <span class="home-list-name">DeepSeek</span>
+          </div>
+          <div class="home-limit-windows">
+            <div class="home-limit-window">
+              <div class="home-limit-window-line"><span class="home-limit-window-label">余额</span><span class="home-list-value home-limit-value-critical">¥8.37</span></div>
+              <span class="home-limit-reset">已用 ¥11.53</span>
+            </div>
+          </div>
+          <div class="provider-tags"><span class="ptag">按量</span><span class="ptag">更新 14:32</span></div>
+        </div>
+
+        <!-- 阿里云百炼 订阅（Qwen） -->
+        <div class="home-limit-account">
+          <div class="home-limit-account-head">
+            <span class="row-icon row-icon-qwen" style="color:#615ced"></span>
+            <span class="home-list-name">阿里云百炼</span>
+          </div>
+          <div class="home-limit-windows">
+            <div class="home-limit-window">
+              <div class="home-limit-window-line"><span class="home-limit-window-label">套餐剩余</span><span class="home-list-value">¥0.86</span></div>
+              <span class="home-limit-reset">已用 ¥5.14</span>
+            </div>
+            <div class="home-limit-window">
+              <div class="home-limit-window-line"><span class="home-limit-window-label">本月</span><span class="home-list-value">Qwen</span></div>
+              <span class="home-limit-reset">deepseek-v4 qwen3.8</span>
+            </div>
+          </div>
+          <div class="provider-tags"><span class="ptag">订阅</span></div>
+        </div>
+
+        <!-- OpenRouter 未配置 -->
+        <div class="home-limit-account">
+          <div class="home-limit-account-head">
+            <span class="row-icon row-icon-openrouter" style="color:#6566F1"></span>
+            <span class="home-list-name">OpenRouter</span>
+          </div>
+          <div class="home-limit-windows">
+            <div class="home-limit-window">
+              <div class="home-limit-window-line"><span class="home-limit-window-label">余额</span><span class="home-list-value">--</span></div>
+              <span class="home-limit-reset">未配置</span>
+            </div>
+          </div>
+          <div class="provider-tags"><span class="ptag">未配置</span><span class="ptag">调用 128 次</span></div>
+        </div>
+
+        <!-- Claude 按量 -->
+        <div class="home-limit-account">
+          <div class="home-limit-account-head">
+            <span class="row-icon row-icon-claude" style="color:#cc7c5e"></span>
+            <span class="home-list-name">Claude</span>
+          </div>
+          <div class="home-limit-windows">
+            <div class="home-limit-window">
+              <div class="home-limit-window-line"><span class="home-limit-window-label">余额</span><span class="home-list-value home-limit-value-low">$4.20</span></div>
+              <span class="home-limit-reset">已用 $15.80</span>
+            </div>
+          </div>
+          <div class="provider-tags"><span class="ptag">按量</span></div>
+        </div>
+
+        <!-- Kimi -->
+        <div class="home-limit-account">
+          <div class="home-limit-account-head">
+            <span class="row-icon row-icon-kimi" style="color:#16191e"></span>
+            <span class="home-list-name">Kimi</span>
+          </div>
+          <div class="home-limit-windows">
+            <div class="home-limit-window">
+              <div class="home-limit-window-line"><span class="home-limit-window-label">余额</span><span class="home-list-value">¥23.00</span></div>
+              <span class="home-limit-reset">已用 ¥7.00</span>
+            </div>
+          </div>
+          <div class="provider-tags"><span class="ptag">按量</span></div>
+        </div>
+
+        <!-- Grok -->
+        <div class="home-limit-account">
+          <div class="home-limit-account-head">
+            <span class="row-icon row-icon-grok" style="color:#000"></span>
+            <span class="home-list-name">Grok</span>
+          </div>
+          <div class="home-limit-windows">
+            <div class="home-limit-window">
+              <div class="home-limit-window-line"><span class="home-limit-window-label">Monthly</span><span class="home-list-value">42%</span></div>
+              <span class="home-limit-reset">重置 08-26</span>
+            </div>
+          </div>
+          <div class="provider-tags"><span class="ptag">订阅</span></div>
+        </div>
+
+      </div>
+
+      <!-- ═══ Models 模块：每模型 token 用量 ═══ -->
+      <div class="home-module">
+        <div class="home-module-title">Models · 今日 Token</div>
+
+        <div class="home-list-row">
+          <span class="row-icon row-icon-deepseek" style="color:#4d6bfe"></span>
+          <span class="home-list-name">deepseek-v4-flash-0731</span>
+          <span class="home-list-value">598k</span><span class="home-list-aux">38%</span>
+        </div>
+        <div class="home-list-row">
+          <span class="row-icon row-icon-qwen" style="color:#615ced"></span>
+          <span class="home-list-name">qwen3.8-max-preview</span>
+          <span class="home-list-value">2.6M</span><span class="home-list-aux">54%</span>
+        </div>
+        <div class="home-list-row">
+          <span class="row-icon row-icon-openrouter" style="color:#6566F1"></span>
+          <span class="home-list-name">openrouter/auto</span>
+          <span class="home-list-value">312k</span><span class="home-list-aux">8%</span>
+        </div>
+        <div class="home-list-row">
+          <span class="row-icon row-icon-claude" style="color:#cc7c5e"></span>
+          <span class="home-list-name">claude-sonnet-4</span>
+          <span class="home-list-value">88k</span><span class="home-list-aux">1%</span>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

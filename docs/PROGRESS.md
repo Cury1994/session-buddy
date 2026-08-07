@@ -22,7 +22,7 @@
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）｜ **M15 厂商 host 归并 + 内置 registry ✅**（2026-08-07）
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）｜ **M14 hook 自动注册 ✅**（2026-08-07）｜ **M15 厂商 host 归并 + 内置 registry ✅**（2026-08-07）
 
 **当前阶段**：**M15 厂商（URL host）归并 + 内置厂商 registry 完成** — ① 归并键从 model 名改为厂商 URL hostname（cc-switch 检测器按 provider base_url 归并，同 host 合并成一张卡；claude-sessions 检测器改读 settings base_url，跳过本地代理）；② 仅成功调用（status_code 2xx）出余量卡；③ 内置 DeepSeek 模板 registry——未配置时检测到调用即自动出余量卡（零配置）；④ 卡片名用厂商名非 model 名。遗留：百炼套餐端点 + BSS AccessKey 待用户提供（卡留 missing-config/待凭证槽位）
 **归档后修订**：
@@ -687,7 +687,17 @@
 
 **D1/D2/D3/D4 延后项暂缓**（M13 优先，用户本次指令）。原"下一步"文案见 git 历史。
 
-### 2026-08-07 11:31:00 ｜ M15 ｜ 厂商（URL host）归并 + 内置厂商 registry 完成（commit 待补）
+### 2026-08-07 09:47:25 ｜ 归档后修订 ｜ M14 PreToolUse hook 自动注册 完成（commit 7066f03）
+- **背景**：~/.claude/settings.json 的 hooks 段再次被外部清空（08-06 曾发生一次，当时人工重注册；见 M12 环境坑①）→ server 健康在听但收不到任何审批请求，审批链路第一环静默断开且无告警。用户要求启动时幂等自注册，根治该回归
+- **产出**：
+  - src/main/hook-installer.ts（79 行）：`ensureHookRegistered(settingsPath, approveScriptPath)` 幂等合并——读 settings JSON，已含指向 approve.sh 的 PreToolUse 条目（按 command 路径尾部匹配）则不动，否则追加；保留 env/model 等既有配置，绝不整体覆盖
+  - 注册参数沿用镜像轮定稿：matcher ''（全工具中继 §6.13.2）+ timeout **70000ms**（＞curl -m 65 ＞ server 60s auto-deny；毫秒单位坑见 07-31 排障实录）
+  - src/main/index.ts（+15）：启动生命周期接线，app ready 后调用
+- **降级语义（NFR-3）**：settings 不可读/不可写/JSON 损坏 → console.warn + 静默跳过，不阻断应用启动（审批是可降级功能，退化到终端原生询问，安全无害）
+- **验收**：build + 双 typecheck 零错误；幂等（重复调用 settings 字节不变）/ 未注册追加 / 损坏 JSON 降级不抛等裸 node 断言通过（hook-installer 纯 node + 单文件定点写，可离线自测）
+- 收尾三件套：① commit 7066f03 ✅ ② 用户实例未触碰 ✅ ③ 本条日志为 08-07 15:20 会话启动收尾时**补记**（原会话未回写，违反收尾三件套，已登记教训）✅
+
+### 2026-08-07 11:31:00 ｜ M15 ｜ 厂商（URL host）归并 + 内置厂商 registry 完成（commit 193a0e5）
 - **背景**：API Usage 视图按 model 名拆卡，deepseek-v4-flash-0731 / qwen3.8-max-preview（实际走百炼端点）被拆成独立槽位卡。用户要求：**一个真实调用 URL = 一张余量卡**，走同一 URL 的 model 不拆卡；仅成功调用出卡；DeepSeek 等只需 key 的厂商零配置直接展示余量
 - **实测数据**：cc-switch proxy_request_logs 里两 model 的 provider_id 都是百炼（c3c29ba1-...）：deepseek-v4-flash-0731(598 成功) / qwen3.8-max-preview(2658 成功)——顶了 deepseek 前缀的 model 名，实际走 `token-plan.cn-beijing.maas.aliyuncs.com`；providers 表 settings_config.env.ANTHROPIC_BASE_URL 是真实厂商 URL
 - **产出**：
@@ -701,4 +711,4 @@
   - 裸 node：urlHost/matchVendor 全过；python 复现 host 归并——百炼两 provider 合并 calls=3364 + DeepSeek 1446，**无 model 名卡**
   - **隔离实例 GUI（CDP 9333）实测**：正常 config → DeepSeek 余量卡 ¥8.37 + 百炼订阅·未配置（detect_ids=host 桥接）；**无 model 名卡、无 127.0.0.1 代理垃圾卡**；零配置（删 deepseek source）→ registry fallback 自动出 DeepSeek 余量卡 ✓
 - **【环境坑·urlHost 返坑】**：`new URL().host` 对 `http://127.0.0.1:15721` 返回 `127.0.0.1:15721`（**带端口**），LOOPBACK 匹配不上 → 首次 GUI 验证出现 127.0.0.1:15721 垃圾卡。改 `.hostname`（去端口）后消失。真实厂商 URL 无端口，hostname 即正确归并键
-- 收尾：用户实例 PID 738520 health OK；commit 待补；本日志 ✅
+- 收尾：用户实例 PID 738520 health OK；commit 193a0e5 ✅；本日志 ✅
