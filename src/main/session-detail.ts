@@ -5,13 +5,12 @@ import { extractContentText, toActivity } from './claude-sessions'
 import type {
   SessionDetail,
   SessionInfo,
-  SessionMessage,
   SessionTask,
   SubAgentRef
 } from '../shared/types'
 
 /**
- * M16 B1 — 会话细节增量扫描器（展开详情区：任务清单 / 子 Agent / 消息尾流 + currentAction 推导）
+ * M16 B1 — 会话细节增量扫描器（展开详情区：任务清单 / 子 Agent / currentAction 推导；M17.1 起 messages 尾流已移除）
  *
  * 每会话维护一份增量缓存，`ClaudeCodeSessionScanner.discoverSessions` 每轮（3s）对每个活跃
  * 会话调一次 `scan()`：
@@ -41,10 +40,10 @@ import type {
  *   Agent tool_use（input.subagent_type / input.description）→ agents[id] = status:'running'；
  *   tool_result 的 tool_use_id 命中该 id → status:'done'。
  *
- * ─── 消息尾流（F4）───
- *   user / assistant 记录经 extractContentText + toActivity 清洗（剥 system-reminder /
- *   local-command-caveat / 斜杠命令标签、折叠空白、截断 120）后非空 → 追加到最近 N=50 的
- *   环形缓冲（oldest→newest）。纯 tool_result 回传记录（无 text 块）不入缓冲。
+ * ─── 末条对话角色（M17.1 起取代 messages 尾流，waiting 推导用）───
+ *   每条 type==='user'|'assistant' 记录把 lastMessageRole 更新为该 type（纯 tool_result
+ *   回传记录同样算 user——"最后发言方"语义）。消息文本本身不再保留（M17.1：messages
+ *   尾流自 SessionDetail 契约移除，渲染端不再消费）。
  *   **用户新文本消息（不含 tool_result 块）= 新一轮人工输入 → 清空 pending 工具**
  *   （用户打断/Esc 后未回 tool_result 的陈旧 pending 不应再驱动 currentAction）。
  *
@@ -53,15 +52,12 @@ import type {
  *   ① 存在未收到 tool_result 的 tool_use → {kind:'tool', label:工具摘要}
  *      （label：Bash → "Bash: <命令文本>"；Read → "Read: <路径>"；其他 → 工具名；
  *        多个 pending 取最近插入者——types.ts 契约「已无 pending 工具」才可判 waiting）
- *   ② 否则最近一条可读消息为 assistant 文本 → {kind:'waiting', label:'等待用户输入'}
+ *   ② 否则 lastMessageRole==='assistant'（assistant 最后发言）→ {kind:'waiting', label:'等待用户输入'}
  *   ③ 否则 null（transcript 缺失/空/无法确定）
  *
  * 缓存容量：最多保留 512 个会话缓存（超出按插入序淘汰最旧；活跃会话由 scanner 每轮 touch）。
  * 全部 IO/解析错误静默降级（NFR-3：细节扫描失败绝不影响会话列表主链路）。
  */
-
-/** 消息环形缓冲容量（最近 N 条，oldest→newest，契约 F4） */
-const MESSAGE_RING_SIZE = 50
 
 /** 会话缓存上限（超出按插入序淘汰最旧） */
 const SESSION_CACHE_MAX = 512
@@ -75,8 +71,11 @@ interface SessionCache {
   tasks: Map<string, SessionTask>
   /** 子 Agent：Agent tool_use id → 引用 */
   agents: Map<string, SubAgentRef>
-  /** 消息尾流：最近 N 条（oldest→newest） */
-  messages: SessionMessage[]
+  /**
+   * 末条对话记录的角色（M17.1：waiting 推导真源，取代已移除的 messages 尾流）。
+   * 每条 type==='user'|'assistant' 记录更新；compact 重写全量重建时复位 null。
+   */
+  lastMessageRole: 'user' | 'assistant' | null
   /** 未收到 tool_result 的 tool_use：id → 工具摘要 label（Map 插入序 = 调用序） */
   pendingTools: Map<string, string>
   /** 已发未回的 TaskCreate：tool_use id → subject（真实编号要等 tool_result 才知） */
@@ -151,7 +150,7 @@ export class SessionDetailScanner {
       c = {
         tasks: new Map(),
         agents: new Map(),
-        messages: [],
+        lastMessageRole: null,
         pendingTools: new Map(),
         pendingTaskCreates: new Map(),
         knownSize: 0,
@@ -165,7 +164,7 @@ export class SessionDetailScanner {
     if (rewritten) {
       c.tasks.clear()
       c.agents.clear()
-      c.messages.length = 0
+      c.lastMessageRole = null
       c.pendingTools.clear()
       c.pendingTaskCreates.clear()
       c.knownSize = 0
@@ -180,21 +179,20 @@ export class SessionDetailScanner {
     c.knownIno = ino
   }
 
-  /** 会话细节（tasks/agents 全量，messages 最近 N 条 oldest→newest）；未知会话 → 空载荷 */
+  /** 会话细节（tasks/agents 全量；M17.1 起无 messages）；未知会话 → 空载荷 */
   getDetail(sessionId: string): SessionDetail {
     const c = this.caches.get(sessionId)
-    if (c === undefined) return { tasks: [], agents: [], messages: [] }
+    if (c === undefined) return { tasks: [], agents: [] }
     return {
       tasks: [...c.tasks.values()],
-      agents: [...c.agents.values()],
-      messages: [...c.messages]
+      agents: [...c.agents.values()]
     }
   }
 
   /**
    * 当前动作（SessionInfo.currentAction 真源）——只读增量缓存状态，不重读 transcript。
    * ① 有 pending tool_use（未收到 tool_result）→ 最近一条 {kind:'tool', label}；
-   * ② 否则最近可读消息为 assistant 文本 → {kind:'waiting', label:'等待用户输入'}；
+   * ② 否则 lastMessageRole==='assistant'（assistant 最后发言）→ {kind:'waiting', label:'等待用户输入'}；
    * ③ 否则 null。transcriptPath 参数为接口对称保留（契约签名），本方法不使用。
    */
   getCurrentAction(_transcriptPath: string, sessionId: string): SessionInfo['currentAction'] {
@@ -204,8 +202,7 @@ export class SessionDetailScanner {
     let pendingLabel: string | null = null
     for (const label of c.pendingTools.values()) pendingLabel = label
     if (pendingLabel !== null) return { kind: 'tool', label: pendingLabel }
-    const last = c.messages.length > 0 ? c.messages[c.messages.length - 1] : undefined
-    if (last !== undefined && last.role === 'assistant') {
+    if (c.lastMessageRole === 'assistant') {
       return { kind: 'waiting', label: '等待用户输入' }
     }
     return null
@@ -275,18 +272,16 @@ export class SessionDetailScanner {
       }
     }
 
-    // 可读文本 → messages 环形缓冲（复用 claude-sessions 的清洗链：剥 system-reminder /
-    // local-command-caveat / 斜杠命令标签、折叠空白、截断 120；清洗后为空不入缓冲）。
-    // 用户新文本（不含 tool_result 块）= 新一轮人工输入 → 清除陈旧 pending（打断/Esc 语义）。
+    // 可读文本清洗（复用 claude-sessions 的清洗链）：M17.1 起消息不再入缓冲（messages
+    // 尾流自契约移除），但「用户新文本（不含 tool_result 块）= 新一轮人工输入 → 清除陈旧
+    // pending（打断/Esc 语义）」保留。
     const rawText = extractContentText(content)
     const text = rawText !== null ? toActivity(rawText) : null
-    if (text !== null) {
-      if (type === 'user' && !sawToolResult) c.pendingTools.clear()
-      c.messages.push({ role: type, text })
-      if (c.messages.length > MESSAGE_RING_SIZE) {
-        c.messages.splice(0, c.messages.length - MESSAGE_RING_SIZE)
-      }
-    }
+    if (text !== null && type === 'user' && !sawToolResult) c.pendingTools.clear()
+
+    // 末条对话角色按记录 type 更新（此处 type ∈ 'user'|'assistant'，上方守卫已排除其他）。
+    // 纯 tool_result 回传记录同样计为 user —— waiting 推导取"最后发言方"语义。
+    c.lastMessageRole = type
   }
 
   /** tool_use block 增量应用（TaskCreate / TaskUpdate / Agent 特化 + 通用 pending 登记） */

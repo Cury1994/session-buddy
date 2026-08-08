@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harness Monitor · Sessions 迭代原型 v2（详情下沉 / 去对话 / clear同步 / 单卡审批）</title>
+<style>
+  :root{
+    --glass: rgba(255,255,255,0.55);
+    --line: rgba(255,255,255,0.5);
+    --ink: #1f2430;
+    --ink-2: #5a6372;
+    --ink-3: #9aa3b2;
+    --cyan: #00b8d9;
+    --green: #00e676;
+    --yellow: #ffab00;
+    --red: #ff5252;
+    --blue: #3b82f6;
+    --bg: #f4f6fb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    background: linear-gradient(135deg,#eef1f7,#e3e9f4);
+    display:flex;justify-content:center;align-items:flex-start;
+    padding: 28px 20px; color: var(--ink); -webkit-font-smoothing:antialiased;
+    gap:20px;
+  }
+  .widget{
+    width: 420px; background: var(--glass);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border:1px solid var(--line); border-radius:18px;
+    box-shadow: 0 18px 50px rgba(31,41,55,.18);
+    display:flex;flex-direction:column; max-height: 92vh; overflow:hidden;
+  }
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+
+  .hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;
+    border-bottom:1px solid rgba(255,255,255,.6); background: rgba(255,255,255,.35)}
+  .dots{display:flex;gap:6px}
+  .dots i{width:11px;height:11px;border-radius:50%}
+  .dots .r{background:#ff5f57}.dots .y{background:#febc2e}.dots .g{background:#28c840}
+  .title{font-size:13px;font-weight:600;color:var(--ink-2)}
+  .pin{color:#3b82f6;cursor:pointer;font-size:15px;line-height:1}
+
+  .body{padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+
+  .tabs{display:flex;background:rgba(0,0,0,.05);border-radius:10px;padding:3px;gap:2px}
+  .tabs button{flex:1;border:0;background:transparent;border-radius:8px;padding:6px 0;
+    font-size:12.5px;font-weight:500;color:var(--ink-2);cursor:pointer}
+  .tabs button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08);font-weight:600}
+  .tabs .gear{flex:0 0 34px}
+
+  /* 二级详情页返回条 */
+  .subbar{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700}
+  .back{border:1px solid #d7dde6;background:#fff;border-radius:8px;width:26px;height:26px;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink-2);font-size:14px;flex:0 0 26px}
+  .back:hover{background:#f6f8fb}
+  .subbar .subname{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .subbar .upd{font-size:10.5px;color:var(--ink-3);font-weight:400;font-family:ui-monospace,monospace}
+
+  /* card */
+  .card{background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.6);border-radius:14px;
+    padding:12px;box-shadow:0 2px 8px rgba(31,41,55,.05)}
+  .card.active{box-shadow:0 4px 16px rgba(31,41,55,.10)}
+  .ch{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+  .dot.run{background:var(--yellow);box-shadow:0 0 0 0 rgba(255,171,0,.6);animation:pulse 2s infinite}
+  .dot.idle{background:#9aa3b2}
+  .dot.pend{background:var(--red);box-shadow:0 0 0 0 rgba(255,82,82,.6);animation:pulse 1.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 var(--pg, rgba(255,171,0,.55))}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .st{font-size:11.5px;color:var(--ink-2);font-weight:500}
+  .name{font-size:13.5px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hd-actions{display:flex;align-items:center;gap:6px}
+  /* 单卡自动审批开关 */
+  .aa-card{display:flex;align-items:center;gap:4px;border:1px solid #d7dde6;background:#fff;border-radius:999px;
+    padding:2px 8px;cursor:pointer;font-size:10.5px;color:var(--ink-2);font-weight:600}
+  .aa-card .bolt{color:var(--yellow);font-size:12px}
+  .aa-card.on{background:#eefaf0;border-color:#b7e6c0;color:#2e7d32}
+  .aa-card .sw{width:9px;height:9px;border-radius:50%;background:#cbd5e1}
+  .aa-card.on .sw{background:var(--green)}
+  .term{border:1px solid #d7dde6;background:#fff;border-radius:7px;padding:3px 8px;font-size:11px;
+    color:var(--ink-2);cursor:pointer;font-family:ui-monospace,monospace}
+  .term:hover{background:#f6f8fb}
+
+  .tags{display:flex;gap:6px;margin-bottom:9px}
+  .tag{font-size:10.5px;padding:2px 8px;border-radius:6px;font-family:ui-monospace,monospace}
+  .tag.model{border:1px solid #bcd3f0;background:#eaf2fc;color:#2563c9}
+  .tag.tool{border:1px solid #d8dee9;background:#f3f5f9;color:#5a6372}
+
+  .action{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2);
+    background:#f6f8fb;border:1px solid #eef1f6;border-radius:8px;padding:7px 9px;margin-bottom:9px}
+  .action .spinner{width:12px;height:12px;border:2px solid #cbd5e1;border-top-color:#3b82f6;border-radius:50%;
+    animation:spin 0.9s linear infinite;flex:0 0 12px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .action .cmd{font-family:ui-monospace,monospace;color:var(--ink);font-weight:600;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .action.paused{background:#fef9f0;border-color:#fbe9cd;color:#8a6d1a}
+  .action.paused .paused-ico{color:var(--yellow);font-weight:700}
+
+  .warn{background:#fdeeee;border:1px solid #f6cdcd;border-radius:9px;padding:8px 10px;margin-bottom:9px}
+  .warn .t{font-size:11px;font-weight:700;color:#b3261e;display:flex;align-items:center;gap:6px}
+  .warn .t .ico{font-size:13px}
+  .warn .d{font-size:11px;color:#c4443c;margin-top:4px;line-height:1.5}
+
+  .bars{margin-bottom:4px}
+  .row{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-bottom:4px}
+  .row b{color:var(--ink-2);font-weight:600}
+  .row .mem.hot{color:var(--red);font-weight:600}
+  .track{height:5px;background:#e6eaf1;border-radius:99px;overflow:hidden}
+  .fill{height:100%;border-radius:99px}
+  .fill.hot{background:var(--red)}
+  .fill.run{background:var(--yellow)}
+  .fill.ok{background:var(--cyan)}
+  .meta{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);
+    font-family:ui-monospace,monospace;margin-top:6px}
+  .meta .cwd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+
+  .expand{margin-top:9px;border-top:1px solid #eef1f6;padding-top:8px;text-align:center}
+  .expand button{border:0;background:transparent;color:#3b82f6;font-size:11.5px;cursor:pointer;font-weight:500}
+  .expand button:hover{color:#2563c9}
+
+  /* 二级详情页内容 */
+  .detail{display:flex;flex-direction:column;gap:14px}
+  .sec{background:rgba(255,255,255,.9);border:1px solid rgba(255,255,255,.6);border-radius:14px;padding:12px}
+  .sec h4{font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .sec h4 .ico{color:var(--ink-3)}
+
+  .tp{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:var(--ink-2)}
+  .tp .bar{flex:1;height:6px;background:#e6eaf1;border-radius:99px;overflow:hidden}
+  .tp .bar i{display:block;height:100%;background:var(--green);border-radius:99px}
+  .tp .n{font-weight:700;color:var(--ink)}
+  .tasks{display:flex;flex-direction:column;gap:5px}
+  .task{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-2);background:#f8fafc;
+    border:1px solid #eef1f6;border-radius:7px;padding:6px 8px}
+  .task .ck{width:14px;height:14px;border-radius:4px;flex:0 0 14px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff}
+  .task.done .ck{background:var(--green)}
+  .task.run .ck{background:transparent;border:2px solid var(--yellow)}
+  .task.run .ck::after{content:"";width:5px;height:5px;background:var(--yellow);border-radius:50%}
+  .task.pend .ck{border:2px solid #cbd5e1}
+  .task .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .task.done .t{color:var(--ink-3);text-decoration:line-through}
+  .task.run .t{font-weight:600}
+
+  .ag{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1px solid #eef1f6;border-radius:8px;
+    padding:7px 9px;margin-bottom:6px}
+  .ag:last-child{margin-bottom:0}
+  .ag .av{width:20px;height:20px;border-radius:6px;background:#e7e9ff;color:#5b5bd6;font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;flex:0 0 20px}
+  .ag .info{flex:1;min-width:0}
+  .ag .nm{font-size:11.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ag .ds{font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ag .stt{font-size:10px;padding:2px 7px;border-radius:99px;flex:0 0 auto}
+  .ag .stt.run{background:#f3f9ec;color:#4c9a2f}
+  .ag .stt.done{background:#eef1f6;color:var(--ink-3)}
+  .ag .stt.wait{background:#fef4e0;color:#b98218}
+
+  .empty{font-size:11.5px;color:var(--ink-3);text-align:center;padding:14px 0;font-style:italic}
+  .empty-lede{font-size:11px;color:var(--ink-3);text-align:center;padding:14px 0;line-height:1.7}
+  .empty-lede b{color:var(--ink-2);font-style:normal}
+
+  .acc{border:1px solid #d7dde6;border-radius:10px;padding:10px 12px;background:rgba(255,255,255,.9)}
+  .acc .row2{display:flex;align-items:center;gap:8px;cursor:pointer}
+  .acc .row2 .car{color:var(--ink-3);font-size:12px}
+  .acc .row2 b{font-size:12.5px;font-weight:700}
+  .acc .badge{margin-left:auto;font-size:10.5px;color:var(--ink-3)}
+
+  .note{margin-top:10px;font-size:11px;color:var(--ink-3);background:rgba(255,255,255,.6);
+    border:1px dashed #c9d3e0;border-radius:9px;padding:8px 10px;line-height:1.6}
+  .note b{color:var(--ink-2)}
+
+  /* 右侧对照说明板 */
+  .guide{width:340px;background:#fff;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(31,41,55,.12);
+    font-size:12.5px;line-height:1.75;color:var(--ink-2);align-self:flex-start}
+  .guide h3{font-size:14px;color:var(--ink);margin-bottom:12px}
+  .guide .gq{font-weight:700;color:var(--ink);margin:14px 0 4px;font-size:12.5px}
+  .guide .gq .tag-iv{margin-left:6px;font-size:10px;color:#fff;background:var(--blue);border-radius:4px;padding:1px 5px;font-weight:600;vertical-align:1px}
+  .guide .gq .tag-bk{margin-left:6px;font-size:10px;color:#fff;background:#7c5bd6;border-radius:4px;padding:1px 5px;font-weight:600;vertical-align:1px}
+</style>
+</head>
+<body>
+
+<div class="widget">
+  <div class="hd">
+    <div class="dots"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+    <div class="title">Harness Monitor</div>
+    <div class="pin">📌</div>
+  </div>
+
+  <div class="body" id="body">
+    <!-- ===== 一级：会话列表（SegmentedControl 常驻） ===== -->
+    <div class="tabs">
+      <button class="on">Sessions</button>
+      <button>API Usage</button>
+      <button class="gear">⚙</button>
+    </div>
+
+    <div id="listView">
+      <!-- 已移除全局自动审批条 ⚡（改为单卡片内开关） -->
+
+      <!-- 卡片 1：执行中 + 上下文告警 + 单卡自动审批 ON -->
+      <div class="card active">
+        <div class="ch">
+          <span class="dot run"></span>
+          <span class="st">执行中</span>
+          <span class="name">harness-monitor (M15 厂商归并)</span>
+          <div class="hd-actions">
+            <span class="aa-card on" onclick="toggleAA(this)" title="本会话自动审批：开">
+              <span class="bolt">⚡</span><span class="sw"></span>自动
+            </span>
+            <button class="term">>_</button>
+          </div>
+        </div>
+        <div class="tags">
+          <span class="tag model">qwen3.8-max-preview</span>
+          <span class="tag tool">Claude Code</span>
+        </div>
+
+        <div class="action">
+          <span class="spinner"></span>
+          <span>正在运行 Bash：</span><span class="cmd">npm run build</span>
+        </div>
+
+        <div class="warn">
+          <div class="t"><span class="ico">⚠</span> 上下文即将耗尽 (85%)</div>
+          <div class="d">当前会话历史过长，可能影响推理。建议跳转终端执行 /compact，或开新会话继续。</div>
+        </div>
+
+        <div class="bars">
+          <div class="row"><span>Ctx: 85% (3.4M / 4M)</span><span class="mem hot">Mem: 1.2G</span></div>
+          <div class="track"><div class="fill hot" style="width:85%"></div></div>
+        </div>
+        <div class="meta">
+          <span>Up 2h 45m</span>
+          <span>ID e8b1…2f4a</span>
+          <span class="cwd">/home/cury/harness-monitor</span>
+        </div>
+
+        <div class="expand"><button onclick="openDetail('card1')">查看更多详情 ▸</button></div>
+      </div>
+
+      <!-- 卡片 2：空闲 + 单卡自动审批 OFF -->
+      <div class="card">
+        <div class="ch">
+          <span class="dot idle"></span>
+          <span class="st">空闲</span>
+          <span class="name">/clear</span>
+          <div class="hd-actions">
+            <span class="aa-card" onclick="toggleAA(this)" title="本会话自动审批：关">
+              <span class="bolt">⚡</span><span class="sw"></span>自动
+            </span>
+            <button class="term">>_</button>
+          </div>
+        </div>
+        <div class="tags">
+          <span class="tag model">glm-5.2</span>
+          <span class="tag tool">Claude Code</span>
+        </div>
+
+        <div class="action paused">
+          <span class="paused-ico">⏸</span>
+          <span>等待用户输入</span>
+        </div>
+
+        <div class="bars">
+          <div class="row"><span>Ctx: 20%</span><span>Mem: 505M</span></div>
+          <div class="track"><div class="fill ok" style="width:20%"></div></div>
+        </div>
+        <div class="meta">
+          <span>Up 1h 11m</span>
+          <span>ID d9a3a7c6</span>
+          <span class="cwd">/home/cury/harness-monitor/docs</span>
+        </div>
+
+        <div class="expand"><button onclick="openDetail('card2')">查看更多详情 ▸</button></div>
+      </div>
+
+      <!-- 卡片 3：/clear 后刚开新任务（实时同步演示） -->
+      <div class="card">
+        <div class="ch">
+          <span class="dot run"></span>
+          <span class="st">执行中</span>
+          <span class="name">harness-monitor (Sessions 迭代)</span>
+          <div class="hd-actions">
+            <span class="aa-card" onclick="toggleAA(this)">
+              <span class="bolt">⚡</span><span class="sw"></span>自动
+            </span>
+            <button class="term">>_</button>
+          </div>
+        </div>
+        <div class="tags">
+          <span class="tag model">deepseek-v4-flash</span>
+          <span class="tag tool">Claude Code</span>
+        </div>
+        <div class="action">
+          <span class="spinner"></span>
+          <span>正在运行 Agent：</span><span class="cmd">Plan · 设计详情页</span>
+        </div>
+        <div class="bars">
+          <div class="row"><span>Ctx: 8%</span><span>Mem: 390M</span></div>
+          <div class="track"><div class="fill ok" style="width:8%"></div></div>
+        </div>
+        <div class="meta">
+          <span>Up 3m</span>
+          <span>ID 7f0c…91b2</span>
+          <span class="cwd">/home/cury/harness-monitor</span>
+        </div>
+        <div class="expand"><button onclick="openDetail('card3')">查看更多详情 ▸</button></div>
+      </div>
+
+      <div class="acc">
+        <div class="row2"><span class="car">▸</span><b>Approval History</b><span class="badge">3 recent</span></div>
+      </div>
+    </div>
+
+    <!-- ===== 二级：会话详情页（默认隐藏；点击「查看更多详情」进入） ===== -->
+    <div id="detailView" hidden>
+      <div class="subbar">
+        <button class="back" onclick="backToList()">←</button>
+        <span class="subname" id="subname">harness-monitor</span>
+        <span class="upd" id="subupd">● 实时</span>
+      </div>
+
+      <!-- 详情 A：任务 + 子 Agent（无最近对话） -->
+      <div id="detailA" class="detail">
+        <div class="sec">
+          <h4><span class="ico">✓</span> 任务进度</h4>
+          <div class="tp">
+            <div class="bar"><i style="width:60%"></i></div>
+            <span class="n">3/5</span>
+          </div>
+          <div class="tasks">
+            <div class="task done"><span class="ck">✓</span><span class="t">M13 用量泛化（7/7 完成）</span></div>
+            <div class="task done"><span class="ck">✓</span><span class="t">M14 hook 自动注册</span></div>
+            <div class="task done"><span class="ck">✓</span><span class="t">M15 厂商 host 归并</span></div>
+            <div class="task run"><span class="ck"></span><span class="t">Sessions 页迭代（F1-F5）</span></div>
+            <div class="task pend"><span class="ck"></span><span class="t">Code Review</span></div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <h4><span class="ico">◈</span> 子 Agent 协作</h4>
+          <div class="ag"><span class="av">P</span><div class="info"><div class="nm">Plan · 派发编码任务</div><div class="ds">按模块拆分后端实现</div></div><span class="stt done">已返回</span></div>
+          <div class="ag"><span class="av">C</span><div class="info"><div class="nm">general-purpose · 全量 diff 复核</div><div class="ds">交叉验证收尾</div></div><span class="stt run">运行中</span></div>
+          <div class="ag"><span class="av">C</span><div class="info"><div class="nm">claude-code-guide · 查上下文表</div><div class="ds">验证 statusline 同源算法</div></div><span class="stt wait">待返回</span></div>
+        </div>
+      </div>
+
+      <!-- 详情 B：/clear 空态（卡片 2） -->
+      <div id="detailB" class="detail" hidden>
+        <div class="sec">
+          <h4><span class="ico">✓</span> 任务进度</h4>
+          <div class="empty-lede"><b>已 /clear，上下文清空</b><br>新任务 / 子 Agent 开始后实时同步显示</div>
+        </div>
+        <div class="sec">
+          <h4><span class="ico">◈</span> 子 Agent 协作</h4>
+          <div class="empty-lede">无子 Agent</div>
+        </div>
+      </div>
+
+      <!-- 详情 C：/clear 后新协作实时出现（卡片 3） -->
+      <div id="detailC" class="detail" hidden>
+        <div class="sec">
+          <h4><span class="ico">✓</span> 任务进度</h4>
+          <div class="tp">
+            <div class="bar"><i style="width:33%"></i></div>
+            <span class="n">1/3</span>
+          </div>
+          <div class="tasks">
+            <div class="task done"><span class="ck">✓</span><span class="t">设计详情页原型</span></div>
+            <div class="task run"><span class="ck"></span><span class="t">实现二级详情页</span></div>
+            <div class="task pend"><span class="ck"></span><span class="t">Code Review</span></div>
+          </div>
+        </div>
+        <div class="sec">
+          <h4><span class="ico">◈</span> 子 Agent 协作</h4>
+          <div class="ag"><span class="av">P</span><div class="info"><div class="nm">Plan · 设计二级详情页</div><div class="ds">下沉结构 + 组件拆分</div></div><span class="stt run">运行中</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>原型说明 v2（相对 v1 的 4 项改动）：</b>① 「查看更多详情」下沉为<b>二级页面</b>（返回箭头回列表，点击才加载）·
+      ② 详情页<b>移除「最近对话」</b>，只留任务进度 + 子 Agent 协作 · ③ /clear 后详情<b>清空回空态</b>，新任务/子 Agent
+      <b>实时同步</b>（右上 ● 实时标记）· ④ 全局自动审批条<b>移除</b>，改为<b>每张卡片头部 ⚡ 开关</b>（按会话维度）。
+    </div>
+  </div>
+</div>
+
+<div class="guide">
+  <h3>四项改动对照</h3>
+
+  <div class="gq">① 详情下沉二级页面 <span class="tag-iv">前端</span></div>
+  卡片内「查看更多详情 ▸」不再内联展开，而是跳转独立详情页（顶部 ← 返回 + 会话名）。仅在点击时经
+  sessions:detail 拉取，收起回列表不重复请求。
+
+  <div class="gq">② 去掉最近对话 <span class="tag-iv">前端</span><span class="tag-bk">后端</span></div>
+  详情页移除「最近对话」板块（MessageTail 组件删除）。后端 SessionDetail 载荷可一并去掉 messages 段，
+  扫描器省去消息尾缓冲。
+
+  <div class="gq">③ /clear 清空 + 实时同步 <span class="tag-iv">前端</span><span class="tag-bk">后端</span></div>
+  会话 /clear 后详情缓存清空回「已 /clear，上下文清空」空态；新任务/子 Agent 派发时详情页实时刷新
+  （右上 ● 实时标记），不再一次拉取驻留。后端需检测 clear 事件重置增量缓存，前端订阅详情变更。
+
+  <div class="gq">④ 自动审批单卡片化 <span class="tag-iv">前端</span><span class="tag-bk">后端</span></div>
+  去掉 Sessions 顶部的全局「⚡ 自动审批」条，改为<b>每张卡片头部</b>的 ⚡ 开关（按会话维度 ON/OFF）。
+  后端 autoApprove 由全局 boolean 改为按会话键存储，审批入口按当前会话命中。
+
+  <div class="gq" style="margin-top:18px;color:var(--blue)">点击上方卡片「查看更多详情」验证交互</div>
+</div>
+
+<script>
+  function toggleAA(el){
+    var on = el.classList.toggle('on');
+    el.title = '本会话自动审批：' + (on ? '开' : '关');
+  }
+  function openDetail(which){
+    document.getElementById('listView').hidden = true;
+    document.getElementById('detailView').hidden = false;
+    document.getElementById('detailA').hidden = true;
+    document.getElementById('detailB').hidden = true;
+    document.getElementById('detailC').hidden = true;
+    var names = {card1:'harness-monitor (M15 厂商归并)', card2:'/clear', card3:'harness-monitor (Sessions 迭代)'};
+    document.getElementById('subname').textContent = names[which];
+    document.getElementById('body').scrollTop = 0;
+    document.getElementById('detail' + which.toUpperCase().replace('CARD','')).hidden = false;
+  }
+  function backToList(){
+    document.getElementById('detailView').hidden = true;
+    document.getElementById('listView').hidden = false;
+  }
+</script>
+</body>
+</html>

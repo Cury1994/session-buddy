@@ -3,6 +3,8 @@ import { closeSync, existsSync, openSync, readFileSync, readlinkSync, readSync, 
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
+import { contextForModel } from './vendor-registry'
+
 import type { ApprovalQueue } from './approval-queue'
 import type { SessionDetailScanner } from './session-detail'
 import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
@@ -51,8 +53,8 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *        cc-switch 转发后 settings 的 *_MODEL_NAME 是陈旧别名，故 transcript 优先）
  *   接线：显示 cwd = lastCwd → json cwd 降级；apiProvider = lastModel → settings 解析降级。
  *   ctxPct 分母 = **实际后端模型的上限**：优先用 transcript 末条 message.model（代理改写
- *     后的真实模型名）查 MODEL_CONTEXT_WINDOWS 表取真实窗口；未命中回退 settings 模型名的
- *     启发式（含 [1m] → 1M，否则 200K，与 statusline 同源）。切换 API 后随 lastModel 更新。
+ *     后的真实模型名），经 contextWindowForModel 分层解析（config.context_lengths 前缀匹配 →
+ *     vendor-registry 内置模板 → [1m] 启发式，与 statusline 同源兜底）。切换 API 后随 lastModel 更新。
  *
  * 关闭终端语义（F3，closeTerminalOfPid）：
  *   不再直接 SIGTERM claude 进程（旧 FR-2.8，终端窗口仍残留）。新链路：
@@ -99,30 +101,40 @@ function expandHome(p: string): string {
 // ─── ctxPct（移植自 statusline.py，逐字同源） ───
 
 /**
- * 已知后端模型的实际上下文窗口（代理网关改写后的真实模型名 → 上限）。
- * 来源：~/CLAUDE.md / model-context-limits 记忆 2026-07-31 核实（官方文档链接见记忆四）。
- * 页面切换 API 后，transcript 末条 message.model 即新后端模型 → 据此取真实分母。
+ * 上下文窗口（ctxPct 分母），M17.1 分层解析（替换旧 MODEL_CONTEXT_WINDOWS 硬编码表）：
+ *   ① config.context_lengths 前缀匹配（长键优先）→ entry.len 即分母
+ *      （manual/registry/heuristic 三种来源的条目值一律作分母——来源只决定可否被
+ *        自动回填覆盖，不影响分母语义；条目非法/len 非正数 → 视作未命中继续下一层）
+ *   ② vendor-registry contextForModel（内置厂商模板 modelContext，前缀匹配）→ len
+ *   ③ 启发式兜底（与 statusline 同源）：模型 id 含 [1m]/1m → 1M，否则 200K
+ * 后端模型名可能带日期后缀（如 deepseek-v4-flash-0731），故各层均按前缀匹配。
+ * 导出供裸 node 验收测试直接驱动。
  */
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'glm-5.2': 1_000_000, // 智谱
-  'deepseek-v4-pro': 1_000_000, // DeepSeek
-  'deepseek-v4-flash': 1_000_000, // DeepSeek
-  'qwen3.8-max-preview': 1_000_000 // 阿里百炼，未公开，暂按 settings 别名 [1m] 假定；规格公布后更新
-}
-
-/**
- * 上下文窗口（ctxPct 分母）：优先按已知后端模型查表得**实际上限**；
- * 未命中回退启发式——模型名含 [1m]/1m → 1M，否则 200K（与 statusline 同源）。
- * 后端模型名可能带日期后缀（如 deepseek-v4-flash-0731），故按前缀匹配，长键优先。
- */
-function contextWindowForModel(modelId: string): number {
+export function contextWindowForModel(modelId: string, config: AppConfig): number {
   const mid = (modelId || '').toLowerCase().trim()
   if (mid === '') return 200_000
-  for (const [key, window] of Object.entries(MODEL_CONTEXT_WINDOWS).sort(
-    (a, b) => b[0].length - a[0].length
-  )) {
-    if (mid.startsWith(key)) return window
+
+  // ① 用户配置表（前缀匹配，长键优先——防止短键误命中更长前缀的模型）
+  const entries = config.context_lengths ?? {}
+  const keys = Object.keys(entries).sort((a, b) => b.length - a.length)
+  for (const key of keys) {
+    if (key === '' || !mid.startsWith(key.toLowerCase())) continue
+    const entry = entries[key]
+    if (
+      entry !== undefined &&
+      typeof entry.len === 'number' &&
+      Number.isFinite(entry.len) &&
+      entry.len > 0
+    ) {
+      return entry.len
+    }
   }
+
+  // ② 内置厂商 registry（deepseek-v4-pro/flash → 1M 等实测值）
+  const reg = contextForModel(mid)
+  if (reg !== null) return reg.len
+
+  // ③ 启发式兜底（与 statusline 同源）
   if (mid.includes('[1m]') || mid.includes('1m')) return 1_000_000
   return 200_000
 }
@@ -752,8 +764,10 @@ export class ClaudeCodeSessionScanner {
   private readonly projectsDirs: string[]
   private readonly settingsPath: string
   private readonly approvalQueue: ApprovalQueue
-  /** M16 B1：会话细节增量扫描器（tasks/agents/messages/currentAction 真源，index.ts 注入） */
+  /** M16 B1：会话细节增量扫描器（tasks/agents/currentAction 真源，index.ts 注入） */
   private readonly detailScanner: SessionDetailScanner
+  /** M17.1：应用配置（contextWindowForModel 分层解析的 context_lengths 真源） */
+  private config: AppConfig
   /** 调度器每轮写入，供 server getSessions 同步读取 */
   private latestSessions: SessionInfo[] = []
 
@@ -771,6 +785,12 @@ export class ClaudeCodeSessionScanner {
     this.settingsPath = expandHome(cc.settings_path || '~/.claude/settings.json')
     this.approvalQueue = approvalQueue
     this.detailScanner = detailScanner
+    this.config = config
+  }
+
+  /** M17.1：config:save 重调度后刷新配置引用（context_lengths 手动编辑即时生效） */
+  setConfig(config: AppConfig): void {
+    this.config = config
   }
 
   /** 同步读取上一轮扫描缓存（createServer 的 getSessions 注入口用） */
@@ -894,12 +914,13 @@ export class ClaudeCodeSessionScanner {
 
     // ctxPct：与 statusline.py 同源（usedTokens 取自尾读三事之一）。
     // 分母即实际后端模型的上下文上限：优先用 transcript 末条 message.model
-    // （代理改写后的真实模型名，查表取真实窗口）；未命中回退 settings 模型名的启发式。
+    // （代理改写后的真实模型名），经 contextWindowForModel 分层解析
+    // （config.context_lengths 前缀匹配 → vendor-registry → [1m] 启发式）。
     // 页面切换 API 后，会话下一条消息的 lastModel 即新模型 → ctxPct 随新 API 的
     // 实际最大上下文自动更新（旧版始终用 settings modelId，不识真实后端上限）。
     let ctxPct = 0
     if (transcript) {
-      const window = contextWindowForModel(tail.lastModel ?? model.modelId)
+      const window = contextWindowForModel(tail.lastModel ?? model.modelId, this.config)
       ctxPct = window > 0 ? Math.min(100, Math.round((tail.usedTokens / window) * 100)) : 0
     }
 
@@ -934,7 +955,12 @@ export class ClaudeCodeSessionScanner {
       hasPendingApproval,
       recentlyActive,
       lastActivity: tail.lastActivity ?? '', // F2：最近可读任务内容（扫不到为空串，卡片据此条件渲染）
-      currentAction // M16 B1：增量细节扫描器推导（末条 tool_use 无 tool_result → tool / 否则 waiting / 无法确定 null）
+      currentAction, // M16 B1：增量细节扫描器推导（末条 tool_use 无 tool_result → tool / 否则 waiting / 无法确定 null）
+      // M17：最近一次 API 调用的实际后端模型名（transcript 尾读 message.model 真源）。
+      // 与 apiProvider 同一降级链风格但**不回退 settings 别名**——settings 的 *_MODEL_NAME
+      // 经代理改写可能是陈旧别名；此处必须是真实后端模型名（auto-population 触发用），
+      // 无 usage/model 记录为 null（types.ts 契约）
+      lastModel: tail.lastModel
     }
   }
 }

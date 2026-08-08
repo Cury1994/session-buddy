@@ -4,7 +4,7 @@ import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 
 import { closeTerminalOfPid, focusExistingTerminal } from './claude-sessions'
 import { loadConfig, saveConfig } from './config'
-import { getAutoApprove, setAutoApprove } from './server'
+import { isAutoApproveOn, setAutoApprove } from './server'
 
 import type { ApprovalQueue } from './approval-queue'
 import type { ClaudeCodeSessionScanner } from './claude-sessions'
@@ -34,7 +34,7 @@ import type { AppConfig, ApprovalResponse, SessionDetail, UsageCard } from '../s
  *           config:get / config:save / app:refresh / app:quit /
  *           session:jump-terminal / session:terminate / approval:respond /
  *           approval:get（P1-3 挂载补拉 seed）/ app:toggle-pin /
- *           approval:set-auto-approve / approval:get-auto-approve（F3 自动审批开关）
+ *           approval:set-auto-approve / approval:get-auto-approve（F3 自动审批开关，M17.1 每会话独立）
  *   window:hide / window:minimize / window:toggle-maximize / window:get-always-on-top
  *           （M4 建立的窗口控制子集，§6.11 未列但 TrafficLights 必需，
  *            自 index.ts 临时注册迁入统一管理）
@@ -148,13 +148,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle('sessions:get', () => scanner.getSessions())
 
   /**
-   * 会话展开详情（M16 B1，F2 任务清单 / F3 子 Agent / F4 消息尾流）：
+   * 会话展开详情（M16 B1，F2 任务清单 / F3 子 Agent；M17.1 起无 messages 尾流）：
    * 只读 detailScanner 增量缓存（scanner 每轮 discoverSessions 已对每个活跃会话喂 scan，
    * 本 handler 不触发任何文件 IO）。入参 sessionId 非 string/空 → 空载荷。
    */
   ipcMain.handle('sessions:detail', (_event, sessionId: unknown): SessionDetail => {
     if (typeof sessionId !== 'string' || sessionId === '') {
-      return { tasks: [], agents: [], messages: [] }
+      return { tasks: [], agents: [] }
     }
     return deps.detailScanner.getDetail(sessionId)
   })
@@ -290,16 +290,28 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   })
 
   /**
-   * 设置自动审批开关（F3，会话级 / 重启复位 / 两步确认在渲染端）：
-   * 薄封装委托 server.ts 模块级 flag。入参非 boolean 一律按 false 归一。
-   * 开启后 POST /approve 立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙）。
+   * 设置某会话的自动审批开关（F3，M17.1 每会话独立 / 重启复位 / 两步确认在渲染端）：
+   * 薄封装委托 server.ts 模块级会话键集合（仅按 sessionId 建键，approve.sh 的
+   * payload.session 即 .session_id）。入参非 string 按空串归一（忽略），v 非 boolean 一律按 false 归一。
+   * 开启后该会话的 POST /approve 立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙）。
    */
-  ipcMain.handle('approval:set-auto-approve', (_event, v: unknown) => {
-    setAutoApprove(v === true)
-  })
+  ipcMain.handle(
+    'approval:set-auto-approve',
+    (_event, sessionId: unknown, v: unknown) => {
+      setAutoApprove(
+        typeof sessionId === 'string' ? sessionId : '',
+        v === true
+      )
+    }
+  )
 
-  /** 读取自动审批开关（F3）：渲染端 SessionsView 挂载播种真源，避免切走重挂载后与主进程 flag 失配 */
-  ipcMain.handle('approval:get-auto-approve', () => getAutoApprove())
+  /**
+   * 读取某会话的自动审批开关（F3，M17.1）：渲染端 SessionCard 挂载播种真源，
+   * 避免切走重挂载后与主进程集合失配。按 sessionId 命中。
+   */
+  ipcMain.handle('approval:get-auto-approve', (_event, sessionId: unknown) => {
+    return isAutoApproveOn(typeof sessionId === 'string' ? sessionId : '')
+  })
 
   // ─── 窗口控制子集（M4 建立，TrafficLights.tsx 调用） ───
 

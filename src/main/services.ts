@@ -1,8 +1,9 @@
+import { saveConfig } from './config'
 import { detectCalled } from './detectors'
 import { notifyUsageLow } from './notifications'
 import { readQuota } from './quota-reader'
 import { computeGlobalWarnThreshold, computeTrayColor } from './server'
-import { matchVendor } from './vendor-registry'
+import { contextForModel, matchVendor } from './vendor-registry'
 import { urlHost } from './cc-switch-usage'
 
 import type { BrowserWindow } from 'electron'
@@ -10,7 +11,7 @@ import type { ApprovalQueue } from './approval-queue'
 import type { ClaudeCodeSessionScanner } from './claude-sessions'
 import type { AppDatabase } from './db'
 import type { ManagedTray } from './tray'
-import type { AppConfig, UsageCard, UsageSourceConfig } from '../shared/types'
+import type { AppConfig, ContextEntry, UsageCard, UsageSourceConfig } from '../shared/types'
 
 /**
  * M6 → M13.5 — 定时调度胶水层（DESIGN §6.9 / §5.1 / §5.2）
@@ -149,6 +150,10 @@ async function buildSourceCard(db: AppDatabase, source: UsageSourceConfig): Prom
  *   3. detectCalled 中未被吸收的项 → registry fallback：命中内置厂商模板（如 DeepSeek）
  *      则用模板生成 source 走 buildSourceCard 出余量卡（零配置）；未命中 → 槽位卡
  *      （status=missing-config，引导补配置；billing 记 'payg'，带 cc-switch 证据的 calls）
+ *   4. M17.7：返回前过滤 missing-config / missing-credential 卡——API Usage 只展示
+ *      免配置即可工作的卡（ok / error）。百炼订阅占位卡与缺 env 的模板卡由此隐藏；
+ *      error 保留（如 DeepSeek 瞬态查询失败仍展示）。过滤发生在构建期，
+ *      故缓存 / usage:updated push / usage:get IPC 全链路天然干净。
  * ok 卡在 buildSourceCard 内落库（见该函数注释）。NFR-3：单个畸形 source 只降级
  * 该卡为 error，不中断整轮构建。
  */
@@ -210,7 +215,9 @@ export async function buildUsageCards(db: AppDatabase, config: AppConfig): Promi
     cards.push(slot)
   }
 
-  return cards
+  // M17.7：只保留免配置即可工作的卡（ok / error）；missing-config（未配置订阅端点 /
+  // 槽位卡）与 missing-credential（缺 env）不进入 API Usage 视图
+  return cards.filter((c) => c.status !== 'missing-config' && c.status !== 'missing-credential')
 }
 
 // ─── 调度器 ───
@@ -275,6 +282,7 @@ export function startUsageChecker(deps: UsageCheckerDeps): ScheduledTask {
 
 /**
  * Session 扫描。每轮：discoverSessions（内部刷新 scanner 缓存）→
+ * M17.4 context_lengths 自动回填（新见模型 → registry/heuristic，只增不改）→
  * 更新托盘菜单快照 → push sessions:updated → 按协议刷新托盘色（存活 session
  * 变化可能影响颜色判定边界，调一次无副作用）。
  */
@@ -288,6 +296,43 @@ export function startSessionScanner(deps: SessionScannerDeps): ScheduledTask {
   async function tick(): Promise<void> {
     try {
       const sessions = await scanner.discoverSessions()
+
+      // M17.4：为本轮新见模型自动回填 context_lengths。**manual 条目绝不覆盖**；
+      // registry / heuristic 条目可被新解析精化（如 heuristic 猜的 200K 在 registry
+      // 增补后升级为真实值）。解析顺序：vendor-registry 前缀命中 → {len, source:'registry'}；
+      // 否则启发式（模型 id 含 '1m'（覆盖 '[1m]'）→ 1M，否则 200K，source:'heuristic'）。
+      // 无实际变更（registry 重解析同值）不写，避免每 tick 落盘 churn。
+      // NFR-3：内层独立 try/catch——落盘失败只 warn，不中断本轮托盘快照 / push。
+      try {
+        const known = config.context_lengths ?? {}
+        const newEntries: Record<string, ContextEntry> = {}
+        for (const s of sessions) {
+          const modelId = s.lastModel
+          if (!modelId) continue
+          const existing = known[modelId]
+          if (existing?.source === 'manual') continue // 手动行永不自动覆盖
+          if (newEntries[modelId] !== undefined) continue
+          const hit = contextForModel(modelId)
+          const resolved = hit ?? {
+            len: modelId.toLowerCase().includes('1m') ? 1_000_000 : 200_000,
+            source: 'heuristic' as const
+          }
+          // 已有同值（registry 重复解析）→ 不写，避免无谓落盘
+          if (existing && existing.len === resolved.len && existing.source === resolved.source) continue
+          newEntries[modelId] = resolved
+        }
+        if (Object.keys(newEntries).length > 0) {
+          // saveConfig 对**用户文件**做 deepMerge（纯对象逐层合并）→ context_lengths
+          // 按 key 级合并，用户文件里已有的其它 key 不被丢弃
+          saveConfig({ context_lengths: newEntries })
+          // 同步回写内存对象（属性级替换，不换 config 引用本身，scanner 持有的同一
+          // 对象读 .context_lengths 即可见）：下一轮 tick 不再重复解析/落盘同批条目
+          config.context_lengths = { ...known, ...newEntries }
+        }
+      } catch (err) {
+        console.warn(`[services] context_lengths 自动回填失败: ${(err as Error).message}`)
+      }
+
       tray.setSessionSnapshot(
         sessions.map((s) => ({
           name: s.name,

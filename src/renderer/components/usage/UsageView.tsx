@@ -9,18 +9,12 @@ import { useUsageData } from '../../hooks/useUsageData'
  *
  * 状态分支：
  *   error 且无卡 → 错误提示 ｜ loading 且无卡 → 加载提示 ｜
- *   cards 为空 → EmptyState（尚未检测到调用过的 API，或未配置用量源）｜
+ *   cards 为空 → EmptyState（尚未检测到调用过的 API）｜
  *   正常 → 逐卡渲染 <UsageCardCard key={sourceId}>
  *
- * 导航钩子：槽位卡的"配置"按钮经 onOpenSettings(sourceId) 通知 App 切到设置视图
- * 并聚焦对应用量源（App 持有 focus state，见 App.tsx）。
+ * M17：用量源管理已移出设置页，槽位卡不再提供"配置"跳转（onOpenSettings 移除）。
  */
-interface UsageViewProps {
-  /** 跳设置页并聚焦用量源（槽位卡"配置"按钮；focus=sourceId） */
-  onOpenSettings?: (focus?: string) => void
-}
-
-function UsageView({ onOpenSettings }: UsageViewProps): React.JSX.Element {
+function UsageView(): React.JSX.Element {
   const { cards, defaultThreshold, loading, error } = useUsageData()
 
   if (error && cards.length === 0) {
@@ -34,9 +28,9 @@ function UsageView({ onOpenSettings }: UsageViewProps): React.JSX.Element {
   if (cards.length === 0) {
     return (
       <p className="empty-state">
-        尚未检测到调用过的 API，或未配置用量源。
+        尚未检测到调用过的 API。
         <br />
-        在设置页配置用量源后，余量查询成功将自动显示。
+        成功调用 API 后，余量与上下文信息将自动显示。
       </p>
     )
   }
@@ -48,7 +42,6 @@ function UsageView({ onOpenSettings }: UsageViewProps): React.JSX.Element {
           key={card.sourceId}
           card={card}
           defaultThreshold={defaultThreshold}
-          onOpenSettings={onOpenSettings}
         />
       ))}
     </>

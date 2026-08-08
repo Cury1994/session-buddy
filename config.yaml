@@ -76,3 +76,7 @@ notifications:
 window:                               # 尺寸以设计资料为准，见 DESIGN §2.9
   width: 420
   height: 650
+
+# M17: 模型上下文长度表（model id → { len: max context tokens, source: manual/registry/heuristic }）
+# manual 手填条目不被自动更新覆盖；registry/heuristic 条目可被后续推导覆盖。空表 = 全自动推导
+context_lengths: {}

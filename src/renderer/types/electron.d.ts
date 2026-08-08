@@ -43,10 +43,10 @@ export interface ElectronAPI {
   respondApproval(id: string, allowed: boolean): Promise<boolean>
   /** 当前待审批列表（P1-3 挂载补拉 seed，approval:get → approvalQueue.getAll） */
   getPendingApprovals(): Promise<PendingApproval[]>
-  /** 设置自动审批开关（F3，approval:set-auto-approve → server.ts 模块级 flag） */
-  setAutoApprove(v: boolean): Promise<void>
-  /** 读取自动审批开关（F3，approval:get-auto-approve；SessionsView 挂载播种真源） */
-  getAutoApprove(): Promise<boolean>
+  /** 设置某会话的自动审批开关（F3，M17.1 每会话独立，approval:set-auto-approve → server.ts 会话键集合；仅按 sessionId 建键） */
+  setAutoApprove(sessionId: string, v: boolean): Promise<void>
+  /** 读取某会话的自动审批开关（F3，M17.1，approval:get-auto-approve；按 sessionId 命中；SessionCard 挂载播种真源） */
+  getAutoApprove(sessionId: string): Promise<boolean>
   togglePin(pinned: boolean): Promise<void>
   /** 退出应用（M10 Settings Quit，app:quit → will-quit 清理链） */
   quitApp(): Promise<void>

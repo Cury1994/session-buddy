@@ -89,7 +89,9 @@ const DEFAULT_CONFIG: AppConfig = {
     }
   },
   notifications: { enabled: true, approve_timeout_sec: 60 },
-  window: { width: 420, height: 650 }
+  window: { width: 420, height: 650 },
+  // M17: 模型上下文长度表（model id → { len, source }；空表 = 全走 registry/heuristic 推导）
+  context_lengths: {}
 }
 
 // ─── 工具 ───

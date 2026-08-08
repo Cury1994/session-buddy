@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harness Monitor · 上下文长度表 + API Usage 精简 原型 v1</title>
+<style>
+  :root{
+    --glass: rgba(255,255,255,0.55);
+    --line: rgba(255,255,255,0.5);
+    --ink: #1f2430;
+    --ink-2: #5a6372;
+    --ink-3: #9aa3b2;
+    --cyan: #00b8d9;
+    --green: #00e676;
+    --yellow: #ffab00;
+    --red: #ff5252;
+    --blue: #3b82f6;
+    --purple: #7c5bd6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    background: linear-gradient(135deg,#eef1f7,#e3e9f4);
+    display:flex;justify-content:center;align-items:flex-start;
+    padding: 28px 20px; color: var(--ink); -webkit-font-smoothing:antialiased;
+    gap:20px;
+  }
+  .widget{
+    width: 420px; background: var(--glass);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border:1px solid var(--line); border-radius:18px;
+    box-shadow: 0 18px 50px rgba(31,41,55,.18);
+    display:flex;flex-direction:column; max-height: 92vh; overflow:hidden;
+  }
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+
+  .hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;
+    border-bottom:1px solid rgba(255,255,255,.6); background: rgba(255,255,255,.35)}
+  .dots{display:flex;gap:6px}
+  .dots i{width:11px;height:11px;border-radius:50%}
+  .dots .r{background:#ff5f57}.dots .y{background:#febc2e}.dots .g{background:#28c840}
+  .title{font-size:13px;font-weight:600;color:var(--ink-2)}
+  .pin{color:#3b82f6;cursor:pointer;font-size:15px;line-height:1}
+
+  .body{padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+  .tabs{display:flex;background:rgba(0,0,0,.05);border-radius:10px;padding:3px;gap:2px}
+  .tabs button{flex:1;border:0;background:transparent;border-radius:8px;padding:6px 0;
+    font-size:12.5px;font-weight:500;color:var(--ink-2);cursor:pointer}
+  .tabs button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08);font-weight:600}
+  .tabs .gear{flex:0 0 34px}
+
+  /* 用量卡 */
+  .card{background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.6);border-radius:14px;
+    padding:12px;box-shadow:0 2px 8px rgba(31,41,55,.05)}
+  .card-title{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .card-title .ico{color:var(--ink-3)}
+  .cb{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .vname{font-size:14px;font-weight:700;flex:1}
+  .badge{font-size:10px;padding:2px 8px;border-radius:6px;font-weight:700}
+  .badge.payg{background:#eaf2fc;color:#2563c9;border:1px solid #bcd3f0}
+  .row{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:6px}
+  .row .amt{font-size:20px;font-weight:800;color:var(--ink)}
+  .row .amt.low{color:var(--red)}
+  .row .lbl{color:var(--ink-3);font-size:11px}
+  .meta{font-size:10.5px;color:var(--ink-3);margin-top:8px;font-family:ui-monospace,monospace}
+  .meta .u{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70%}
+
+  /* 设置卡片 */
+  .set-card{background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.6);border-radius:14px;
+    padding:12px;box-shadow:0 2px 8px rgba(31,41,55,.05)}
+  .set-card h4{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .set-card h4 .ico{color:var(--ink-3)}
+  .sub{font-size:10.5px;color:var(--ink-3);margin:-6px 0 10px;line-height:1.5}
+
+  /* 上下文长度表 */
+  .ctx-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eef1f6}
+  .ctx-row:last-child{border-bottom:0}
+  .ctx-model{flex:1;min-width:0}
+  .ctx-model .m{font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctx-model .v{font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctx-input{width:74px;text-align:right;font-family:ui-monospace,monospace;font-size:12px;font-weight:600;
+    padding:3px 6px;border:1px solid #d7dde6;border-radius:6px;background:#fff;color:var(--ink)}
+  .ctx-input:focus{outline:none;border-color:var(--blue)}
+  .src{font-size:9.5px;padding:1px 6px;border-radius:99px;flex:0 0 auto;font-weight:600}
+  .src.url{background:#e7e9ff;color:#5b5bd6}
+  .src.reg{background:#eaf2fc;color:#2563c9}
+  .src.heu{background:#fff3e0;color:#b98218}
+  .src.manual{background:#eefaf0;color:#2e7d32}
+  .src-none{font-size:9.5px;color:var(--ink-3);flex:0 0 auto}
+
+  .hint-note{font-size:10.5px;color:var(--ink-3);background:#fffef5;border:1px dashed #e6d9a8;
+    border-radius:8px;padding:7px 9px;line-height:1.55;margin-top:4px}
+  .hint-note b{color:var(--ink-2)}
+
+  .note{margin-top:10px;font-size:11px;color:var(--ink-3);background:rgba(255,255,255,.6);
+    border:1px dashed #c9d3e0;border-radius:9px;padding:8px 10px;line-height:1.6}
+  .note b{color:var(--ink-2)}
+
+  .guide{width:350px;background:#fff;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(31,41,55,.12);
+    font-size:12.5px;line-height:1.75;color:var(--ink-2);align-self:flex-start}
+  .guide h3{font-size:14px;color:var(--ink);margin-bottom:12px}
+  .guide .gq{font-weight:700;color:var(--ink);margin:14px 0 4px;font-size:12.5px}
+  .guide .src2{display:inline-block;font-size:10px;color:#fff;border-radius:4px;padding:1px 5px;font-weight:600;vertical-align:1px;margin-right:4px}
+  .guide .src2.f{background:var(--blue)}
+  .guide .src2.b{background:var(--purple)}
+  .guide table{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px}
+  .guide td{padding:3px 4px;border-bottom:1px solid #eef1f6;vertical-align:top}
+  .guide td:first-child{width:84px;font-family:ui-monospace,monospace;color:var(--ink-3)}
+</style>
+</head>
+<body>
+
+<div class="widget">
+  <div class="hd">
+    <div class="dots"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+    <div class="title">Harness Monitor</div>
+    <div class="pin">📌</div>
+  </div>
+
+  <div class="body">
+    <div class="tabs">
+      <button>Sessions</button>
+      <button class="on">API Usage</button>
+      <button class="gear">⚙</button>
+    </div>
+
+    <!-- ===== API Usage：只展示无需手动配置的卡 ===== -->
+    <div id="usageView">
+      <!-- DeepSeek：自动发现 + 成功查询 → 出卡 -->
+      <div class="card">
+        <div class="cb">
+          <span class="vname">DeepSeek</span>
+          <span class="badge payg">按量</span>
+        </div>
+        <div class="row"><span class="lbl">余额</span><span class="amt">¥8.37</span></div>
+        <div class="row"><span class="lbl">今日消耗</span><span>¥1.24</span></div>
+        <div class="meta"><span class="u">api.deepseek.com · 成功调用 1446</span></div>
+      </div>
+
+      <!-- qwen3.8-max-preview：走百炼端点，但无需手动配置也可出卡 -->
+      <div class="card">
+        <div class="cb">
+          <span class="vname">百炼</span>
+          <span class="badge payg">按量</span>
+        </div>
+        <div class="row"><span class="lbl">今日消耗</span><span>¥6.42</span></div>
+        <div class="meta"><span class="u">token-plan.cn-beijing.maas.aliyuncs.com · 成功调用 3364</span></div>
+      </div>
+
+      <!-- 已隐藏：需手动配置（BSS AccessKey / 待凭证）的槽位卡 —— 不再显示 -->
+      <div class="note" style="margin-top:0">
+        <b>说明：</b>需手动配置（缺凭证 / 待 BSS AccessKey）的槽位卡已<b>不在 API Usage 显示</b>。
+        设置页「用量源管理」已移除，改为「模型上下文长度」表；新增模型成功调用自动入表。
+      </div>
+    </div>
+
+    <!-- ===== 设置：模型上下文长度表（替换用量源管理） ===== -->
+    <div id="settingsView" hidden>
+      <div class="set-card">
+        <h4><span class="ico">▤</span> 模型上下文长度</h4>
+        <div class="sub">来自成功调用各 API 的实际模型。可编辑；新模型成功调用自动按 URL 更新，手动改过的行不再被自动覆盖。</div>
+
+        <!-- 行1：URL 自动（DeepSeek /models 元数据） -->
+        <div class="ctx-row">
+          <div class="ctx-model"><div class="m">deepseek-v4-flash</div><div class="v">api.deepseek.com</div></div>
+          <span class="src url">URL自动</span>
+          <input class="ctx-input" value="1,000,000">
+        </div>
+
+        <!-- 行2：URL 自动 -->
+        <div class="ctx-row">
+          <div class="ctx-model"><div class="m">deepseek-v4-pro</div><div class="v">api.deepseek.com</div></div>
+          <span class="src url">URL自动</span>
+          <input class="ctx-input" value="1,000,000">
+        </div>
+
+        <!-- 行3：厂商 registry 默认（百炼不暴露元数据 → 内置表） -->
+        <div class="ctx-row">
+          <div class="ctx-model"><div class="m">qwen3.8-max-preview</div><div class="v">token-plan.cn-beijing.maas.aliyuncs.com</div></div>
+          <span class="src reg">厂商默认</span>
+          <input class="ctx-input" value="1,000,000">
+        </div>
+
+        <!-- 行4：手动改过（自动检测值被用户覆盖 → 不再被自动写回） -->
+        <div class="ctx-row">
+          <div class="ctx-model"><div class="m">glm-5.2</div><div class="v">open.bigmodel.cn</div></div>
+          <span class="src manual">手动</span>
+          <input class="ctx-input" value="200,000">
+        </div>
+
+        <!-- 行5：启发式兜底（未知模型） -->
+        <div class="ctx-row">
+          <div class="ctx-model"><div class="m">new-unknown-model-xyz</div><div class="v">api.example.com</div></div>
+          <span class="src heu">启发式</span>
+          <input class="ctx-input" value="200,000">
+        </div>
+
+        <div class="hint-note">
+          <b>自动更新规则：</b>新模型成功调用 → 按 <b>URL 查询 → 厂商默认 → 启发式</b> 写入本表并立即生效；<b>手动</b>
+          改过的行不覆盖。ctx%（Sessions 上下文条）与本表同源。
+        </div>
+      </div>
+
+      <!-- 残留：General / Limits（用量源管理已移除） -->
+      <div class="set-card">
+        <h4><span class="ico">⚙</span> General</h4>
+        <div class="sub">Always on Top / Desktop Notifications 等既有项保留（未变）。「用量源管理」已移除。</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>原型说明 v1：</b>① API Usage 只展示无需手动配置的卡（需 BSS AccessKey 的百炼槽位卡已隐藏）·
+      ② 设置「用量源管理」移除 · ③ 新「模型上下文长度」表：每行 = 模型 + 厂商 host + 来源标签 + 可编辑值 ·
+      ④ 新模型成功调用自动按 URL 分层写入，手动行不覆盖。
+    </div>
+  </div>
+</div>
+
+<div class="guide">
+  <h3>改动对照</h3>
+
+  <div class="gq"><span class="src2 f">前端</span><span class="src2 b">后端</span>① API Usage 只展示免配置卡</div>
+  隐藏 missing-config / 待凭证 槽位卡；只留自动发现且成功查询的卡。后端 buildUsageCards 过滤非可用卡。
+
+  <div class="gq"><span class="src2 f">前端</span>② 设置去掉用量源管理</div>
+  移除 usage_sources 增删改 UI（含聚焦表单）。配置改为自动发现驱动。
+
+  <div class="gq"><span class="src2 f">前端</span><span class="src2 b">后端</span>③ 模型上下文长度表进设置</div>
+  所有成功调用模型的 max context 展示在设置，可查看可编辑。ctx% 改用本表（替换 claude-sessions.ts 的
+  硬编码 MODEL_CONTEXT_WINDOWS）。
+
+  <div class="gq"><span class="src2 b">后端</span>④ 新模型成功调用 → 按 URL 自动更新</div>
+  成功调用落库时，按分层写入该模型上下文到表；来源标签区分 URL自动 / 厂商默认 / 启发式 / 手动。
+
+  <div class="gq" style="margin-top:14px;">上下文长度自动来源优先级</div>
+  <table>
+    <tr><td>① 手动</td><td>表内编辑，终审，不被覆盖</td></tr>
+    <tr><td>② URL</td><td>厂商 /models 元数据端点</td></tr>
+    <tr><td>③ 厂商默认</td><td>内置 registry 静态表</td></tr>
+    <tr><td>④ 启发式</td><td>[1m]/1m→1M，否则 200K</td></tr>
+  </table>
+</div>
+
+<script>
+  // 顶部 tab 切换（示意：Usage ↔ Settings）
+  var tabBtns = document.querySelectorAll('.tabs button');
+  tabBtns.forEach(function(b){
+    b.addEventListener('click', function(){
+      tabBtns.forEach(function(x){x.classList.remove('on')});
+      b.classList.add('on');
+      document.getElementById('usageView').hidden = b.textContent.trim() !== 'API Usage';
+      document.getElementById('settingsView').hidden = b.textContent.trim() !== '⚙';
+    });
+  });
+</script>
+</body>
+</html>

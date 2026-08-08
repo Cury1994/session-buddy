@@ -202,6 +202,16 @@ export interface AppConfig {
    * 替代过渡字段 providers.deepseek.check_interval_min（单卡时代的遗留，渲染端 M13.6 迁移后删除）。
    */
   usage_poll_interval_min: number
+  /** M17: 模型上下文长度表（model id → 条目；manual 手填不被自动更新覆盖，registry/heuristic 可覆盖） */
+  context_lengths: Record<string, ContextEntry>
+}
+
+/** M17: 模型上下文长度来源（决定是否可被自动更新覆盖） */
+export type ContextSource = 'manual' | 'registry' | 'heuristic'
+/** M17: 模型上下文长度条目（len = max context tokens，ctx% 分母） */
+export interface ContextEntry {
+  len: number
+  source: ContextSource
 }
 
 // ─── API 用量 / 审批历史（DESIGN §6.12，db INTEGER/REAL → TS 映射） ───
@@ -316,6 +326,11 @@ export interface SessionInfo {
    *   null —— 无法确定（transcript 缺失/空）
    */
   currentAction: { kind: 'tool' | 'waiting'; label: string } | null
+  /**
+   * M17: 该会话最近一次成功 API 调用的实际后端模型名（transcript 末条 usage 的
+   * message.model；无 usage 记录为 null）。auto-population 触发用。
+   */
+  lastModel: string | null
 }
 
 // ─── M16 Sessions 迭代：展开详情区载荷（F2 任务 / F3 子 Agent / F4 消息尾流） ───
@@ -335,18 +350,11 @@ export interface SubAgentRef {
   status: 'running' | 'done'
 }
 
-/** F4：最近一条消息（原始格式，无多 agent 对话框架） */
-export interface SessionMessage {
-  role: 'user' | 'assistant'
-  text: string
-}
-
 /**
  * 展开卡时按需拉取的详情载荷（M16，sessions:detail IPC）。
- * tasks/agents 为全量，messages 为最近 N 条（oldest→newest）。
+ * tasks/agents 均为全量（M17.1：messages 尾流已移除，ctx% 改由 lastModel 上下文长度驱动）。
  */
 export interface SessionDetail {
   tasks: SessionTask[]
   agents: SubAgentRef[]
-  messages: SessionMessage[]
 }

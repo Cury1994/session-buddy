@@ -22,9 +22,12 @@
 
 **延后项**（主体功能验收后另评估，见 TASKS §13）：D1 打包 + 开机自启 + chrome-sandbox SUID ｜ D2 终端并行审批 ｜ D3 审批超时配置
 
-**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）｜ **M14 hook 自动注册 ✅**（2026-08-07）｜ **M15 厂商 host 归并 + 内置 registry ✅**（2026-08-07）｜ **M16 Sessions 页迭代 ✅**（2026-08-07~08：F1 当前动作 + F2 任务清单 + F3 子Agent面板 + F4 消息尾流 + F5 上下文告警 + 窗口420）
+**阶段进度**：Phase 1 基础设施 4/4 ✅ ｜ Phase 2 后端 2/2 ✅ ｜ Phase 3 前端 4/4 ✅ ｜ Phase 4 集成 1/1 ✅ ｜ 总体 11/11 (100%) 🎉 ｜ **M13 用量泛化 7/7 ✅**（2026-08-06~07）｜ **M14 hook 自动注册 ✅**（2026-08-07）｜ **M15 厂商 host 归并 + 内置 registry ✅**（2026-08-07）｜ **M16 Sessions 页迭代 ✅**（2026-08-07~08）｜ **M17 详情重构+上下文表+单卡审批+API精简 ✅**（2026-08-08：C1 + 4 并行 B + 集成 E2E + review 修复）
 
-**当前阶段**：**M15 厂商（URL host）归并 + 内置厂商 registry 完成** — ① 归并键从 model 名改为厂商 URL hostname（cc-switch 检测器按 provider base_url 归并，同 host 合并成一张卡；claude-sessions 检测器改读 settings base_url，跳过本地代理）；② 仅成功调用（status_code 2xx）出余量卡；③ 内置 DeepSeek 模板 registry——未配置时检测到调用即自动出余量卡（零配置）；④ 卡片名用厂商名非 model 名。遗留：百炼套餐端点 + BSS AccessKey 待用户提供（卡留 missing-config/待凭证槽位）
+**当前阶段**：**M17 Sessions 详情重构 + 上下文长度表 + 单卡审批 + API 精简**（规模档 L / 推进档高速档，2026-08-08 起）
+- ① Sessions 详情下沉为二级页面（点击才加载）；② 去掉详情"最近对话"；③ /clear 后详情清空 + 新任务/子Agent 实时同步（搭载 sessions:updated 3s 推送重拉）；④ 自动审批从全局改单卡片（按会话维度）；⑤ API Usage 只展示无需手动配置的卡（隐藏百炼等 missing-config/待凭证）；⑥ 设置去掉用量源管理，改"模型上下文长度"表（可编辑，存 config.yaml context_lengths，新模型成功调用按厂商 registry 自动入表，ctx% 改读此表）；⑦ 设置齿轮图标 flex 居中
+- 视觉基准：docs/prototype-sessions-v2.html + docs/prototype-ctx-settings-v1.html（已入库，用户确认）
+- **蓝图勘误**：用户原话"基于 API 的 URL"更新上下文长度，但 parseSessionFile 不读 base_url、cc-switch SELECT_CALLED 无 model 列 → 改按**模型名前缀**匹配厂商 registry（registry 仍按 URL host 组织于 VENDOR_TEMPLATES），已确认采用；未来补 cc-switch model 列可切回真 host 匹配
 **归档后修订**：
 - 2026-07-31 上午 session 显示名修复（3b0693e，transcript 首条用户消息优先）
 - 2026-07-31 下午 会话卡片 6 项反馈修复轮（cdf4130 + a0086b0 + hook 注册）——详见日志末条
@@ -766,3 +769,55 @@
 
 - 收尾三件套：① commit 4e65d4f（C1）+ dd2f51f（B1/B2/E2E）✅ ② 无孤儿（用户实例 18456 health OK，隔离实例已清）③ 本日志 ✅
 - 遗留：四态灯原"执行中/空闲"语义与 F1 currentAction 并存（不冲突，F1 更细）；aiTitle 会话名升级（C1 顺带发现，未做，延后）；上下文告警阈值写死 80（进配置延后）。
+
+---
+
+## M17 Sessions 详情重构 + 上下文长度表 + 单卡审批 + API 精简（2026-08-08 完成）
+
+> 规模档：**L** ｜ 推进档位：高速档 ｜ 契约先行（C1 → 4 并行 B → 集成 E2E → review 修复）
+> 视觉基准：docs/prototype-sessions-v2.html + docs/prototype-ctx-settings-v1.html（用户确认）
+> 七项改动：① 详情下沉二级页面 ② 去最近对话 ③ /clear 清空+实时同步 ④ 单卡自动审批 ⑤ API Usage 只展示免配置卡 ⑥ 设置上下文长度表（可编辑，存 config.yaml）⑦ 齿轮居中
+
+### 状态总览
+
+| 模块 | 状态 | 验证 | 完成时间 | 备注 |
+|------|------|------|---------|------|
+| C1 契约层 | ✅ | typecheck + 裸node | 2026-08-08 11:10 | types/electron.d.ts/preload/config/vendor-registry contextForModel |
+| B1 Sessions 后端 | ✅ | 裸node 31/31 + typecheck | 2026-08-08 11:45 | session-detail lastMessageRole + claude-sessions 分层 + server Set + ipc |
+| B1 Services 后端 | ✅ | 裸node + typecheck | 2026-08-08 11:45 | auto-populate + missing 卡过滤 |
+| B2 Sessions 前端 | ✅ | build + E2E | 2026-08-08 11:45 | SessionDetailPage + SessionCard ⚡ + 删 AutoApproveBar/MessageTail |
+| B2 Settings 前端 | ✅ | typecheck 全绿 | 2026-08-08 11:45 | 上下文表 + 删用量源管理 + gear 居中 |
+| M17.5 集成 E2E | ✅ | 隔离实例 CDP | 2026-08-08 12:00 | 全项通过 + 修复 scanner config 刷新 bug |
+
+### 2026-08-08 11:10 ｜ C1 ｜ 契约层 完成
+- types.ts：SessionDetail 删 messages / SessionMessage 删除；AppConfig 增 context_lengths（ContextEntry{len,source:manual|registry|heuristic}）；SessionInfo 增 lastModel
+- electron.d.ts / preload：getSessionDetail 签名不变（type 自动更新）；auto-approve 签名改按 sessionId（见下 review 简化轮）
+- config.ts DEFAULT_CONFIG + config.yaml 增 context_lengths: {}（deepMerge 对普通对象 key 级合并且实证通过）
+- vendor-registry.ts：VendorTemplate 增 modelContext；DeepSeek（v4-pro/flash→1M）+ 百炼/qwen（→1M）模板；导出 contextForModel（前缀匹配长键优先）
+- **加固**：百炼模板 source 用 bearer+未设 env → 走 buildSourceCard missing-credential 分支 → 被 M17.7 过滤（避免 error 卡漏出）
+
+### 2026-08-08 11:45 ｜ 4 并行 B 模块 完成（文件域隔离）
+- **B1 Sessions 后端**：session-detail.ts 删 messages ring + 增 lastMessageRole 修复 getCurrentAction waiting 判定（ctxPct 不变量 B 零回归）；claude-sessions.ts contextWindowForModel 分层（config→registry→heuristic）+ lastModel；server.ts autoApprove 全局→Set；ipc-handlers 按会话
+- **B1 Services 后端**：services.ts tick 内 auto-populate context_lengths（lastModel 触发，manual 不覆盖）+ buildUsageCards 过滤 missing-config/missing-credential
+- **B2 Sessions 前端**：SessionDetailPage 新建（back + TaskList + AgentPanel，无 MessageTail，订阅 onSessionsUpdated 实时重拉）；SessionCard 去 inline expand + 加 ⚡ 单卡审批；SessionsView 持 selectedSessionId + 删 AutoApproveBar；MessageTail 删除
+- **B2 Settings 前端**：SettingsView 删用量源管理 + 加模型上下文长度表（编辑即 source=manual）；UsageView/UsageCardCard/App 去 onOpenSettings；globals.css .segment flex 居中
+
+### 2026-08-08 12:00 ｜ M17.5 集成 E2E 通过（隔离实例 HOME=/tmp/hm-m17-home + port 18600 + CDP 9336）
+- **F1 currentAction**：waiting/tool 态均正常（lastMessageRole 修复验证）
+- **详情页 drill-down**：点「查看更多详情 ▸」→ 二级页（← 返回 + ●实时 + 任务进度 1/3 + 子Agent，**无最近对话**）；返回回列表 ✓
+- **/clear 实时同步**：截断 transcript → 4s 内详情页自动从「0/1 旧任务」→「无任务清单」空态 ✓
+- **单卡 ⚡ 独立**：点卡片A ON、卡片B OFF；后端 getAutoApprove 独立命中 ✓
+- **上下文长度自动入表**：两模型（deepseek/flash, qwen3.8）均 registry → 1M 自动写入 config.yaml ✓
+- **manual 不覆盖**：手改 deepseek→200000 manual，4s 后仍 manual 未被自动入表覆盖 ✓
+- **ctx% 用 manual 值**：deepseek 会话 ctxPct 5%→25%（200000 分母）✓
+- **API Usage 隐藏百炼**：仅 DeepSeek 卡，无百炼、无"配置"按钮 ✓
+- **齿轮居中**：.segment display:flex + justify/align center ✓
+- **发现并修复真实 bug**：scanner 的 `this.config` 是 readonly 构造时固化，config:save reschedule 只把 fresh 传给调度器、scanner 实例不更新 → 手动编辑 context_lengths 不生效直到重启（旧代码分母硬编码不依赖 config，故此前无此问题，M17 引入）。修复：claude-sessions.ts 加 setConfig + index.ts reschedule 调 sessionScanner.setConfig(fresh)。前台 saveConfig 改值后 ctxPct **实时**更新（无需重启）✓
+
+### 2026-08-08 12:05 ｜ Code Review 批量 1 轮 + 修复
+- **【P1 修复】单卡审批 name 键泄漏**：原 sessionId+name 双键进 Set，但 approve.sh 实际发 .session_id（payload.session=sessionId），name 键会造成同名会话（cwd basename 兜底）串扰 + 死会话遗留键被新会话继承。改为**仅按 sessionId 建键**（server/ipc/preload/electron.d.ts/SessionCard 同步简化），端到端重验通过
+- **【P2 修复】上下文自动入表语义对齐注释**：改"只写不存在 key"为"**manual 永不覆盖，registry/heuristic 可被新解析精化**"（heuristic 猜的 200K 可在 registry 增补后升级；同值不写避免 churn），与 types.ts 注释一致
+- **【P2 修复】空 sessionId 无详情入口**：SessionCard 对 session.sessionId==='' 不渲染「查看更多详情」按钮
+- **【P2 接受】设置上下文表不实时刷新**：Settings 挂载读 config，3s 扫描新入表的模型需切 tab 重挂载才显示。低优先，记入遗留
+
+- **遗留**：设置上下文表实时刷新（P2 接受）；百炼若未来补 BSS AccessKey/余量端点可恢复余量卡（M17 已整卡隐藏）；cc-switch 补 model 列后 contextForModel 可切回真 host 匹配（蓝图勘误）

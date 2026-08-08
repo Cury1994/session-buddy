@@ -13,8 +13,9 @@ import type { BalanceDailySnapshot, BillingMode, UsageCard } from '../../../shar
  *     defaultThreshold）；元信息（币种/单位 + updatedAt 时刻部分）；30 天趋势
  *     （挂载按需 getBalanceHistory(sourceId)，复用 M8 TrendSparkline）
  *   - missing-config：槽位卡 —— "未配置"徽章 + 调用次数（有则显）+ 引导文案
- *     （missingHint 或默认）+ [配置此 API →] 按钮 → onOpenSettings(sourceId)
- *   - missing-credential：槽位卡 —— "待凭证"徽章 + missingHint + [配置凭证 →] 按钮
+ *     （missingHint 或默认）。M17：用量源管理已移出设置页，槽位卡不再提供跳转
+ *     按钮，仅静态提示（后端侧已过滤无需手动配置的槽位卡）
+ *   - missing-credential：槽位卡 —— "待凭证"徽章 + missingHint（同样无动作按钮）
  *   - error：查询失败徽章 + 弱化提示（NFR-3 自动重试，保留上次展示由主进程缓存保证）
  *
  * 趋势数据（按需拉取）：模块级缓存（sourceId → snapshots），挂载命中缓存即用、
@@ -57,11 +58,9 @@ interface UsageCardCardProps {
   card: UsageCard
   /** 全局最低告警线兜底（无 per-card warnThreshold 的 ok 卡使用，useUsageData 派生） */
   defaultThreshold: number
-  /** 跳设置页并聚焦该用量源（槽位卡"配置"按钮；focus=sourceId，App 转 SettingsView） */
-  onOpenSettings?: (focus?: string) => void
 }
 
-function UsageCardCard({ card, defaultThreshold, onOpenSettings }: UsageCardCardProps): React.JSX.Element {
+function UsageCardCard({ card, defaultThreshold }: UsageCardCardProps): React.JSX.Element {
   // 趋势：挂载按需拉取（缓存命中即用；卸载清理缓存）
   const [history, setHistory] = useState<BalanceDailySnapshot[]>(() => trendCache.get(card.sourceId) ?? [])
   const [trendLoading, setTrendLoading] = useState(false)
@@ -171,29 +170,9 @@ function UsageCardCard({ card, defaultThreshold, onOpenSettings }: UsageCardCard
           <p className="slot-hint">
             {card.missingHint || '已调用过此 API，但未配置余量查询'}
           </p>
-          <div className="slot-actions">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => onOpenSettings?.(card.sourceId)}
-            >
-              配置此 API →
-            </button>
-          </div>
         </>
       ) : card.status === 'missing-credential' ? (
-        <>
-          <p className="slot-hint">{card.missingHint || '缺少凭证，无法查询余量'}</p>
-          <div className="slot-actions">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => onOpenSettings?.(card.sourceId)}
-            >
-              配置凭证 →
-            </button>
-          </div>
-        </>
+        <p className="slot-hint">{card.missingHint || '缺少凭证，无法查询余量'}</p>
       ) : (
         <p className="slot-hint">余量查询失败，将自动重试</p>
       )}

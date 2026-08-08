@@ -20,6 +20,8 @@ export interface VendorTemplate {
   name: string
   /** 完整余量源模板；id 由 matchVendor 按 host 派生，name 用本字段 */
   source: HttpJsonSource
+  /** M17: 该厂商已知模型 → 上下文长度（模型名前缀匹配，长键优先） */
+  modelContext?: { prefix: string; len: number }[]
 }
 
 export const VENDOR_TEMPLATES: VendorTemplate[] = [
@@ -38,7 +40,30 @@ export const VENDOR_TEMPLATES: VendorTemplate[] = [
       currency: 'CNY',
       warn_threshold: 10,
       detect_ids: ['api.deepseek.com']
-    }
+    },
+    modelContext: [
+      { prefix: 'deepseek-v4-pro', len: 1_000_000 },
+      { prefix: 'deepseek-v4-flash', len: 1_000_000 }
+    ]
+  },
+  {
+    // M17: 本模板**不出现在 API Usage 余量卡**（无实测余量端点），仅为 contextForModel
+    // 解析 qwen 系模型的上下文长度而存在。source 有意用 bearer + 未设 env → 走
+    // buildSourceCard 的 missing-credential 分支，被 M17.7 过滤（与"只展示免配置卡"一致）
+    host: 'token-plan.cn-beijing.maas.aliyuncs.com',
+    name: '百炼',
+    source: {
+      id: 'bailian',
+      name: '百炼',
+      billing: 'subscription',
+      kind: 'http-json',
+      url: '',
+      auth: { type: 'bearer', key_env: 'ALIYUN_BAILIAN_API_KEY' },
+      remaining: { path: '' },
+      unit: 'token',
+      detect_ids: ['token-plan.cn-beijing.maas.aliyuncs.com']
+    },
+    modelContext: [{ prefix: 'qwen3.8-max-preview', len: 1_000_000 }]
   }
   // OpenRouter / OpenAI / Gemini 等：API 响应实测确认后再加，不塞猜测值
 ]
@@ -51,4 +76,17 @@ export function matchVendor(host: string): HttpJsonSource | null {
   const template = VENDOR_TEMPLATES.find((t) => t.host === host)
   if (!template) return null
   return { ...template.source, id: template.source.id, name: template.name }
+}
+
+/**
+ * M17: 按模型名前缀在所有厂商模板中匹配上下文长度（长键优先）。
+ * 命中 → { len, source: 'registry' }；未命中 → null。
+ */
+export function contextForModel(modelId: string): { len: number; source: 'registry' } | null {
+  const id = modelId.trim().toLowerCase()
+  const pairs = VENDOR_TEMPLATES.flatMap((t) => t.modelContext ?? [])
+    .sort((a, b) => b.prefix.length - a.prefix.length)
+  const hit = pairs.find((p) => id.startsWith(p.prefix.toLowerCase()))
+  if (!hit) return null
+  return { len: hit.len, source: 'registry' }
 }

@@ -179,10 +179,14 @@
     padding: 2px;
   }
 
-  /* 单段（button 重置：font/background/border 继承归零） */
+  /* 单段（button 重置：font/background/border 继承归零）。
+   * flex 居中（M17.1）：Settings 段只有齿轮 SVG，text-align 无法垂直居中，
+   * 改 flex 对齐；.segment-badge 为 absolute 定位不受影响。 */
   .segment {
     flex: 1;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-family: inherit;
     font-size: 12px;
     font-weight: 500;
@@ -986,7 +990,8 @@
 }
 
 /* ============================================================
- * M13.6 — 多卡用量视图 + 设置页用量源管理
+ * M13.6 — 多卡用量视图（M17.1 起设置页用量源管理段已移除：
+ * .usage-form* / .usage-source* / .slot-actions 随 B2 前端删除）
  * 色值对齐 :root token（--danger-red / --accent-blue / --success-green /
  * --warning-yellow / --text-muted）；类名带 usage-/slot- 前缀，避免与 M8
  * 单卡段（balance-*）与 M9 mini-badge 冲突。
@@ -1088,7 +1093,7 @@
     margin-bottom: 4px;
   }
 
-  /* ── 槽位卡（missing-config / missing-credential / error） ── */
+  /* ── 槽位卡（missing-config / missing-credential / error；M17 起无动作按钮，仅静态提示） ── */
   .slot-calls {
     font-size: 10px;
     color: var(--text-muted);
@@ -1098,80 +1103,7 @@
     font-size: 11px;
     color: var(--text-muted);
     line-height: 1.5;
-    margin: 4px 0 10px;
-  }
-  .slot-actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  /* ── 设置页用量源管理 ── */
-  .usage-sources-actions {
-    margin-bottom: 6px;
-  }
-  .usage-source-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 6px 0;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
-    border-radius: 6px;
-  }
-  .usage-source-info {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
-    min-width: 0;
-  }
-  .usage-source-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-main);
-    max-width: 120px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .usage-source-kind {
-    font-size: 10px;
-    color: rgba(0, 0, 0, 0.4);
-  }
-  /* 聚焦行脉冲高亮（accent-blue 两闪后由 JS 移除类） */
-  @keyframes usage-highlight-pulse {
-    0%,
-    100% {
-      background: transparent;
-    }
-    50% {
-      background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
-    }
-  }
-  .usage-source-highlight {
-    animation: usage-highlight-pulse 0.7s ease-in-out 3;
-  }
-
-  /* ── 新增/编辑表单 ── */
-  .usage-form {
-    padding: 2px 0 0;
-  }
-  .usage-form-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-main);
-    margin-bottom: 8px;
-  }
-  .usage-form-error {
-    font-size: 11px;
-    color: var(--danger-red);
-    margin: 2px 0 8px;
-  }
-  .usage-form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
-    margin-top: 2px;
+    margin: 4px 0 2px;
   }
 }
 
@@ -1523,5 +1455,90 @@
     color: #c9d1e0;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+/* ============================================================
+ * M17.1 — 设置页「模型上下文长度」表（取代用量源管理；
+ * 基准原型 prototype-ctx-settings-v1.html 设置段逐段翻译）
+ * 所有类名在 TSX 源码中以完整字面量出现（Tailwind 3.4 @layer
+ * components 剥离坑，M13.6）：.ctx-source-tag 的三色变体经
+ * SettingsView SOURCE_TAG_CLASS 字面值引用（manual/registry/heuristic）。
+ * ============================================================ */
+@layer components {
+  /* 卡片副说明（10.5px muted；负 margin 收紧与标题间距，原型 .sub 同款） */
+  .ctx-sub {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: -4px 0 8px;
+  }
+
+  /* 单行：模型名 + 来源标签 + 长度输入（细分割线，末行无下边框） */
+  .ctx-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  .ctx-row:last-child {
+    border-bottom: 0;
+  }
+
+  /* 模型名：12px / 600 单行截断（title 全文 tooltip） */
+  .ctx-model {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 来源标签：9.5-10px 胶囊基底；三色变体见复合选择器（原型 .src 变体） */
+  .ctx-source-tag {
+    flex: 0 0 auto;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 1px 6px;
+    border-radius: 99px;
+    white-space: nowrap;
+  }
+  /* 手动：绿调（用户改过，自动更新不覆盖） */
+  .ctx-source-tag.manual {
+    background: #eefaf0;
+    color: #2e7d32;
+  }
+  /* 厂商注册表默认：蓝调 */
+  .ctx-source-tag.registry {
+    background: #eaf2fc;
+    color: #2563c9;
+  }
+  /* 启发式兜底：琥珀调 */
+  .ctx-source-tag.heuristic {
+    background: #fff3e0;
+    color: #b98218;
+  }
+
+  /* 长度输入：74px 右对齐等宽（原型 .ctx-input 逐字；半透明白底贴应用输入风格） */
+  .ctx-input {
+    width: 74px;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.5);
+    color: var(--text-main);
+  }
+  .ctx-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
   }
 }

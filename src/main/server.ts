@@ -45,23 +45,30 @@ import type {
  */
 
 /**
- * 自动审批全局开关（F3）：会话级、重启复位、两步确认（确认在渲染端 SessionsView）。
- *   主进程仅持有 boolean flag，由 IPC approval:set-auto-approve / get-auto-approve 读写。
- *   开启时 POST /approve 立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙/不 push）。
- *   模块级 flag 不持久化 —— 进程重启后天然复位为 false（用户选定的安全默认）。
+ * 自动审批开关（F3，M17.1 起为**每会话独立**）：会话级、重启复位、两步确认（确认在渲染端 SessionsView）。
+ *   主进程持有一个 Set<sessionId|name>（开启态的会话键集合），由 IPC
+ *   approval:set-auto-approve / get-auto-approve 读写。仅按 sessionId 建键——approve.sh
+ *   发送的 payload.session 即 .session_id（$session jq 取 .session_id，见 resources/hooks/
+ *   approve.sh:60），故会话身份唯一键即 sessionId，无需并存 name（并存会造成同名会话
+ *   （cwd basename 兜底）串扰 + 死会话遗留键被新会话继承）。空串键忽略不入集合。
+ *   会话在集合内时 POST /approve 立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙/不 push）。
+ *   模块级 Set 不持久化 —— 进程重启后天然复位为空（用户选定的安全默认）。
  *   注意：渲染端 SessionsView 切走重挂载（App.tsx key={activeView}）会复位前端 state，
- *   但主进程 flag 不随之复位；SessionsView 挂载时经 getAutoApprove() 播种以对齐真源。
+ *   但主进程集合不随之复位；SessionCard 挂载时经 getAutoApprove(sessionId) 播种以对齐真源。
  */
-let autoApprove = false
+const autoApproveSessions = new Set<string>()
 
-/** 设置自动审批开关（IPC approval:set-auto-approve 委托） */
-export function setAutoApprove(v: boolean): void {
-  autoApprove = v
+/** 设置某会话的自动审批开关（IPC approval:set-auto-approve 委托；按 sessionId 建键） */
+export function setAutoApprove(sessionId: string, v: boolean): void {
+  const sid = sessionId.trim()
+  if (sid === '') return
+  if (v) autoApproveSessions.add(sid)
+  else autoApproveSessions.delete(sid)
 }
 
-/** 读取自动审批开关（IPC approval:get-auto-approve 委托；渲染端挂载播种真源） */
-export function getAutoApprove(): boolean {
-  return autoApprove
+/** 某会话是否开启自动审批（IPC approval:get-auto-approve 委托；POST /approve 早退判定） */
+export function isAutoApproveOn(session: string): boolean {
+  return autoApproveSessions.has(session.trim())
 }
 
 /**
@@ -206,11 +213,13 @@ export function createServer(deps: ServerDeps): ManagedServer {
       return
     }
 
-    // 自动审批（F3）：会话级全局开关开启时立即放行。
+    // 自动审批（F3，M17.1 每会话独立）：该会话开关开启时立即放行。
+    //   payload.session 可能是 sessionId 也可能是会话名（approve.sh 两路均存在），
+    //   setAutoApprove 已双键入集合，此处按键直查即可命中。
     //   复用唯一落库点记一条 allowed=1 历史（不变量 A：recordApproval 唯一落库）；
     //   不入队 / 不通知 / 不置橙 / 不 push —— 渲染端从没有这张卡（无需淡出），托盘不闪橙。
     //   approve.sh 阻塞的 curl 直接收到 allowed:true 放行。
-    if (getAutoApprove()) {
+    if (isAutoApproveOn(payload.session)) {
       db.recordApproval(payload.harness, payload.session, payload.command, payload.cwd, payload.tool, true)
       res.json({ id: '', allowed: true })
       return

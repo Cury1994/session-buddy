@@ -99,13 +99,19 @@ const api = {
   getPendingApprovals: (): Promise<PendingApproval[]> => ipcRenderer.invoke('approval:get'),
 
   /**
-   * 设置自动审批开关（F3，approval:set-auto-approve → server.ts 模块级 flag）。
-   * 开启后所有审批立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙）。
+   * 设置某会话的自动审批开关（F3，M17.1 每会话独立，approval:set-auto-approve →
+   * server.ts 模块级会话键集合；仅按 sessionId 建键）。
+   * 开启后该会话的审批立即放行（复用唯一落库点记 allowed=1，不入队/不通知/不置橙）。
    */
-  setAutoApprove: (v: boolean): Promise<void> => ipcRenderer.invoke('approval:set-auto-approve', v),
+  setAutoApprove: (sessionId: string, v: boolean): Promise<void> =>
+    ipcRenderer.invoke('approval:set-auto-approve', sessionId, v),
 
-  /** 读取自动审批开关（F3，approval:get-auto-approve）：SessionsView 挂载播种真源 */
-  getAutoApprove: (): Promise<boolean> => ipcRenderer.invoke('approval:get-auto-approve'),
+  /**
+   * 读取某会话的自动审批开关（F3，M17.1，approval:get-auto-approve）：
+   * SessionCard 挂载播种真源；按 sessionId 命中。
+   */
+  getAutoApprove: (sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke('approval:get-auto-approve', sessionId),
 
   /** Pin 切换（app:toggle-pin → alwaysOnTop + blur 不隐藏） */
   togglePin: (pinned: boolean): Promise<void> => ipcRenderer.invoke('app:toggle-pin', pinned),

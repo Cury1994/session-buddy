@@ -139,6 +139,10 @@ if (!gotTheLock) {
         usageTask?.stop()
         sessionTask?.stop()
         const fresh = loadConfig()
+        // M17.1：刷新 scanner 内部配置引用 —— contextWindowForModel 读 this.config
+        // 取 context_lengths，不刷新则手动编辑的上下文长度要等重启才生效（reschedule
+        // 只把 fresh 传给调度器，scanner 实例构造时固化的 this.config 需显式更新）
+        sessionScanner.setConfig(fresh)
         initNotifications(winHandle.win, fresh)
         usageTask = startUsageChecker({
           db: dbHandle,
