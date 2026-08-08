@@ -821,3 +821,25 @@
 - **【P2 接受】设置上下文表不实时刷新**：Settings 挂载读 config，3s 扫描新入表的模型需切 tab 重挂载才显示。低优先，记入遗留
 
 - **遗留**：设置上下文表实时刷新（P2 接受）；百炼若未来补 BSS AccessKey/余量端点可恢复余量卡（M17 已整卡隐藏）；cc-switch 补 model 列后 contextForModel 可切回真 host 匹配（蓝图勘误）
+
+### 2026-08-08 14:42 ｜ 归档后修订 ｜ 审批静默断开根治：hook 主注册位迁移 settings.local.json + fs.watch 覆写自愈 完成（commit a3334b1）
+
+**背景**：用户反馈"审批又不在工具界面弹出"。从第一性原理排查，端到端链路逐步定位断点：
+- server 健康在听 18456、POST /approve 入队+respond 正常（server 侧无损坏）
+- approve.sh 存在可执行、无 TEMP 直通段残留
+- **根因确认**：`~/.claude/settings.json` 的 hooks 段被**整体抹除**（只剩 env+model）→ Claude Code 不再调 approve.sh → 审批请求到不了 server。这是第三次（08-06/08-07/08-08）
+- **真凶定位**：cc-switch 日志 `[13:33:03] 代理接管模式：热切换 claude 的目标供应商为 default` ↔ `~/.claude/settings.json` mtime 13:33:47（毫秒级吻合）。cc-switch 热切换 provider 时用其内部 provider 快照（settings_config 只有 env、无 hooks）**整体覆写** settings.json。cc-switch.db providers 表全量核对：所有 Claude provider 的 settings_config 均无 hooks → 覆写必抹
+- **M14 局限**：启动时幂等注册只能兜"启动前被清"，兜不住"启动后被覆写"（实例 13:02 启动 → 13:33 被覆写 → 审批静默断开，无任何自愈/告警）
+
+**修复（双保险，用户拍板"迁移+watch"）**：
+1. **主注册位迁移** `~/.claude/settings.json` → `settings.local.json`（config.ts/config.yaml settings_path 默认同步）。实测 Claude Code 2.1.207 从**用户级** settings.local.json 加载 hooks（官方文档标 "project only"，实测用户级生效，以实测为准）；cc-switch 不碰此文件 → 从源头免疫覆写。hooks 跨层级合并，同一 approve.sh 严禁同时注册两文件（双执行→双卡/双落库），故主注册位固定 local
+2. **fs.watch 覆写自愈**：hook-installer 新增 `startHookWatcher`（监听 ~/.claude/ 下 settings.json + settings.local.json，任一外部覆写后防抖 500ms 自动 ensureHookRegistered 补注册）。断链窗口从"直到重启"压到几百 ms。will-quit 释放 watcher
+
+**验证全绿**：
+- 隔离实测：Claude Code 2.1.207 从用户级 settings.local.json 加载 hooks 生效（审批记录 id=1366 实证：settings.json 无 hooks 仍走审批）
+- 自愈单测：外部清空 settings.local.json hooks → watch 自动补注册恢复（PASS）；settings.json 不被污染（hooks 不双注册）✅
+- 构建 + 双 typecheck 零错误；真实审批链路：我的会话命令走 hook→server→落库 allowed=1 全通
+- 当前审批链路已恢复（settings.local.json 主注册位，Claude Code 热加载，无需重启实例）
+
+**收尾三件套**：① commit a3334b1 ✅ ② 用户实例 932736 未触碰（旧构建，审批已通；watch 逻辑待实例重启后加载）✅ ③ 本日志 ✅
+**遗留**：用户实例重启后 watch 自愈生效（下次自然重启即加载新构建）；DESIGN §6.13/§6.5 已同步注册位描述
