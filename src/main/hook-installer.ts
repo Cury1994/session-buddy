@@ -1,6 +1,20 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, watch } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+
+/**
+ * 主注册位 = settings.local.json（M17 根治，2026-08-08）。
+ * 背景：cc-switch 热切换 provider 时用其 provider 快照（仅 env、无 hooks）整体覆写
+ * ~/.claude/settings.json，抹掉 hooks → 审批链路第一环静默断开（08-06/08-07/08-08
+ * 三次回归，M14 启动幂等只能兜"启动前被清"，兜不住"启动后被覆写"）。
+ * 实测：Claude Code 2.1.207 从用户级 settings.local.json 加载 hooks（官方文档标
+ * "project only"，实测用户级生效，以实测为准），且 cc-switch 不碰此文件 → 迁移后免疫。
+ * 注意：hooks 跨层级合并，同一 approve.sh 绝不能同时在 settings.json 与 settings.local.json
+ * 都注册（会双执行 → 双卡/双落库），故主注册位固定 local。
+ */
+/** fs.watch 监听目录 ~/.claude/ 下这两个文件，任一被外部覆写即防抖补注册 */
+const WATCH_FILENAMES = ['settings.json', 'settings.local.json']
+const WATCH_DEBOUNCE_MS = 500
 
 /**
  * M14 — PreToolUse hook 自动注册（启动时幂等确保，DESIGN §6.13）
@@ -9,8 +23,10 @@ import { join } from 'node:path'
  * 避免 delete/覆盖/工具重置后审批链路第一环静默断开（2026-08-07 实测回归：
  * ~/.claude/settings.json 的 hooks 被清空 → server 在跑但收不到审批请求）。
  *
+ * 主注册位：~/.claude/settings.local.json（见文件头注释，M17 起迁移，免疫 cc-switch 覆写）。
+ *
  * 只做**幂等合并**：读 settings JSON → 若 PreToolUse 已含指向 approve.sh 的
- * 条目则不动；否则追加（保留 env/model 等既有配置，绝不整体覆盖）。
+ * 条目则不动；否则追加（保留 permissions 等既有配置，绝不整体覆盖）。
  * matcher 空串 = 匹配所有工具（审批镜像轮起，§6.13.2）；timeout 70000ms ＞
  * curl -m 65 ＞ server 60s auto-deny（§6.13 实测，写 70 会被 70ms 即杀）。
  *
@@ -75,5 +91,49 @@ export function ensureHookRegistered(settingsPath: string, approveScriptPath: st
   } catch (err) {
     console.warn(`[hook-installer] 写入 ${expanded} 失败，自动注册未生效: ${(err as Error).message}`)
     return false
+  }
+}
+
+/**
+ * 监听 ~/.claude/ 下 settings 文件，外部覆写清空 hooks 后自动补注册（防抖）。
+ *
+ * 必要性：M14 只在启动时注册一次，兜不住"启动后被覆写"（cc-switch 热切换 provider
+ * 整体覆写 settings.json，08-08 实测：实例 13:02 启动 → 13:33 被覆写 → 审批静默断开）。
+ * 此处对 settings.json / settings.local.json 任一变更防抖重新 ensure 到 localSettingsPath
+ * （主注册位，见文件头），把断链窗口从"直到重启"压到几百 ms。
+ * 失败不抛（NFR-3）；watch 自身不可用（如 fs 无 inotify）则 warn 一次后放弃，
+ * 退化为"仅启动注册"。
+ *
+ * 返回 stop 函数供 will-quit 释放，避免已退出进程句柄残留。
+ */
+export function startHookWatcher(
+  settingsDir: string,
+  localSettingsPath: string,
+  approveScriptPath: string
+): () => void {
+  let watcher: ReturnType<typeof watch> | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const debounced = (filename: string | null): void => {
+    if (filename && !WATCH_FILENAMES.includes(filename)) return // 只关心两个 settings 文件
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      ensureHookRegistered(localSettingsPath, approveScriptPath)
+    }, WATCH_DEBOUNCE_MS)
+  }
+
+  try {
+    watcher = watch(settingsDir, (_eventType, filename) => debounced(filename))
+  } catch (err) {
+    console.warn(`[hook-installer] fs.watch 不可用，退化仅启动注册: ${(err as Error).message}`)
+    return () => {}
+  }
+
+  return () => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    watcher?.close()
+    watcher = null
   }
 }

@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { loadConfig } from './config'
@@ -12,7 +13,7 @@ import { ClaudeCodeSessionScanner } from './claude-sessions'
 import { SessionDetailScanner } from './session-detail'
 import { getCachedUsageCards, startUsageChecker, startSessionScanner } from './services'
 import { registerIpcHandlers } from './ipc-handlers'
-import { ensureHookRegistered } from './hook-installer'
+import { ensureHookRegistered, startHookWatcher } from './hook-installer'
 
 import type { ManagedTray } from './tray'
 import type { ManagedWindow } from './window'
@@ -38,6 +39,7 @@ let managedServer: ManagedServer | null = null
 let database: AppDatabase | null = null
 let usageTask: ScheduledTask | null = null
 let sessionTask: ScheduledTask | null = null
+let stopHookWatcher: (() => void) | null = null
 
 // ─── 单实例锁 ───
 
@@ -63,17 +65,21 @@ if (!gotTheLock) {
     managedWindow = createMainWindow(config)
     managedTray = createTray(config, managedWindow.win)
 
-    // ─── M14：PreToolUse hook 自动注册（后端启动即幂等确保，DESIGN §6.13）───
+    // ─── M14 + M17：PreToolUse hook 自动注册 + 覆写自愈（DESIGN §6.13）───
     // 审批链路第一环：Claude Code 工具调用 → hook(approve.sh) → POST /approve →
     // server 入队 → push 弹卡。hook 一旦被清空，server 在跑也收不到审批请求
-    // （2026-08-07 实测回归）。此处解析 settings_path 合并注册 approve.sh，
-    // 已注册则不动（幂等），失败 warn + 跳过（NFR-3，不阻断启动）。
+    // （2026-08-07/08-08 实测回归：cc-switch 热切换 provider 整体覆写 settings.json，
+    // 抹掉 hooks 段 → 审批静默断开，M14 启动幂等兜不住"启动后被覆写"）。
+    // M17 根治双保险：①主注册位迁 settings.local.json（cc-switch 只覆写 settings.json，
+    // 免疫）；② fs.watch 监听 ~/.claude/ 下 settings 文件，外部覆写后防抖自动补注册。
+    // 失败 warn + 跳过（NFR-3，审批可降级到终端原生询问，安全无害）。
     try {
-      const ccSettings = config.harnesses?.['claude-code']?.settings_path || '~/.claude/settings.json'
+      const ccSettings = config.harnesses?.['claude-code']?.settings_path || '~/.claude/settings.local.json'
       const approveScript = join(app.getAppPath(), 'resources', 'hooks', 'approve.sh')
       ensureHookRegistered(ccSettings, approveScript)
+      stopHookWatcher = startHookWatcher(join(homedir(), '.claude'), ccSettings, approveScript)
     } catch (err) {
-      console.warn(`[main] hook 自动注册异常（不影响启动）: ${(err as Error).message}`)
+      console.warn(`[main] hook 自动注册/监听异常（不影响启动）: ${(err as Error).message}`)
     }
 
     // ─── M5：数据库 + 审批队列 + 通知 + HTTP Server ───
@@ -212,6 +218,8 @@ if (!gotTheLock) {
   // 退出时清理：双调度器 → HTTP server → 托盘 → 数据库（§6.9 / §6.5 / §6.4 / §6.2）
   // 定时器先于 server/db 停，避免 stop 间隙回调再触达已关闭的 db / 已销毁的 tray
   app.on('will-quit', () => {
+    stopHookWatcher?.()
+    stopHookWatcher = null
     usageTask?.stop()
     usageTask = null
     sessionTask?.stop()

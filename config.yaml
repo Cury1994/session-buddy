@@ -64,7 +64,7 @@ usage_poll_interval_min: 1
 harnesses:
   claude-code:
     sessions_glob: "~/.claude/sessions/*.json"
-    settings_path: "~/.claude/settings.json"
+    settings_path: "~/.claude/settings.local.json"   # M17：hook 主注册位（cc-switch 只覆写 settings.json）
     refresh_interval_sec: 3
     config_dirs:                      # Claude config 目录（v2.3 仅扫此列表，无自动发现）
       - "~/.claude"

@@ -83,7 +83,9 @@ const DEFAULT_CONFIG: AppConfig = {
   harnesses: {
     'claude-code': {
       sessions_glob: '~/.claude/sessions/*.json',
-      settings_path: '~/.claude/settings.json',
+      // M17 根治：主注册位迁到 settings.local.json（cc-switch 只覆写 settings.json，
+      // 从此审批 hook 免疫其快照覆写；hooks 跨层级合并，仅此处注册避免双执行）。
+      settings_path: '~/.claude/settings.local.json',
       refresh_interval_sec: 3,
       config_dirs: ['~/.claude']
     }

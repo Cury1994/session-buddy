@@ -1005,7 +1005,9 @@ export interface ApprovalResponse {
 
 ### 6.13 approve.sh — Hook 脚本设计（REVIEW #2）
 
-> 对应 **FR-3.1 / FR-3.10（P0）**。脚本位于 `resources/hooks/approve.sh`，作为 Claude Code 的 **PreToolUse** hook 注册到 `~/.claude/settings.json` 的 `hooks.PreToolUse`。**matcher 为空串 = 匹配所有工具**（2026-08-03 审批镜像轮）：脚本对"永不询问"工具（Glob/Grep/LS/Task/TodoWrite）走快速通道立即 exit 0，其余工具原样薄中继到 server，由 §6.14 镜像过滤判定弹卡与否——mirror 逻辑集中在 server（TS 可测），脚本保持薄、版本漂移隔离在脚本的字段兼容层。
+> 对应 **FR-3.1 / FR-3.10（P0）**。脚本位于 `resources/hooks/approve.sh`，作为 Claude Code 的 **PreToolUse** hook 注册到 `~/.claude/settings.local.json` 的 `hooks.PreToolUse`。**matcher 为空串 = 匹配所有工具**（2026-08-03 审批镜像轮）：脚本对"永不询问"工具（Glob/Grep/LS/Task/TodoWrite）走快速通道立即 exit 0，其余工具原样薄中继到 server，由 §6.14 镜像过滤判定弹卡与否——mirror 逻辑集中在 server（TS 可测），脚本保持薄、版本漂移隔离在脚本的字段兼容层。
+>
+> **注册位 M17 起迁移到 settings.local.json**（2026-08-08 根治）：cc-switch 热切换 provider 时用其 provider 快照（仅 env、无 hooks）整体覆写 `~/.claude/settings.json`，抹掉 hooks → 审批链路静默断开（08-06/08-07/08-08 三次回归）。实测 Claude Code 2.1.207 从用户级 settings.local.json 加载 hooks（官方文档标 "project only"，实测用户级生效，以实测为准），且 cc-switch 不碰此文件 → 迁移后免疫。hooks 跨层级合并，同一 approve.sh 不能同时在 settings.json 与 settings.local.json 都注册（双执行→双卡/双落库）。`hook-installer.ts` 启动幂等注册 + `fs.watch` 监听 ~/.claude/ 下两个 settings 文件，外部覆写后防抖自动补注册（自愈窗口压到几百 ms，不再等到重启）。
 
 #### 6.13.1 Claude Code hook 传入的 stdin JSON schema
 
@@ -1135,7 +1137,7 @@ fi
 
 #### 6.13.5 注册方式
 
-安装时写入 `~/.claude/settings.json`（harness-monitor 提供一键注册，或用户手动）：
+安装时写入 `~/.claude/settings.local.json`（harness-monitor 提供一键注册，或用户手动；**M17 起主注册位为 local，见 §6.13 头注**）：
 
 ```json
 {
@@ -1263,7 +1265,7 @@ providers:
 harnesses:
   claude-code:
     sessions_glob: "~/.claude/sessions/*.json"
-    settings_path: "~/.claude/settings.json"
+    settings_path: "~/.claude/settings.local.json"   # M17：hook 主注册位（cc-switch 只覆写 settings.json）
     refresh_interval_sec: 3
     config_dirs:                      # Claude config 目录（v3.2 仅扫此列表，无自动发现）
       - "~/.claude"
