@@ -64,6 +64,25 @@ export const VENDOR_TEMPLATES: VendorTemplate[] = [
       detect_ids: ['token-plan.cn-beijing.maas.aliyuncs.com']
     },
     modelContext: [{ prefix: 'qwen3.8-max-preview', len: 1_000_000 }]
+  },
+  {
+    // M17: 智谱（glm-5.2 旧 MODEL_CONTEXT_WINDOWS 已知 1M）。context-only（无实测余量端点），
+    // source 用 bearer + 未设 env → missing-credential → 被 M17.7 过滤，不出 API Usage 卡。
+    // host 为真实智谱端点；contextForModel 按模型名前缀 'glm-5.2' 命中 → 1M。
+    host: 'open.bigmodel.cn',
+    name: '智谱',
+    source: {
+      id: 'zhipu',
+      name: '智谱',
+      billing: 'payg',
+      kind: 'http-json',
+      url: '',
+      auth: { type: 'bearer', key_env: 'ZHIPU_API_KEY' },
+      remaining: { path: '' },
+      unit: 'token',
+      detect_ids: ['open.bigmodel.cn']
+    },
+    modelContext: [{ prefix: 'glm-5.2', len: 1_000_000 }]
   }
   // OpenRouter / OpenAI / Gemini 等：API 响应实测确认后再加，不塞猜测值
 ]
