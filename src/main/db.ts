@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import Database from 'better-sqlite3'
 
-import type { ApprovalRecord, BalanceDailySnapshot, BillingMode, UsageRecord } from '../shared/types'
+import type { BalanceDailySnapshot, BillingMode, UsageRecord } from '../shared/types'
 
 /**
  * M3 — 数据库封装（DESIGN §6.2）
@@ -70,13 +70,6 @@ const SELECT_30DAY_BALANCE =
 const INSERT_APPROVAL =
   'INSERT INTO approval_history (harness, session_name, command, cwd, tool, allowed) VALUES (?, ?, ?, ?, ?, ?)'
 
-const SELECT_RECENT_APPROVALS =
-  'SELECT * FROM approval_history ORDER BY timestamp DESC, id DESC LIMIT ?'
-
-/** 全部审批历史（无 LIMIT，供历史列表滚动展示全部） */
-const SELECT_ALL_APPROVALS =
-  'SELECT * FROM approval_history ORDER BY timestamp DESC, id DESC'
-
 // ─── 行原始结构（snake_case，对应表列） ───
 
 interface RawUsageRow {
@@ -88,17 +81,6 @@ interface RawUsageRow {
   timestamp: string
   billing: string // M13.4：'' = 迁移前的旧行或旧 4 参调用方写入
   unit: string // M13.4：同上
-}
-
-interface RawApprovalRow {
-  id: number
-  harness: string
-  session_name: string | null
-  command: string
-  cwd: string | null
-  tool: string
-  allowed: number
-  timestamp: string
 }
 
 interface RawDayRow {
@@ -115,19 +97,6 @@ function toUsageRecord(row: RawUsageRow): UsageRecord {
     timestamp: row.timestamp,
     billing: row.billing, // M13.4 透传（'' = 旧行/旧调用方）
     unit: row.unit
-  }
-}
-
-function toApprovalRecord(row: RawApprovalRow): ApprovalRecord {
-  return {
-    id: row.id,
-    harness: row.harness,
-    sessionName: row.session_name,
-    command: row.command,
-    cwd: row.cwd,
-    tool: row.tool,
-    allowed: row.allowed === 1,
-    timestamp: row.timestamp
   }
 }
 
@@ -159,8 +128,6 @@ export class AppDatabase {
   private sLatestUsageByProvider: Database.Statement<unknown[], RawUsageRow> | null = null
   private s30DayBalance: Database.Statement<unknown[], RawDayRow> | null = null
   private sInsertApproval: Database.Statement<unknown[]> | null = null
-  private sRecentApprovals: Database.Statement<unknown[], RawApprovalRow> | null = null
-  private sAllApprovals: Database.Statement<unknown[], RawApprovalRow> | null = null
 
   /**
    * @param dbPath 显式路径（测试/验收用）；省略则用 resolveDefaultDbPath()。
@@ -272,25 +239,6 @@ export class AppDatabase {
       stmt.run(harness, sessionName, command, cwd, tool, allowed ? 1 : 0)
     } catch (err) {
       console.warn(`[db] recordApproval 失败: ${(err as Error).message}`)
-    }
-  }
-
-  /** limit 缺省/≤0 → 返回全部审批历史（滚动展示全部）；否则返回最近 limit 条 */
-  getRecentApprovals(limit?: number): ApprovalRecord[] {
-    try {
-      if (typeof limit === 'number' && limit > 0) {
-        const stmt = (this.sRecentApprovals ??= this.db.prepare<unknown[], RawApprovalRow>(
-          SELECT_RECENT_APPROVALS
-        ))
-        return stmt.all(limit).map(toApprovalRecord)
-      }
-      const all = (this.sAllApprovals ??= this.db.prepare<unknown[], RawApprovalRow>(
-        SELECT_ALL_APPROVALS
-      ))
-      return all.all().map(toApprovalRecord)
-    } catch (err) {
-      console.warn(`[db] getRecentApprovals 失败: ${(err as Error).message}`)
-      return []
     }
   }
 
