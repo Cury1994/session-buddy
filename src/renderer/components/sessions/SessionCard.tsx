@@ -12,19 +12,16 @@
  *      globals.css 类（globals.css 由 B2 Settings 并行 agent 持有，避开文件域冲突）。
  *
  * 结构：
- *   Header：StatusDot + name(13px) … [⚡ 自动 pill] + hover 浮层关闭终端按钮(F3) + [Terminal]
+ *   Header：StatusDot + name(13px) … [⚡ 自动 pill]
  *   徽章行：provider 徽章（API 实际模型）+ tool 徽章（harness 身份，固定 Claude Code）
  *   F1 状态行（currentAction 非 null 时）+ F5 告警块（ctxPct ≥ 80 时）
  *   Meta：Ctx: NN% + ContextGauge … Mem: NNM
  *   微文字：Uptime；cwd 单行截断（title 全路径 tooltip）
  *   「查看更多详情 ▸」→ onOpenDetail（二级详情页）
  *   条件渲染 ApprovalBlock（该 session 命中 pending 审批时，红边紧急卡片）
- *
- * 关闭终端（F3）：两步内联确认（首点 arm "Sure?"，再点执行 terminateSession(pid)）。
- * 返回 false（后台会话无终端窗口等）→ 行内提示"无终端窗口"（与跳转失败提示共用机制）。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { SessionInfo } from '../../../shared/types'
 import type { ApprovalViewItem } from '../../hooks/useSessionsData'
@@ -38,9 +35,6 @@ interface SessionCardProps {
   /** M17.1：点击「查看更多详情 ▸」→ 父级切换到二级详情页（SessionsView 持有 selectedSessionId） */
   onOpenDetail?: (sessionId: string) => void
 }
-
-/** 跳转终端失败提示的驻留时长（ms） */
-const JUMP_HINT_MS = 2500
 
 /** F5 上下文告警阈值（%）：ctxPct ≥ 80 渲染红色警示块（原型基准，无按钮） */
 const CTX_WARN_PCT = 80
@@ -88,9 +82,6 @@ const AA_PILL_ARMED: React.CSSProperties = {
 }
 
 function SessionCard({ session, approval, onOpenDetail }: SessionCardProps): React.JSX.Element {
-  const [confirmTerm, setConfirmTerm] = useState(false)
-  const [jumpHint, setJumpHint] = useState<string | null>(null)
-  const jumpTimerRef = useRef<number | null>(null)
   const hasApproval = approval !== undefined
 
   // M17.1 单卡 ⚡ 自动审批：前端 state 持有 + 挂载播种主进程真源（按会话键）
@@ -142,44 +133,6 @@ function SessionCard({ session, approval, onOpenDetail }: SessionCardProps): Rea
     void window.electronAPI.setAutoApprove(session.sessionId, true)
   }
 
-  // 卸载时清理跳转提示定时器
-  useEffect(
-    () => () => {
-      if (jumpTimerRef.current !== null) window.clearTimeout(jumpTimerRef.current)
-    },
-    []
-  )
-
-  const jump = (): void => {
-    // #5：传 session.pid 供主进程优先聚焦会话所在终端窗口（X11）；
-    // Wayland / 聚焦失败由主进程自动降级 spawn 开新窗口（cwd 落真实项目路径）
-    void window.electronAPI.jumpToTerminal(session.cwd, session.pid).then((ok) => {
-      // FR-2.7：链中全失败（无可用终端）→ 一次性行内提示，不再静默（P1-1 整改）
-      if (ok) return
-      showHint('无可用终端')
-    })
-  }
-
-  /** 一次性行内提示（2.5s 淡出；跳转失败与关闭终端失败共用，重复触发刷新计时） */
-  const showHint = (msg: string): void => {
-    setJumpHint(msg)
-    if (jumpTimerRef.current !== null) window.clearTimeout(jumpTimerRef.current)
-    jumpTimerRef.current = window.setTimeout(() => setJumpHint(null), JUMP_HINT_MS)
-  }
-
-  const terminate = (): void => {
-    if (!confirmTerm) {
-      setConfirmTerm(true)
-      return
-    }
-    setConfirmTerm(false)
-    void window.electronAPI.terminateSession(session.pid).then((ok) => {
-      // F3：false ＝ 无控制终端（后台会话）等失败路径 → 一次性行内提示
-      if (ok) return
-      showHint('无终端窗口')
-    })
-  }
-
   return (
     <div className={`card session-card${hasApproval ? ' has-approval' : ''}`}>
       <div className="session-card-body">
@@ -212,49 +165,6 @@ function SessionCard({ session, approval, onOpenDetail }: SessionCardProps): Rea
             >
               <span aria-hidden="true">⚡</span>
               {armed ? 'Sure?' : '自动'}
-            </button>
-            {session.pid > 0 && (
-              <button
-                type="button"
-                className={`mini-icon-btn danger electron-no-drag${confirmTerm ? ' confirm' : ''}`}
-                title={confirmTerm ? 'Click again to close terminal' : 'Close terminal'}
-                onClick={terminate}
-              >
-                {confirmTerm ? (
-                  'Sure?'
-                ) : (
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden="true"
-                  >
-                    <rect x="6" y="6" width="12" height="12" rx="1" />
-                  </svg>
-                )}
-              </button>
-            )}
-            <button
-              type="button"
-              className="mini-icon-btn electron-no-drag"
-              title="Open Terminal"
-              onClick={jump}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                aria-hidden="true"
-              >
-                <polyline points="4 17 10 11 4 5" />
-                <line x1="12" y1="19" x2="20" y2="19" />
-              </svg>
             </button>
           </div>
         </div>
@@ -321,7 +231,6 @@ function SessionCard({ session, approval, onOpenDetail }: SessionCardProps): Rea
           <span className="session-id" title={session.sessionId}>
             ID {session.sessionId}
           </span>
-          {jumpHint !== null && <span className="jump-hint">{jumpHint}</span>}
         </div>
 
         <div className="session-cwd" title={session.cwd}>

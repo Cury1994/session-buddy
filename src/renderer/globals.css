@@ -537,46 +537,6 @@
     opacity: 0.5;
   }
 
-  /* 图标小按钮（Terminal / Terminate） */
-  .mini-icon-btn {
-    padding: 2px 6px;
-    border-radius: 6px;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    background-color: rgba(255, 255, 255, 0.7);
-    color: var(--text-main);
-    line-height: 0;
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: 500;
-    cursor: default;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    transition: background 0.1s;
-  }
-  .mini-icon-btn:hover {
-    background-color: #ffffff;
-  }
-  /* 终止按钮：hover 卡片才显现（FR-2.8 不占常驻版面）；danger 红调；confirm 常驻红底 */
-  .mini-icon-btn.danger {
-    opacity: 0;
-    transition: opacity 0.15s, background 0.1s;
-  }
-  .session-card:hover .mini-icon-btn.danger {
-    opacity: 1;
-  }
-  .mini-icon-btn.danger:hover {
-    color: #ff5252;
-    border-color: rgba(255, 82, 82, 0.4);
-  }
-  .mini-icon-btn.danger.confirm {
-    opacity: 1;
-    color: #ffffff;
-    background-color: #ff5252;
-    border-color: #ff5252;
-    line-height: 1.2;
-  }
-
   /* 徽章行 */
   .badge-row {
     display: flex;
@@ -665,13 +625,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: right;
-  }
-
-  /* 跳转终端失败的一次性行内提示（P1-1，FR-2.7 全链失败不静默） */
-  .jump-hint {
-    flex-shrink: 0;
-    font-size: 10px;
-    color: var(--danger-red);
   }
 
   /* cwd 单行截断 + title tooltip */

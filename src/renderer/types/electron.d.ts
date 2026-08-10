@@ -34,10 +34,6 @@ export interface ElectronAPI {
   getConfig(): Promise<AppConfig>
   saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>
   manualRefresh(): Promise<void>
-  /** 跳转终端（#5：优先 xdotool 按 pid 聚焦既有窗口，Wayland/无 xdotool 降级按 cwd 开窗） */
-  jumpToTerminal(cwd: string, pid?: number): Promise<boolean>
-  /** 关闭会话所在终端窗口（F3 → closeTerminalOfPid；无终端窗口 → false） */
-  terminateSession(pid: number): Promise<boolean>
   respondApproval(id: string, allowed: boolean): Promise<boolean>
   /** 当前待审批列表（P1-3 挂载补拉 seed，approval:get → approvalQueue.getAll） */
   getPendingApprovals(): Promise<PendingApproval[]>

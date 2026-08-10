@@ -1,8 +1,5 @@
 import { app, ipcMain } from 'electron'
-import { spawn } from 'node:child_process'
-import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 
-import { closeTerminalOfPid, focusExistingTerminal } from './claude-sessions'
 import { loadConfig, saveConfig } from './config'
 import { isAutoApproveOn, setAutoApprove } from './server'
 
@@ -31,7 +28,7 @@ import type { AppConfig, ApprovalResponse, SessionDetail, UsageCard } from '../s
  * 通道一览（§6.11）：
  *   invoke: usage:get / usage:history / sessions:get / sessions:detail（M16 B1）/
  *           config:get / config:save / app:refresh / app:quit /
- *           session:jump-terminal / session:terminate / approval:respond /
+ *           approval:respond /
  *           approval:get（P1-3 挂载补拉 seed）/ app:toggle-pin /
  *           approval:set-auto-approve / approval:get-auto-approve（F3 自动审批开关，M17.1 每会话独立）
  *   window:hide / window:minimize / window:toggle-maximize / window:get-always-on-top
@@ -71,51 +68,6 @@ export interface IpcHandlerDeps {
 /** 纯对象守卫：config:save 入参校验（拒绝 null / 数组 / 标量） */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** 命令是否存在于 PATH 且可执行（等价 `which`：逐目录 X_OK + isFile 检查） */
-function commandExists(cmd: string): boolean {
-  const pathEnv = process.env['PATH'] ?? ''
-  for (const dir of pathEnv.split(':')) {
-    if (dir === '') continue
-    const full = `${dir}/${cmd}`
-    try {
-      accessSync(full, fsConstants.X_OK)
-      if (statSync(full).isFile()) return true
-    } catch {
-      // 不存在 / 不可执行 → 继续下一个目录
-    }
-  }
-  return false
-}
-
-/**
- * 打开终端（FR-2.7，DESIGN §6.8.4）：回退链 kgx → gnome-terminal → xterm。
- * kgx / gnome-terminal 用 `--working-directory=<cwd>`；xterm 不支持该参数，改由
- * spawn 的 cwd 选项让子进程（及其拉起的 shell）继承工作目录。detached + stdio
- * ignore + unref：终端独立于本应用存活，不阻塞退出。链中全失败 → false + warn。
- */
-function openTerminal(cwd: string): boolean {
-  const candidates: Array<[string, string[]]> = [
-    ['kgx', [`--working-directory=${cwd}`]],
-    ['gnome-terminal', [`--working-directory=${cwd}`]],
-    ['xterm', []] // cwd 由下方 spawn 选项承载
-  ]
-  for (const [cmd, args] of candidates) {
-    if (!commandExists(cmd)) continue
-    try {
-      const child = spawn(cmd, args, { cwd, detached: true, stdio: 'ignore' })
-      child.on('error', (err) => {
-        console.warn(`[ipc] 终端 ${cmd} 启动失败: ${err.message}`)
-      })
-      child.unref()
-      return true
-    } catch (err) {
-      console.warn(`[ipc] 终端 ${cmd} 启动失败: ${(err as Error).message}`)
-    }
-  }
-  console.warn('[ipc] jump-terminal: 终端链（kgx / gnome-terminal / xterm）全不可用')
-  return false
 }
 
 export function registerIpcHandlers(deps: IpcHandlerDeps): void {
@@ -200,51 +152,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   /** Pin 切换 → alwaysOnTop + blur 不隐藏（M4 已有，统一到 handlers） */
   ipcMain.handle('app:toggle-pin', (_event, pinned: boolean) => {
     managedWindow.togglePin(pinned === true)
-  })
-
-  // ─── Session 操作 ───
-
-  /**
-   * 跳转终端（FR-2.7，DESIGN §6.8.4，#5 聚焦优先 + 开窗降级）：
-   * ① **聚焦优先**：pid 有效（typeof 守卫，非有限数按无 pid 处理）且
-   *    focusExistingTerminal(pid, cwd) 成功 → return true，直接跳到会话所在的那个
-   *    终端窗口（X11：xdotool 按终端祖先 pid 搜窗口 → 多窗口按标题含 basename(cwd)
-   *    筛选 → windowactivate），不开新窗口；
-   * ② **开窗降级**：聚焦失败（原生 Wayland 窗口对 xdotool 不可见 / xdotool 未安装 /
-   *    无终端祖先 / 无窗口）→ 落入既有 spawn 回退链 kgx → gnome-terminal → xterm，
-   *    --working-directory=<cwd>（xterm 经 spawn cwd 选项承载），新窗口落会话真实
-   *    项目路径（F2 transcript 尾读 cwd 真值）。Wayland 环境下 ② 是主路径。
-   * 入参非法 / cwd 非目录 / 链中全失败 → false，UI 侧据此给一次性行内提示（SessionCard）。
-   */
-  ipcMain.handle('session:jump-terminal', (_event, cwd: unknown, pid?: unknown) => {
-    if (typeof cwd !== 'string' || cwd === '') return false
-    try {
-      if (!statSync(cwd).isDirectory()) {
-        console.warn(`[ipc] jump-terminal cwd 非目录: ${cwd}`)
-        return false
-      }
-    } catch (err) {
-      console.warn(`[ipc] jump-terminal cwd 无效: ${(err as Error).message}`)
-      return false
-    }
-    // ① 聚焦既有窗口（X11 主路径；pid 守卫：非有限数 → 按无 pid 处理走 ②）
-    const safePid = typeof pid === 'number' && Number.isFinite(pid) ? pid : 0
-    if (safePid > 0 && focusExistingTerminal(safePid, cwd)) return true
-    // ② 降级：spawn 链开新窗口（P1-1 原实现，逐字不动）
-    return openTerminal(cwd)
-  })
-
-  /**
-   * 关闭终端（F3，取代旧 FR-2.8 直杀 claude 进程）：
-   * 定位会话进程所在 tty（/proc/<pid>/fd/0 → /dev/pts/N）上共享该 tty 的根 shell →
-   * SIGTERM 根 shell → 终端模拟器关闭该窗口/标签 → claude 随 pty hangup（SIGHUP）退出
-   * ＝"真的关掉对应的那一个终端窗口"。closeTerminalOfPid 覆盖全部失败路径
-   * （非法 pid / 自身 / init / 无控制终端的后台会话 / 无根进程），返回 boolean，
-   * UI 侧据此给一次性行内提示（SessionCard "无终端窗口"）。
-   */
-  ipcMain.handle('session:terminate', (_event, pid: number) => {
-    if (typeof pid !== 'number' || !Number.isInteger(pid)) return false
-    return closeTerminalOfPid(pid)
   })
 
   // ─── 审批 ───
