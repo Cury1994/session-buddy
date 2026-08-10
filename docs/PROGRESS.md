@@ -843,3 +843,21 @@
 
 **收尾三件套**：① commit a3334b1 ✅ ② 用户实例 932736 未触碰（旧构建，审批已通；watch 逻辑待实例重启后加载）✅ ③ 本日志 ✅
 **遗留**：用户实例重启后 watch 自愈生效（下次自然重启即加载新构建）；DESIGN §6.13/§6.5 已同步注册位描述
+
+---
+
+### 2026-08-10 08:54 ｜ 归档后修订 ｜ M18 四项 UI 需求轮 回滚（commit 47dbd01）
+
+**背景**：用户要求「回滚到上一版本」。M18 提交 b535a18（删审批历史 / session 名称对齐终端标题 / 上下文表 registry 只读 + M-K 单位 + 整表折叠，2026-08-10 00:42 完成并已重启验证生效）被整体撤销。
+
+**处置**：`git revert --no-edit b535a18` → commit **47dbd01**（11 文件，+483/−318），工作树恢复到 M17 状态：
+- `ApprovalHistory.tsx` 恢复、`history:get` IPC / `getApprovalHistory` / `db.getRecentApprovals` / `ApprovalRecord` 类型复原
+- session 名称恢复旧命名链（transcript 首条用户消息 → json name → cwd basename）
+- 上下文长度表恢复原样（registry 可编辑、无单位选择、无折叠头）；`ContextEntry.unit` 字段撤销
+- PROGRESS.md 的 M18 日志段随 revert 一并撤销（本条为补记）
+
+**验证**：npm run build + 双 typecheck 零错误；实例重启（pid 1037759，真实 HOME，18456 健康）后 `/api/sessions` 名称恢复旧链（`'你看下运行本地的hermes…'` / `'/clear'`），构建产物含 history 代码——回滚生效。
+
+**保留**：M18 提交 b535a18 留在历史（未强删），日后可 `git revert 47dbd01` 恢复。
+
+**收尾三件套**：① commit 47dbd01 ✅ ② 实例 = 回滚后构建（1037759 健康在听 18456，无孤儿）✅ ③ 本日志补记 ✅
