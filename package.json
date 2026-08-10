@@ -8,12 +8,12 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cury/session-buddy.git"
+    "url": "https://github.com/Cury1994/session-buddy.git"
   },
   "bugs": {
-    "url": "https://github.com/cury/session-buddy/issues"
+    "url": "https://github.com/Cury1994/session-buddy/issues"
   },
-  "homepage": "https://github.com/cury/session-buddy#readme",
+  "homepage": "https://github.com/Cury1994/session-buddy#readme",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && npm run typecheck",
