@@ -9,7 +9,7 @@ import {
   readdirSync,
   statSync
 } from 'node:fs'
-import { homedir, hostname, userInfo } from 'node:os'
+import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
 import { contextForModel } from './vendor-registry'
@@ -26,12 +26,13 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *   - sessions 目录的 .json 文件 → session 元数据（pid / sessionId / cwd / startedAt）
  *   - projects/<proj>/<sessionId>.jsonl → transcript（ctxPct 估算真源，§6.8.2e；亦为显示名来源 ①）
  *
- * 显示名（name）＝ 终端窗口标题推导值（与 ~/.bashrc 的 `\e]0;\u@\h: \w\a` 规则逐字同源）：
- *   `user@host: cwd`（如 `cury@cury-ThinkBook-14-G4-ARA: /home/cury/harness-monitor`）。
- *   Wayland 下应用无法直读真实终端窗口标题（GNOME Shell Introspect 拒绝 / xdotool 只对
- *   X11 可见，见 2026-08-08 调研），故按终端同一标题规则用会话真实 cwd 推导。
- *   cwd 取 transcript 尾读 lastCwd → session json cwd 降级；无 cwd → 仅 `user@host: `。
- *   （旧命名链：transcript 首条用户消息 → json name → basename(cwd)，2026-08-08 应需求移除）
+ * 显示名（name）＝ 最近一条**真实用户文本消息**（lastUserText，见文件头 ⑤）：
+ *   本地方案（零 token）——直接取 transcript 最近一条用户指令（message.content 为 string 者，
+ *   与 tool_result 判别：后者 content 是 block 数组），清洗截断 60 字符，随新消息动态更新。
+ *   满足"通过 session 名称判断大概在跑什么任务"。
+ *   降级链：lastUserText → basename(cwd)（transcript 尾读 lastCwd → json cwd，均无则空）。
+ *   （先例：M18 曾用 `user@host: cwd` 推导终端窗口标题，但 Wayland 读不到真实标题、
+ *    且无法反映任务内容，2026-08-10 应需求改回消息标题）
  *
  * 状态判定（v3.2 简化）：`fs.existsSync(/proc/{pid})` 存活 → busy；不存在 → idle + memory=0。
  * 不做 CPU 阈值 / 进程树遍历。
@@ -86,28 +87,6 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *   开新窗口，cwd 落会话真实项目路径（F2 transcript 尾读真值）——Wayland 下这是主路径。
  *   xdotool 为**可选依赖**：不随项目安装，运行时 `command -v` 检测，缺失即降级，不报错。
  */
-
-// ─── 终端标题推导（显示名，2026-08-08） ───
-// 与 ~/.bashrc 的 `\e]0;\u@\h: \w\a` 规则逐字同源：`user@host: cwd`。
-// 宿主标识进程内不变，取一次缓存（userInfo 失败回退 process.env.USER，hostname 失败回退 'host'）。
-const TERMINAL_TITLE_USER: string = (() => {
-  try {
-    const u = userInfo().username
-    if (u) return u
-  } catch {
-    /* 回退 */
-  }
-  return process.env.USER || 'user'
-})()
-const TERMINAL_TITLE_HOST: string = (() => {
-  try {
-    const h = hostname()
-    if (h) return h
-  } catch {
-    /* 回退 */
-  }
-  return 'host'
-})()
 
 // ─── 系统页大小（/proc stat rss 以页为单位，缓存一次） ───
 
@@ -178,6 +157,13 @@ export function contextWindowForModel(modelId: string, config: AppConfig): numbe
 const TAIL_BYTES = 262144
 
 /**
+ * lastUserText 兜底窗口：2MB。活跃会话尾部可能被 tool_result 占满（真实用户文本
+ * 可深达 600KB+，实测），256KB 尾窗扫不到时用本窗口专扫用户文本。仅缺失时触发，
+ * 常规路径仍是单次 256KB 读（零回归）。2MB 尾读约 0.2ms（本机实测），成本可忽略。
+ */
+const USER_TEXT_TAIL_BYTES = 2097152
+
+/**
  * 「执行中」判定窗口：进程存活且 transcript 最近写入（mtime）在此毫秒数内 → recentlyActive。
  * transcript 随 Claude Code 每轮活动更新，空闲会话停在提示符时停止写入，故 mtime 是
  * "正在执行任务"的廉价真源（无需额外解析）。仅对存活会话有意义。
@@ -189,25 +175,29 @@ const TAIL_BYTES = 262144
 const ACTIVE_WINDOW_MS = 15_000
 
 /**
- * 单次尾窗读同时提取的四件事（F2，见文件头说明）：
- *   usedTokens  —— ctxPct 计算源（末条 usage 三项和）
- *   lastCwd     —— 实际工作目录（最后一条含 cwd 的记录；Claude Code 随 cd 动态更新）
- *   lastModel   —— API 实际返回的模型 id（最后一条 message.model）
- *   lastActivity—— 最近一条可读对话/任务内容（message.content 清洗后截断 120；尽力而为，
- *                  不参与早退门槛，扫不到为 null —— 见 scanTailFacts 注释）
+ * 单次尾窗读同时提取的五件事（见文件头说明）：
+ *   usedTokens    —— ctxPct 计算源（末条 usage 三项和）
+ *   lastCwd       —— 实际工作目录（最后一条含 cwd 的记录；Claude Code 随 cd 动态更新）
+ *   lastModel     —— API 实际返回的模型 id（最后一条 message.model）
+ *   lastActivity  —— 最近一条可读对话/任务内容（message.content 清洗后截断 120；尽力而为，
+ *                    不参与早退门槛，扫不到为 null —— 见 scanTailFacts 注释）
+ *   lastUserText  —— 最近一条**真实用户文本消息**（message.content 为 string，非 tool_result；
+ *                    session 名称真源，动态随新消息更新 —— 见 scanTailFacts 注释 ⑤）
  */
 export interface TailFacts {
   usedTokens: number
   lastCwd: string | null
   lastModel: string | null
   lastActivity: string | null
+  lastUserText: string | null
 }
 
 const ZERO_TAIL: TailFacts = {
   usedTokens: 0,
   lastCwd: null,
   lastModel: null,
-  lastActivity: null
+  lastActivity: null,
+  lastUserText: null
 }
 
 /**
@@ -215,18 +205,23 @@ const ZERO_TAIL: TailFacts = {
  *
  * 审查 P2-2（原 usedTokens 同款手法继承）：transcript 可达数十 MB，整份 readFileSync
  * 会同步阻塞主进程事件循环（discoverSessions 3s 一轮）。三项事实所需的**最后**一条
- * 记录均在文件末尾附近，故只读最后 256KB：
+ * 记录均在文件末尾附近，故先只读最后 256KB：
  *   size ≤ 256KB → 全读；
  *   size  > 256KB → openSync + readSync 读尾部 256KB → 丢弃可能被截断的首段 →
  *                   从尾向前扫描，四个量各自独立累积。
+ * 若 256KB 窗口内扫不到 lastUserText（活跃会话尾部可能全是 tool_result，真实用户
+ * 文本被挤到窗口外——实测最新用户消息可深达 600KB+），则用更大的独立窗口
+ * USER_TEXT_TAIL_BYTES（2MB）**再读一次**专扫用户文本。仅在需要时扩大，常规路径
+ * 仍是单次 256KB 读（零回归）。
  * 文件不可读/不存在 → 零值对象（调用方按降级链处理）。
  */
 function tailFacts(transcriptPath: string): TailFacts {
   if (!transcriptPath || !existsSync(transcriptPath)) return ZERO_TAIL
 
   let lines: string[]
+  let size: number
   try {
-    const size = statSync(transcriptPath).size
+    size = statSync(transcriptPath).size
     let content: string
     if (size <= TAIL_BYTES) {
       content = readFileSync(transcriptPath, 'utf8')
@@ -242,30 +237,94 @@ function tailFacts(transcriptPath: string): TailFacts {
       // 尾读首行可能被截断为非法 JSON，丢弃（全读路径无需丢弃，故仅此分支执行）
       lines = content.split('\n')
       lines.shift()
-      return scanTailFacts(lines)
+      const facts = scanTailFacts(lines)
+      // 256KB 窗口内无用户文本（活跃会话尾部被 tool_result 占满）→ 扩大窗口专扫
+      if (facts.lastUserText === null) {
+        facts.lastUserText = lastUserTextWide(transcriptPath, size)
+      }
+      return facts
     }
     lines = content.split('\n')
   } catch {
     return ZERO_TAIL
   }
-  return scanTailFacts(lines)
+  const facts = scanTailFacts(lines)
+  return facts
 }
 
 /**
- * 从尾向前扫描，四件事各自独立累积：某项已找到即不再覆盖（逆序首命中＝正序"最末"）。
+ * 更大窗口专扫最近一条真实用户文本消息（⑤ 的兜底）。
+ * 256KB 尾窗扫不到时调用：活跃会话尾部常被 tool_result 占满，真实用户消息可在
+ * 600KB+ 深（实测）。窗口 USER_TEXT_TAIL_BYTES=2MB 覆盖绝大多数活跃会话；
+ * 2MB 尾读约 0.2ms（本机实测），仅缺失时触发，成本可忽略。
+ * 读文件头方向：仅需从尾向头扫第一个 string-content 用户记录，故只读尾部窗口，
+ * 不整读文件。
+ */
+function lastUserTextWide(transcriptPath: string, size: number): string | null {
+  try {
+    const windowBytes = Math.min(USER_TEXT_TAIL_BYTES, size)
+    const fd = openSync(transcriptPath, 'r')
+    let content: string
+    try {
+      const buf = Buffer.allocUnsafe(windowBytes)
+      readSync(fd, buf, 0, windowBytes, size - windowBytes)
+      content = buf.toString('utf8')
+    } finally {
+      closeSync(fd)
+    }
+    const lines = content.split('\n')
+    lines.shift() // 尾读首行可能截断为非法 JSON
+    return scanLastUserText(lines)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 逆扫 lines，返回第一条（正序最末）真实用户文本消息（清洗截断 60），无则 null。
+ * 判别：message.role==='user' 且 message.content 为 string（tool_result 的 content 是
+ * block 数组，天然排除）。scanTailFacts ⑤ 与 lastUserTextWide 共用本逻辑。
+ */
+function scanLastUserText(lines: string[]): string | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = (lines[i] ?? '').trim()
+    if (!line) continue
+    let obj: unknown
+    try {
+      obj = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (typeof obj !== 'object' || obj === null) continue
+    const record = obj as Record<string, unknown>
+    const msg = record['message']
+    if (typeof msg !== 'object' || msg === null) continue
+    const m = msg as Record<string, unknown>
+    if (m['role'] !== 'user' || typeof m['content'] !== 'string') continue
+    const t = toTitle(m['content'])
+    if (t !== null) return t
+  }
+  return null
+}
+
+/**
+ * 从尾向前扫描，五件事各自独立累积：某项已找到即不再覆盖（逆序首命中＝正序"最末"）。
  *   ① usedTokens：首条含 usage 记录（兼容 message.usage 与顶层 usage 两位置）的
  *      input + cache_read + cache_creation 之和（与 statusline.py used_tokens() 逐字同源）
  *   ② lastCwd：首条（逆序）cwd 为 string 的记录之 cwd
  *   ③ lastModel：首条（逆序）message.model 为 string 的记录之模型 id
  *   ④ lastActivity：首条（逆序）message.content 清洗非空的记录之可读文本（截断 120）
+ *   ⑤ lastUserText：首条（逆序）**真实用户文本消息**（message.role==='user' 且
+ *      message.content 为 string —— 与 tool_result 的判别：后者 content 是 block 数组）。
+ *      清洗后截断 60（session 名称真源，随新消息动态更新）。
  *
- * 早退门槛仅含前三事（usedTokens && lastCwd && lastModel）：lastActivity 尽力而为，
- * 不参与门槛 —— 某些会话尾部全是 tool_result / usage 记录时可读文本难得，若将其纳入
- * 门槛会迫使扫满整个 256KB 窗口甚至（理论上）死等，违背"窗口扫完即止"约束。
- * 前三事齐备即提前退出；lastActivity 在同一轮扫描中顺势提取，扫不到随窗口扫尽为 null。
+ * 早退门槛仅含前三事（usedTokens && lastCwd && lastModel）：lastActivity/lastUserText
+ * 尽力而为，不参与门槛 —— 会话尾部可能长时间无真实用户文本（全是 tool_result），
+ * 若将其纳入门槛会迫使扫满整个 256KB 窗口甚至死等，违背"窗口扫完即止"约束。
+ * 前三事齐备即提前退出；后两事在同一轮扫描中顺势提取，扫不到随窗口扫尽为 null。
  */
 function scanTailFacts(lines: string[]): TailFacts {
-  const facts: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null, lastActivity: null }
+  const facts: TailFacts = { usedTokens: 0, lastCwd: null, lastModel: null, lastActivity: null, lastUserText: null }
   let tokensFound = false
 
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -334,6 +393,21 @@ function scanTailFacts(lines: string[]): TailFacts {
         }
       }
     }
+
+    // ⑤ lastUserText（session 名称真源）：首条（逆序）真实用户文本消息。
+    //    判别：message.role==='user' 且 message.content 为 **string** —— tool_result 的
+    //    content 是 block 数组（type==='tool_result'），天然排除。清洗后截断 60。
+    //    256KB 窗口扫不到时由 tailFacts 用更大窗口兜底（见 lastUserTextWide）。
+    if (facts.lastUserText === null) {
+      const msg = record['message']
+      if (typeof msg === 'object' && msg !== null) {
+        const m = msg as Record<string, unknown>
+        if (m['role'] === 'user' && typeof m['content'] === 'string') {
+          const t = toTitle(m['content'])
+          if (t !== null) facts.lastUserText = t
+        }
+      }
+    }
   }
   return facts
 }
@@ -362,6 +436,29 @@ export function toActivity(text: unknown): string | null {
   const collapsed = t.replace(/\s+/g, ' ').trim()
   if (!collapsed) return null
   return collapsed.length > ACTIVITY_MAX ? `${collapsed.slice(0, ACTIVITY_MAX)}…` : collapsed
+}
+
+/** 会话名称标题截断长度（lastUserText，较 lastActivity 更短——卡片名称空间有限） */
+const TITLE_MAX = 60
+
+/**
+ * 会话名称清洗 + 截断（lastUserText 真源，toActivity 同源规则、更短截断）：
+ *   ① 整段剥除 `<system-reminder>` / `<local-command-caveat>`
+ *   ② 剥除斜杠命令 4 标签保留内部文本（同 toActivity）
+ *   ③ 折叠空白为单空格 → 单行（卡片单行展示）
+ *   ④ 超 TITLE_MAX 字符 → 截断 + "…"
+ * 清洗后为空返回 null（调用方跳过该记录继续逆扫）。
+ */
+function toTitle(text: unknown): string | null {
+  if (typeof text !== 'string') return null
+  let t = text.replace(
+    /<(?:system-reminder|local-command-caveat)>[\s\S]*?<\/(?:system-reminder|local-command-caveat)>/g,
+    ''
+  )
+  t = t.replace(/<\/?(?:command-name|command-message|command-args|local-command-stdout)>/g, '')
+  const collapsed = t.replace(/\s+/g, ' ').trim()
+  if (!collapsed) return null
+  return collapsed.length > TITLE_MAX ? `${collapsed.slice(0, TITLE_MAX)}…` : collapsed
 }
 
 /**
@@ -833,11 +930,11 @@ export class ClaudeCodeSessionScanner {
     // 审批匹配仍兼容 basename(cwd) 旧语义（approve.sh 主路径发 sessionId，name 不再参与）
     const cwdName = cwd ? basename(cwd) : null
 
-    // 显示名（name）= 终端窗口标题推导值（2026-08-08 应需求，见文件头 doc）：
-    //   与 ~/.bashrc 的 `\e]0;\u@\h: \w\a` 规则逐字同源 —— `user@host: cwd`。
-    //   cwd 为空（后台会话无真实目录）→ 仅 `user@host: ` 兜底。
-    //   宿主标识取一次（进程内不变），避免每轮扫描重复 syscall。
-    const name = `${TERMINAL_TITLE_USER}@${TERMINAL_TITLE_HOST}: ${cwd}`
+    // 显示名（name）= 最近一条真实用户文本消息（2026-08-10 应需求，见文件头 doc）：
+    //   tail.lastUserText（本地提取，零 token，随新消息动态更新）→ basename(cwd) 兜底。
+    //   无任何可读消息/目录 → 空串（前端显示占位）。尾读窗口内扫不到用户文本时
+    //   lastUserText 为 null（如长工具会话尾部全是 tool_result），此时用目录名兜底。
+    const name = tail.lastUserText !== null ? tail.lastUserText : cwdName ?? ''
 
     // 状态判定（v3.2 简化）：进程存活 → busy，否则 idle + memory=0
     const alive = existsSync(`/proc/${pid}`)

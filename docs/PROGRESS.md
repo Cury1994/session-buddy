@@ -931,3 +931,25 @@
 
 **收尾三件套**：① commit（claude-sessions.ts + services.ts + 本日志，见 git log）② 无孤儿（新实例健康在听 18456）③ 本日志 ✅
 **遗留**：历史 transcript 中的 `<synthetic>` 记录是数据源原始产物（Claude Code 行为），不清理；harness-monitor 不再捕获回填即可
+
+### 2026-08-10 13:43:57 ｜ 归档后修订 ｜ Session 名称改为「最近用户消息」动态标题 完成（commit 待补）
+
+**用户诉求**：界面上 session 名称应与"当前窗口名称"一致（如 `*API usage...`），核心目标是**通过名称判断大概在跑什么任务**；期望**动态变化**（针对最新对话总结题目）且**不消耗 API token**。
+
+**第一性原理调研（先验证可行性）**：
+- Wayland + GNOME 下读真实窗口标题**全部通道实测均不可行**：gnome-terminal 是 Wayland 原生（X11 xwininfo 不可见）、GNOME Shell `Introspect.GetWindows` AccessDenied、gnome-terminal DBus 只暴露 Exec/ChildExited 无标题属性、AT-SPI 无服务。用户看到的 `*API usage...` 是终端标签页标题（`*`=手动改标签标记），只存于合成器，应用不可读
+- 但 transcript 里的**真实用户文本消息**（message.content 为 string）天然反映任务内容：`/home/cury` 会话显示"你看下运行本地的hermes…"、本会话显示"界面上sessions的名称…"——**这就是"判断在跑什么任务"的可读真源**
+
+**实现（S~M 档，主对话直接开发 + 真实数据验收，零 token 本地方案）**：
+- `TailFacts` 增第五事 `lastUserText`（scanTailFacts 逆扫 ⑤）：取最近一条**真实用户文本消息**——判别 `message.role==='user' && typeof message.content === 'string'`（tool_result 的 content 是 block 数组，天然排除；历史 firstUserText 用 `record.type==='user'` 过滤会误吞 tool_result，本次用 content 类型判别更正确）
+- **宽窗兜底（关键）**：实测活跃会话最新用户消息可深达 **600KB+**（尾部被 tool_result 占满），256KB 尾窗扫不到 → 新增 `lastUserTextWide` 用 **2MB 独立窗口**专扫（`USER_TEXT_TAIL_BYTES=2097152`，仅缺失时触发，常规路径仍是单次 256KB 读零回归；2MB 尾读约 0.2ms 本机实测可忽略）
+- `toTitle` 恢复（M18 删除的清洗函数，60 字符截断；toActivity 同源规则）；删 `TERMINAL_TITLE_USER/HOST` 及 userInfo/hostname import（孤儿）
+- 名称合成：`tail.lastUserText → basename(cwd) 兜底`（替换 M18 的 `user@host: cwd`）
+
+**验收全绿（真实数据 + 隔离测试）**：
+- build 三入口 + 双 typecheck 零错误
+- 隔离实例 3 场景：① 尾窗内用户消息命中（"修复审批超时问题"）② 600KB tool_result 挤出 → **宽窗兜底命中**（"界面上名称要对齐终端窗口"）③ 无用户文本 → basename(cwd) 降级（"cury"）
+- 真实实例重启（pid 1136544）后 `/api/sessions`：本会话名称 = "界面上sessions的名称应该和当前窗口名称一致，比如当前窗口名称是*API usage..."（= 当前任务，动态）；另一会话 = "你的会话ID是什么"（该会话最近用户消息）
+
+**收尾三件套**：① commit（claude-sessions.ts，见 git log）② 无孤儿（新实例健康在听 18456）③ 本日志 ✅
+**遗留**：DESIGN.md §6.8.2a 命名链描述待同步（M18 改 user@host 时的回写也需复核）；长 idle 会话名称反映最近任务、非首条——符合"动态"诉求，用户接受
