@@ -1013,3 +1013,22 @@
 
 **收尾三件套**：① commit 134a1e3（3 文件 +33/−4）✅ ② 隔离实例精确 pid 清理、18750/18751 释放、/tmp/hm-m191-home+脚本全删、用户实例 18456 健康在听（未触碰）✅ ③ 本日志 ✅
 **遗留**：用户实例重启后载新构建生效（M19.1 三项均为渲染端 + 主进程改动）；DESIGN.md 待同步（同 M19 遗留）
+
+### 2026-08-10 14:33:33 ｜ 归档后修订 ｜ M20 移除 SessionCard 关闭/打开终端按钮 + 后端 IPC 链路 完成（commit 7cbca30）
+
+**用户诉求**：去掉 close terminal 和 open terminal 两个按钮。
+
+**方案（AskUserQuestion 用户拍板「按钮 + 后端链路全删」）**：两个按钮是跳转终端（FR-2.7）与关闭终端（F3）的**唯一 UI 入口**，去掉后后端链路无消费方，连根删除不留死代码（同 M18 删审批历史口径）。
+
+**改动（6 文件 +8/−504）**：
+- **SessionCard.tsx**（−95）：删 header-actions 两个按钮（close terminal / open terminal）+ 孤儿 state（confirmTerm/jumpHint/jumpTimerRef）+ 函数（jump/terminate/showHint）+ 清理 effect + micro-row jumpHint span + JUMP_HINT_MS 常量；import 去 useRef；文件头结构注释更新（Header 只留 ⚡ 自动 pill）
+- **globals.css**（−47）：删 .mini-icon-btn 整段（含 danger/confirm 态）+ .jump-hint 段（均仅服务被删按钮）
+- **preload/index.ts**（−17）：删 jumpToTerminal / terminateSession 两个方法
+- **electron.d.ts**（−4）：删对应两声明
+- **ipc-handlers.ts**（−95）：删 session:jump-terminal / session:terminate 两 handler + openTerminal（回退链 kgx→gnome-terminal→xterm）+ commandExists（仅被 openTerminal 用）+ 文件头通道一览更新；import 清 spawn/accessSync/fsConstants/statSync/closeTerminalOfPid/focusExistingTerminal
+- **claude-sessions.ts**（−254）：删 closeTerminalOfPid / TERMINAL_COMMS / findTerminalAncestor / focusExistingTerminal 四个函数 + 文件头两大段注释（改为一句移除说明）；import 清 spawnSync/readlinkSync（readdirSync/basename/execSync 仍被 findTranscript/审批匹配/pageSize 用，保留）
+
+**验证全绿**：npm run build 三入口 + 双 typecheck 零错误 ✅；新构建产物 grep 无 jumpToTerminal/terminateSession/Close terminal/Open Terminal/mini-icon-btn/jump-hint 残留 ✅
+
+**收尾三件套**：① commit 7cbca30 ✅ ② 无孤儿（用户实例 18456 pid 1163657 健康在听，全程未触碰）✅ ③ 本日志 ✅
+**遗留**：用户实例重启后载新构建生效（渲染端 + 主进程改动）；DESIGN.md 待同步（§6.11 invoke 通道表去两行、§6.13/§6.14 hook 描述、§7 preload、REQUIREMENTS FR-2.7/FR-2.8 需求移除或标记）——注意 FR-2.7/2.8 原为 M11 验收项，去掉入口后这两条需求实质失效，是否从 REQUIREMENTS 降级为延后需用户定夺
