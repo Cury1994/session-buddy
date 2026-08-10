@@ -153,7 +153,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
    */
   ipcMain.handle('sessions:detail', (_event, sessionId: unknown): SessionDetail => {
     if (typeof sessionId !== 'string' || sessionId === '') {
-      return { tasks: [], agents: [] }
+      return { tasks: [], agents: [], messages: [] }
     }
     return deps.detailScanner.getDetail(sessionId)
   })

@@ -264,10 +264,20 @@ function SessionCard({ session, approval, onOpenDetail }: SessionCardProps): Rea
           <span className="mini-badge model-badge">Tool: {session.tool}</span>
         </div>
 
-        {/* M16 F1 当前动作行：tool=蓝色 spinner 加载态 / waiting=黄色暂停态 / null 不渲染 */}
+        {/* M16 F1 当前动作行：tool=蓝 spinner 加载态 / agent=紫 spinner（M19）/ waiting=黄暂停态 / null 不渲染 */}
         {session.currentAction !== null && session.currentAction.kind === 'tool' && (
           <div className="action-row">
             <span className="action-spinner" aria-hidden="true" />
+            <span className="action-label">正在运行</span>
+            <span className="action-cmd" title={session.currentAction.label}>
+              {session.currentAction.label}
+            </span>
+          </div>
+        )}
+        {session.currentAction !== null && session.currentAction.kind === 'agent' && (
+          <div className="action-row agent">
+            <span className="action-spinner" aria-hidden="true" />
+            <span className="action-agent-badge">Agent</span>
             <span className="action-label">正在运行</span>
             <span className="action-cmd" title={session.currentAction.label}>
               {session.currentAction.label}

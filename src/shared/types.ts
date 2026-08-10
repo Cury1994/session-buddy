@@ -320,10 +320,14 @@ export interface SessionInfo {
   /**
    * M16 F1：当前动作（增量细节扫描器从 transcript 末条记录推导，非 tailFacts）。
    *   { kind:'tool',    label:"Bash: npm run build" } —— 末条为 tool_use 且无对应 tool_result（正在执行某工具）
+   *   { kind:'agent',   label:"Plan · 设计详情页" }   —— 存在运行中的子 Agent（取最近派发者的类型+描述）
    *   { kind:'waiting', label:"等待用户输入" }        —— 末条为 assistant 文本/已无 pending 工具（等你输入）
    *   null —— 无法确定（transcript 缺失/空）
    */
-  currentAction: { kind: 'tool' | 'waiting'; label: string } | null
+  currentAction:
+    | { kind: 'tool' | 'agent'; label: string }
+    | { kind: 'waiting'; label: string }
+    | null
   /**
    * M17: 该会话最近一次成功 API 调用的实际后端模型名（transcript 末条 usage 的
    * message.model；无 usage 记录为 null）。auto-population 触发用。
@@ -349,10 +353,21 @@ export interface SubAgentRef {
 }
 
 /**
+ * M19 动态消息：详情页近 3 条混排尾流的一项（USER 对话 / TOOL 操作 / AGENT 派发）。
+ * kind 决定展示的 who 标签与配色（终端风）：user 红 / assistant 蓝 / tool 绿 / agent 紫。
+ */
+export interface SessionFeedItem {
+  kind: 'user' | 'assistant' | 'tool' | 'agent'
+  text: string // 清洗后单行文本（截断 120，语义同 lastActivity）
+}
+
+/**
  * 展开卡时按需拉取的详情载荷（M16，sessions:detail IPC）。
- * tasks/agents 均为全量（M17.1：messages 尾流已移除，ctx% 改由 lastModel 上下文长度驱动）。
+ * tasks/agents 均为全量；M19 新增 messages = 近 3 条动态消息尾流
+ * （M17.1 曾移除的 50 条全量 messages 尾流，本次以 3 条轻量尾流回归）。
  */
 export interface SessionDetail {
   tasks: SessionTask[]
   agents: SubAgentRef[]
+  messages: SessionFeedItem[]
 }

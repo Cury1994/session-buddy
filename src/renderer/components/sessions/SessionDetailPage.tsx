@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react'
 
 import type { SessionDetail } from '../../../shared/types'
+import ActivityFeed from './ActivityFeed'
 import AgentPanel from './AgentPanel'
 import TaskList from './TaskList'
 
@@ -139,6 +140,9 @@ function SessionDetailPage({
             </div>
             <div className="card">
               <AgentPanel agents={state.detail.agents} />
+            </div>
+            <div className="card">
+              <ActivityFeed items={state.detail.messages} />
             </div>
           </>
         )
