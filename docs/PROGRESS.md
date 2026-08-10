@@ -932,7 +932,7 @@
 **收尾三件套**：① commit（claude-sessions.ts + services.ts + 本日志，见 git log）② 无孤儿（新实例健康在听 18456）③ 本日志 ✅
 **遗留**：历史 transcript 中的 `<synthetic>` 记录是数据源原始产物（Claude Code 行为），不清理；harness-monitor 不再捕获回填即可
 
-### 2026-08-10 13:43:57 ｜ 归档后修订 ｜ Session 名称改为「最近用户消息」动态标题 完成（commit 待补）
+### 2026-08-10 13:43:57 ｜ 归档后修订 ｜ Session 名称改为「最近用户消息」动态标题 完成（commit a6a048d）
 
 **用户诉求**：界面上 session 名称应与"当前窗口名称"一致（如 `*API usage...`），核心目标是**通过名称判断大概在跑什么任务**；期望**动态变化**（针对最新对话总结题目）且**不消耗 API token**。
 
