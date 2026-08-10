@@ -97,6 +97,12 @@ interface SessionCache {
   /** 已发未回的 TaskCreate：tool_use id → subject（真实编号要等 tool_result 才知） */
   pendingTaskCreates: Map<string, string>
   /**
+   * M19.1 任务清单轮次：当前轮已见过的最大真实任务编号（tool_result "Task #N"）。
+   * 用于识别「新任务清单」——TaskCreate 编号回退（新编号 ≤ 当前最大）即新一轮开始，
+   * 清空旧任务。compact 重写不清零（重建解析依赖它判断回退），新缓存创建才为 0。
+   */
+  maxTaskNum: number
+  /**
    * M19 动态消息尾流：近 FEED_MAX 条（环形缓冲，超限从头挤出）。
    * 数组按真实插入序 = 展示序（近 3 条操作/对话历史）；正在执行态由
    * currentAction 承担，不混入 feed。
@@ -175,6 +181,7 @@ export class SessionDetailScanner {
         lastMessageRole: null,
         pendingTools: new Map(),
         pendingTaskCreates: new Map(),
+        maxTaskNum: 0,
         feed: [],
         knownSize: 0,
         knownIno: 0
@@ -183,6 +190,8 @@ export class SessionDetailScanner {
     }
 
     // compact 重写 / 文件替换 → 全量重建（knownIno===0 的首次扫描不走此分支，start=0 天然全量）
+    // M19.1：maxTaskNum 保留不清零——重建后从 0 重新解析残留旧任务时，TaskCreate 编号回退
+    // （新编号 ≤ maxTaskNum）即识别为新一轮任务清单，清空旧任务（见 applyTaskCreate）。
     const rewritten = size < c.knownSize || (c.knownIno !== 0 && ino !== c.knownIno)
     if (rewritten) {
       c.tasks.clear()
@@ -418,6 +427,13 @@ export class SessionDetailScanner {
       // （TaskUpdate.input.taskId 引用的即该编号）；解析失败降级用 tool_use id
       const m = /Task #(\d+) created/.exec(extractResultText(block['content']))
       const taskId = m !== null && m[1] !== undefined ? m[1] : tuid
+      // M19.1 新任务清单识别：真实编号回退（新编号 ≤ 当前轮最大）→ 新一轮任务开始，
+      // 清空旧任务（只留本轮）。典型触发：/clear、/compact 后编号回到 1。
+      const num = Number.parseInt(taskId, 10)
+      if (Number.isFinite(num)) {
+        if (c.maxTaskNum > 0 && num <= c.maxTaskNum) c.tasks.clear()
+        if (num > c.maxTaskNum) c.maxTaskNum = num
+      }
       c.tasks.set(taskId, { taskId, content: subject, status: 'pending' })
     }
   }

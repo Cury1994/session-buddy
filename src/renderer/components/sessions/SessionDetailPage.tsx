@@ -135,14 +135,15 @@ function SessionDetailPage({
       case 'ok':
         return (
           <>
+            {/* M19.1 动态消息置顶：最近的会话动态优先展示 */}
+            <div className="card">
+              <ActivityFeed items={state.detail.messages} />
+            </div>
             <div className="card">
               <TaskList tasks={state.detail.tasks} />
             </div>
             <div className="card">
               <AgentPanel agents={state.detail.agents} />
-            </div>
-            <div className="card">
-              <ActivityFeed items={state.detail.messages} />
             </div>
           </>
         )

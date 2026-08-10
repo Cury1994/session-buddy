@@ -10,6 +10,8 @@
  * 类名全字面量（Tailwind 3.4 剥离坑，见 TaskList.tsx 头注）。
  */
 
+import { useEffect, useRef } from 'react'
+
 import type { SessionFeedItem } from '../../../shared/types'
 
 /** kind → who 标签（深色终端风，v1 MessageTail 同源） */
@@ -29,6 +31,16 @@ const FEED_ROW_CLASS: Record<SessionFeedItem['kind'], string> = {
 }
 
 function ActivityFeed({ items }: { items: SessionFeedItem[] }): React.JSX.Element {
+  const logRef = useRef<HTMLDivElement>(null)
+
+  // M19.1 默认定位最新 + 新消息自动滚动到底部（.msg-log 内部滚动容器）：
+  // 挂载时滚到底（详情打开即见最新动态），items 更新（3s 推送/详情重拉）时再次滚底，
+  // 保证最新一条动态始终在可视区（"动态滑动到最佳展示位置"）。
+  useEffect(() => {
+    const el = logRef.current
+    if (el !== null) el.scrollTop = el.scrollHeight
+  }, [items])
+
   if (items.length === 0) {
     return (
       <div className="detail-sec">
@@ -51,7 +63,7 @@ function ActivityFeed({ items }: { items: SessionFeedItem[] }): React.JSX.Elemen
         </span>
         动态消息
       </div>
-      <div className="msg-log">
+      <div className="msg-log" ref={logRef}>
         {items.map((m, i) => (
           <div key={i} className={FEED_ROW_CLASS[m.kind]}>
             <span className="msg-who">{FEED_WHO[m.kind]}</span>
