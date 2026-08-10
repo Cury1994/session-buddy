@@ -985,3 +985,31 @@
 
 **收尾三件套**：① commit 12e54e5（8 文件 +670/−13）✅ ② 隔离实例精确 pid 清理、18700/18701 释放、/tmp/hm-m19-home+脚本+截图全删、用户实例 18456（pid 1136544）全程未触碰健康在听 ✅ ③ 本日志 ✅
 **遗留**：DESIGN.md §6.8 待同步（currentAction agent 态 + messages 尾流回归，此前 M17.1 的"messages 已移除"描述需修订）；用户实例重启后载新构建生效（卡片 agent 态 + 详情动态消息均为渲染端 + 主进程改动）；真实运行中验证 agent 态观感（本次用合成会话验证，真实 Agent 派发需实例重启后自然观察）
+
+### 2026-08-10 14:22:51 ｜ 归档后修订 ｜ M19.1 任务清单清理 + 动态消息置顶/自动滚动 完成（commit 134a1e3）
+
+**用户诉求**（三项）：① 新的任务清单出现 → 旧任务数据清掉 ② 详情动态消息默认定位最新（新消息出现自动滑动到最佳展示位置）③ 动态消息在详情中置顶。
+
+**需求澄清（AskUserQuestion 用户拍板）**：「新任务清单」触发信号 = **两者都要**——transcript 重写（/clear、/compact）+ 新任务编号回退都算新一轮。
+
+**关键调研（真实 transcript）**：TaskCreate 编号在单个 transcript 内**单调递增不重置**（1→2→3→…→14），/clear 或 /compact 后编号回到 1。故「新 TaskCreate 编号 ≤ 已见最大编号」= 新一轮任务清单的可靠信号。
+
+**实现（S~M 档主对话直接开发 + 单测 + 隔离 GUI E2E）**：
+- **session-detail.ts**：
+  - SessionCache 增 `maxTaskNum`（当前轮最大真实任务编号）；**compact 重写不清零**（保留识别回退的依据），新缓存创建才为 0
+  - applyToolResult 配对 TaskCreate 时：`num ≤ maxTaskNum` → `c.tasks.clear()`（新一轮清空旧任务）+ 更新 maxTaskNum。覆盖两种触发：/clear、/compact（重写后残留旧任务编号回退 → 清空，只留新轮）
+- **SessionDetailPage.tsx**：详情页板块顺序调整——动态消息置顶（原在最后），任务进度/子 Agent 后移
+- **ActivityFeed.tsx**：`logRef` + useEffect `[items]`——挂载滚到底（默认定位最新）+ items 更新（3s 推送/详情重拉）再滚底，`.msg-log`（max-height:150px 内部滚动）最新一条始终在可视区
+
+**验收全绿**：
+- build 三入口 + 双 typecheck 零错误
+- **单测 out/m19-test 20/20 PASS**（新增 T6/T7）：
+  - T6：首轮 3 任务累积 → TaskUpdate 生效 → 编号回退 1 → 旧任务清空只留新任务 ✓
+  - T7：首轮 5 任务 → compact 重写（残留旧任务编号 1 + 新轮编号 1）→ maxTaskNum 保留识别回退 → 旧任务残留清空只留新轮 ✓
+- **隔离实例 GUI E2E**（HOME=/tmp/hm-m191-home + port 18750 + CDP 18751，合成会话含首轮 3 任务 + 多轮动态消息）：
+  - ① 详情页板块顺序 `["◎动态消息","✓任务进度","◈子Agent协作"]`（置顶生效）✓
+  - ② 追加新任务（编号回退 1）→ 任务清单 3→1 只剩「新一轮任务甲」（清旧生效）✓
+  - ③ 追加 20 条长消息触发 `.msg-log` 溢出（179>150）→ `atBottom:true` + `scrollTop:29` 最新条贴底可视（自动滚动生效）✓
+
+**收尾三件套**：① commit 134a1e3（3 文件 +33/−4）✅ ② 隔离实例精确 pid 清理、18750/18751 释放、/tmp/hm-m191-home+脚本全删、用户实例 18456 健康在听（未触碰）✅ ③ 本日志 ✅
+**遗留**：用户实例重启后载新构建生效（M19.1 三项均为渲染端 + 主进程改动）；DESIGN.md 待同步（同 M19 遗留）
