@@ -5,9 +5,7 @@
  * 避免各端字段名漂移。各类型随对应模块落地逐步追加（§6.12 为整体规划）。
  *
  * M2 引入：AppConfig 及其嵌套子接口（DESIGN §6.1 / §8.1）。
- * M3 引入：UsageRecord / BalanceDailySnapshot / BalanceInfo（§6.12）。
- *   （ApprovalRecord 已随审批历史移除，2026-08-08；approval_history 表与 recordApproval
- *    落库保留，仅删读端与前端展示）
+ * M3 引入：UsageRecord / BalanceDailySnapshot / ApprovalRecord / BalanceInfo（§6.12）。
  * M5 引入：ApprovalPayload / PendingApproval / ApprovalResponse / SessionStatus / SessionInfo（§6.12 / §5.3 / §6.8）。
  * M12 引入：ApprovalPayload 增 toolInput / permissionMode，tool/command 注释勘误（§6.12 / §6.14 审批镜像轮）。
  * M13.1 引入：usage_sources 可插拔泛化（BillingMode / UsageSourceKind / HttpJsonSource / BssSource /
@@ -208,20 +206,12 @@ export interface AppConfig {
   context_lengths: Record<string, ContextEntry>
 }
 
-/** M17: 模型上下文长度来源（决定是否可被自动更新覆盖；registry 同时为"只读"行，见设置页） */
+/** M17: 模型上下文长度来源（决定是否可被自动更新覆盖） */
 export type ContextSource = 'manual' | 'registry' | 'heuristic'
-/** M17.2: 上下文长度显示单位（K=千 / M=百万）。len 恒为原始 token 数，unit 仅为展示偏好 */
-export type ContextUnit = 'M' | 'K'
 /** M17: 模型上下文长度条目（len = max context tokens，ctx% 分母） */
 export interface ContextEntry {
   len: number
   source: ContextSource
-  /**
-   * M17.2: 显示单位偏好。仅可编辑行（manual/heuristic）用户主动选择时持久化；
-   * registry 行与未选单位行缺省由展示端按 len 自动推导（≥1M → M，否则 K）。
-   * len 语义不受 unit 影响（恒为原始 token 数）。
-   */
-  unit?: ContextUnit
 }
 
 // ─── API 用量 / 审批历史（DESIGN §6.12，db INTEGER/REAL → TS 映射） ───
@@ -266,6 +256,18 @@ export interface ConsumptionSummary {
   lastRequestAt: string | null // 最近一次请求时间，字面展示
 }
 
+/** approval_history 表行（§6.2）→ ApprovalHistory 渲染；allowed INTEGER → boolean */
+export interface ApprovalRecord {
+  id: number
+  harness: string
+  sessionName: string | null
+  command: string
+  cwd: string | null
+  tool: string
+  allowed: boolean
+  timestamp: string // 本地时间（同 UsageRecord.timestamp 约定）
+}
+
 // ─── 审批流程（DESIGN §6.12 / §5.3 / §6.6） ───
 
 /** approve.sh POST /approve 的请求体 / IPC approval:pending 的负载（§5.3 / §6.12） */
@@ -305,7 +307,7 @@ export type SessionStatus = 'busy' | 'idle'
 export interface SessionInfo {
   sessionId: string // Claude session 唯一 id（截断 256，§6.8.2b）
   pid: number
-  name: string // 显示名 = 终端窗口标题推导值 `user@host: cwd`（与 bashrc 标题规则同源；见 claude-sessions.ts 头注）
+  name: string // 显示名：transcript 首条用户消息 → json name → cwd basename → 'unknown'（命名链见 claude-sessions.ts 头注）
   status: SessionStatus
   tool: string // harness 身份，固定 "Claude Code"（非逐会话当前工具；审批匹配不依赖此字段）
   apiProvider: string // API 实际返回的模型（transcript 尾读 message.model → settings 解析降级，§6.8.2f）

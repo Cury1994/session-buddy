@@ -14,6 +14,7 @@
 import type {
   AppConfig,
   ApprovalPayload,
+  ApprovalRecord,
   BalanceDailySnapshot,
   DeepPartial,
   PendingApproval,
@@ -31,6 +32,7 @@ export interface ElectronAPI {
   getSessionsData(): Promise<SessionInfo[]>
   /** 会话展开详情（M16，sessions:detail → 增量细节扫描器缓存：任务/子Agent/消息尾流） */
   getSessionDetail(sessionId: string): Promise<SessionDetail>
+  getApprovalHistory(): Promise<ApprovalRecord[]>
   getConfig(): Promise<AppConfig>
   saveConfig(partial: DeepPartial<AppConfig>): Promise<AppConfig>
   manualRefresh(): Promise<void>

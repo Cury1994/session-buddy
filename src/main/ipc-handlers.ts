@@ -30,6 +30,7 @@ import type { AppConfig, ApprovalResponse, SessionDetail, UsageCard } from '../s
  *
  * 通道一览（§6.11）：
  *   invoke: usage:get / usage:history / sessions:get / sessions:detail（M16 B1）/
+ *           history:get /
  *           config:get / config:save / app:refresh / app:quit /
  *           session:jump-terminal / session:terminate / approval:respond /
  *           approval:get（P1-3 挂载补拉 seed）/ app:toggle-pin /
@@ -156,6 +157,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       return { tasks: [], agents: [] }
     }
     return deps.detailScanner.getDetail(sessionId)
+  })
+
+  /** 审批历史（limit 缺省 → 全部，滚动展示；传正数则限最近 N 条） */
+  ipcMain.handle('history:get', (_event, limit?: number) => {
+    const safeLimit =
+      typeof limit === 'number' && Number.isInteger(limit) && limit > 0 ? limit : undefined
+    return db.getRecentApprovals(safeLimit)
   })
 
   // ─── 配置 ───

@@ -4,6 +4,7 @@ import type { IpcRendererEvent } from 'electron'
 import type {
   AppConfig,
   ApprovalPayload,
+  ApprovalRecord,
   BalanceDailySnapshot,
   DeepPartial,
   PendingApproval,
@@ -53,6 +54,9 @@ const api = {
   /** 会话展开详情（M16，sessions:detail → 增量细节扫描器缓存：任务/子Agent/消息尾流） */
   getSessionDetail: (sessionId: string): Promise<SessionDetail> =>
     ipcRenderer.invoke('sessions:detail', sessionId),
+
+  /** 全部审批历史（history:get → db.getRecentApprovals，无 limit 即全部） */
+  getApprovalHistory: (): Promise<ApprovalRecord[]> => ipcRenderer.invoke('history:get'),
 
   /** 当前生效配置（config:get → loadConfig） */
   getConfig: (): Promise<AppConfig> => ipcRenderer.invoke('config:get'),
