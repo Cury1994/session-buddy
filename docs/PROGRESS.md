@@ -953,3 +953,35 @@
 
 **收尾三件套**：① commit（claude-sessions.ts，见 git log）② 无孤儿（新实例健康在听 18456）③ 本日志 ✅
 **遗留**：DESIGN.md §6.8.2a 命名链描述待同步（M18 改 user@host 时的回写也需复核）；长 idle 会话名称反映最近任务、非首条——符合"动态"诉求，用户接受
+
+### 2026-08-10 14:09:15 ｜ 归档后修订 ｜ M19 卡片执行动作 + 详情动态消息 完成（commit 12e54e5）
+
+**用户诉求**：① 会话卡片展示"正在执行的动作"（更直观）② 详情页展示**近 3 条**动态消息（对话 + 操作）。
+
+**原型确认**：docs/prototype-sessions-v3.html（v3 相对 v2：① 卡片动作行新增 **agent 态**——紫色「Agent」徽章 + spinner，子 Agent 运行中展示"正在运行 Plan · 设计详情页"而非空转 ② 详情页新增「动态消息」板块，深色终端风近 3 条，USER 红 / CLAUDE 蓝 / TOOL 绿 / AGENT 紫）。用户确认"可以这样"。
+
+**数据源现状核实**：
+- ① 卡片执行动作**已有基础**：`session.currentAction`（M16）只推导 tool/waiting 两态。缺口是**agent 态**——Agent 派发本身算 pending tool_use，显示成裸 "Agent" 无描述。
+- ② 详情动态消息**数据源不存在**：M17.1 把 messages 从 SessionDetail 契约整个删除（当时是 50 条全量对话）。本次加近 3 条轻量尾流，体积小一个数量级。
+
+**实现（S~M 档主对话直接开发 + 独立单测 + 隔离实例 GUI E2E）**：
+- **types.ts**：`currentAction` 增 `{kind:'agent', label}` 态；新增 `SessionFeedItem`（kind: user/assistant/tool/agent + text）；`SessionDetail` 增 `messages: SessionFeedItem[]`
+- **session-detail.ts**：
+  - 动态消息尾流 `feed: SessionFeedItem[]` 环形缓冲（FEED_MAX=3），数组按真实插入序 = 展示序；user 文本（无 tool_result 块）/ assistant 文本 / tool_use 操作行（Bash/Read 摘要，其余工具名）/ Agent 派发（`<type> · <description>`）混排入流；compact 重写全量重建时清空复位
+  - **元工具（TaskCreate/TaskUpdate）不产生操作行**（无用户可见动作），但仍是 pending（currentAction tool 态不受影响）
+  - **Agent 不再进 pendingTools**（否则显示裸 "Agent" 遮住 agent 态；tool_result 到达时 delete 不存在键无害）
+  - `getCurrentAction` 三态扩展：① pending tool_use → tool ② 否则 running 子 Agent（取最近派发者 type+description）→ agent ③ 否则 assistant 收尾 → waiting ④ null
+- **ipc-handlers.ts**：sessions:detail 空载荷补 messages:[]（typecheck 必改）
+- **ActivityFeed.tsx 新建**：详情页「动态消息」板块，复用 globals.css 孤儿 `.msg-*` 类（M17.1 删 MessageTail 后遗留），补 tool 绿 / agent 紫 who 配色
+- **SessionCard.tsx**：action-row 增 agent 态分支（紫色徽章 + spinner，同 tool 布局）
+- **SessionDetailPage.tsx**：ok 态追加 ActivityFeed 板块
+- **globals.css**：`.action-row.agent` / `.action-agent-badge` + `.msg-line.tool` / `.msg-line.agent` 配色
+
+**验收全绿**：
+- build 三入口 + 双 typecheck 零错误（含 m19-test 独立编译）
+- **单测 out/m19-test/test.js 16/16 PASS**：环形 3 条混排/agent 派发→currentAction agent 态/Agent result 后 null（lastMessageRole=user，M17 语义）/pending tool 优先于 agent/Bash 摘要/无 description 仅类型名/元工具不入流/TaskCreate 仍驱动 tool 态/compact 复位/键集含 messages/空载荷
+- **真实数据只读验收**：本机 3 个真实会话 messages 尾流正常（tool/assistant 混排近 3 条）、currentAction 正常、无 running agent 时无 agent 态
+- **隔离实例 GUI E2E**（HOME=/tmp/hm-m19-home + port 18700 + CDP 18701，合成会话含真实 pid + Bash/Agent 派发 transcript）：卡片 `action-row agent` + "Agent" 徽章 + "正在运行 Plan · 设计动态消息组件" ✓ 详情页动态消息 3 条（TOOL Bash / AGENT Plan / CLAUDE 已派发）✓ 三板块齐全 ✓
+
+**收尾三件套**：① commit 12e54e5（8 文件 +670/−13）✅ ② 隔离实例精确 pid 清理、18700/18701 释放、/tmp/hm-m19-home+脚本+截图全删、用户实例 18456（pid 1136544）全程未触碰健康在听 ✅ ③ 本日志 ✅
+**遗留**：DESIGN.md §6.8 待同步（currentAction agent 态 + messages 尾流回归，此前 M17.1 的"messages 已移除"描述需修订）；用户实例重启后载新构建生效（卡片 agent 态 + 详情动态消息均为渲染端 + 主进程改动）；真实运行中验证 agent 态观感（本次用合成会话验证，真实 Agent 派发需实例重启后自然观察）

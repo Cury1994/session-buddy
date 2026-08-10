@@ -11,7 +11,7 @@ import type {
 } from '../shared/types'
 
 /**
- * M16 B1 — 会话细节增量扫描器（展开详情区：任务清单 / 子 Agent / currentAction 推导；M17.1 起 messages 尾流已移除）
+ * M16 B1 — 会话细节增量扫描器（展开详情区：任务清单 / 子 Agent / currentAction 推导；M17.1 曾移除 messages 尾流，M19 以近 3 条动态消息轻量回归）
  *
  * 每会话维护一份增量缓存，`ClaudeCodeSessionScanner.discoverSessions` 每轮（3s）对每个活跃
  * 会话调一次 `scan()`：
@@ -52,10 +52,10 @@ import type {
  *   复用 .msg-* 孤儿类（globals.css 深色终端风，M17.1 删 MessageTail 后遗留）。
  *   全量重建（compact/替换）时清空缓冲，从 0 重新累积。
  *
- * ─── 末条对话角色（M17.1 起取代 messages 尾流，waiting 推导用）───
+ * ─── 末条对话角色（M17.1 起取代 50 条 messages 全量尾流，waiting 推导用）───
  *   每条 type==='user'|'assistant' 记录把 lastMessageRole 更新为该 type（纯 tool_result
- *   回传记录同样算 user——"最后发言方"语义）。消息文本本身不再保留（M17.1：messages
- *   尾流自 SessionDetail 契约移除，渲染端不再消费）。
+ *   回传记录同样算 user——"最后发言方"语义）。完整消息文本不保留（M19 的动态消息尾流
+ *   只留近 3 条清洗后摘要，见上）。
  *   **用户新文本消息（不含 tool_result 块）= 新一轮人工输入 → 清空 pending 工具**
  *   （用户打断/Esc 后未回 tool_result 的陈旧 pending 不应再驱动 currentAction）。
  *
@@ -327,9 +327,9 @@ export class SessionDetailScanner {
       }
     }
 
-    // 可读文本清洗（复用 claude-sessions 的清洗链）：M17.1 起消息不再入缓冲（messages
-    // 尾流自契约移除），但「用户新文本（不含 tool_result 块）= 新一轮人工输入 → 清除陈旧
-    // pending（打断/Esc 语义）」保留。
+    // 可读文本清洗（复用 claude-sessions 的清洗链）：M17.1 起完整消息不再入缓冲，
+    // 但「用户新文本（不含 tool_result 块）= 新一轮人工输入 → 清除陈旧 pending
+    // （打断/Esc 语义）」保留。
     const rawText = extractContentText(content)
     const text = rawText !== null ? toActivity(rawText) : null
     if (text !== null && type === 'user' && !sawToolResult) c.pendingTools.clear()
