@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# harness-monitor — Claude Code PreToolUse 审批钩子（DESIGN §6.13 / TASKS §15 M12）
+# SessionBuddy — Claude Code PreToolUse 审批钩子（DESIGN §6.13 / TASKS §15 M12）
 #
 # 审批镜像轮终态：matcher 空串 = 匹配所有工具。本脚本是**全工具薄中继**——
 # 对"永不询问"工具（Glob/Grep/LS/Task/TodoWrite）走快速通道立即放行，其余工具
@@ -74,7 +74,7 @@ curl_status=$?
 
 # server 未启动 / 超时 / 网络错误 → fail-open 放行（监控不应成为开发的硬阻塞）。
 if [[ "${curl_status}" -ne 0 ]]; then
-  echo "harness-monitor 未运行或不可达，放行 ${tool} 调用" >&2
+  echo "SessionBuddy 未运行或不可达，放行 ${tool} 调用" >&2
   exit 0
 fi
 
@@ -91,16 +91,16 @@ if [[ "${action}" == "passthrough" ]]; then
 elif [[ "${allowed}" == "true" ]]; then
   # 用户在工具批准 → 输出权限 JSON 压制终端原生二问（§6.13.4 末行 printf 逐字照抄）。
   # JSON 解析失败时引擎降级为正常流程（终端再问一次，无害）。
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Approved in harness-monitor"}}\n'
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Approved in SessionBuddy"}}\n'
   exit 0
 elif [[ "${allowed}" == "false" ]]; then
   # 显式 allowed:false（拒绝 / 超时 auto-deny）→ exit 2 拦截（stderr 回传 Claude）。
-  echo "harness-monitor 已拒绝: ${tool} 调用" >&2
+  echo "SessionBuddy 已拒绝: ${tool} 调用" >&2
   exit 2
 else
   # 异常 / 无法解析的响应（action 与 allowed 均空，如 500 HTML / 响应截断）→ fail-open 放行。
   # fail-open 回归修复（复核整改）：拦截仅限显式 allowed:false；垃圾响应不得误杀工作流
   # —— "宁可漏审，不可误杀"。
-  echo "harness-monitor 异常响应，放行 ${tool} 调用" >&2
+  echo "SessionBuddy 异常响应，放行 ${tool} 调用" >&2
   exit 0
 fi

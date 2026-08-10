@@ -1053,3 +1053,32 @@
 
 **收尾三件套**：① commit 1a3d51b（5 文件 +10/−10）✅ ② 隔离实例精确 pid 清理、/tmp/hm-sb-test-home 全删、用户实例 18456 健康在听（未触碰）✅ ③ 本日志 ✅
 **遗留**：用户实例重启后载新构建生效（渲染端 + 主进程改动）；docs/ 原型 html 与 CLAUDE.md 内的历史显示名属快照/文档，未批量替换（保持历史可溯）
+
+### 2026-08-10 15:45:23 ｜ 归档后修订 ｜ macOS 支持 + GitHub 发布就绪（commit 1ccc3fe + approve.sh 显示名）
+
+**用户诉求**：项目发布到 GitHub（仓库名 session-buddy，ISC 许可证），同时支持 macOS 安装。用户无 Mac 测试设备，所有 macOS 改动标注「实验性，未经 macOS 实测」。
+
+**macOS 适配（轨道 B，3 处代码级改动）**：
+- `claude-sessions.ts` — `/proc` 三处替代：① PID 存活 `existsSync(/proc/{pid})` → 新增 `isPidAlive()`（darwin 走 `process.kill(pid, 0)`）；② 进程内存 `readMemoryMB()` darwin 走 `ps -o rss=`（KB→MB）；③ 页大小 `pageSize()` darwin 走 `sysctl -n hw.pagesize`。Linux 分支全保留
+- `config.ts` — 新增 `userConfigDir()`：darwin → `~/Library/Application Support/session-buddy`；Linux 保持 `~/.config/harness-monitor`（保留历史路径，本地数据不迁移）
+- `window.ts` + `WidgetHeader.tsx` + `preload/index.ts` + `electron.d.ts` — macOS 用 `titleBarStyle:'hidden'` + 原生红绿灯（`trafficLightPosition`），渲染端自绘红绿灯经 preload 新增的 `platform` 字段跳过
+
+**标识统一（轨道 C）**：
+- `package.json` — `name` → `session-buddy`（WM_CLASS 实测变为 `session-buddy`，desktop 文件 `StartupWMClass` 已同步）；补 repository/bugs/homepage 元数据；新增 `dist:mac` 脚本
+- `electron-builder.yml` — `appId` → `com.cury.session-buddy`、`productName` → `SessionBuddy`；加 `mac` 目标（dmg/zip）+ `icon: resources/icon.png`
+- `resources/icon.png` — 用 tray.ts 同款 PNG 编码逻辑（zlib+CRC32）程序化生成 128×128，供 electron-builder 转 .icns
+- `resources/hooks/approve.sh` — 显示字符串 `harness-monitor` → `SessionBuddy`（`HARNESS_MONITOR_PORT` 环境变量名保留，改会破坏兼容）
+- 系统级：desktop 文件 `StartupWMClass` → `session-buddy`（实测匹配）；启动脚本日志路径 `/tmp/harness-monitor.log` → `/tmp/session-buddy.log`；`update-desktop-database` + `desktop-file-validate` 通过
+
+**GitHub 就绪（轨道 A）**：
+- 新建 `README.md`（功能/安装/打包/配置/hook 说明，标注 macOS 实验性 + jq/curl Homebrew 依赖）
+- 新建 `LICENSE`（ISC，与 package.json 声明一致）
+- 脱敏：PROGRESS.md/DESIGN.md 的 `/home/cury` → `~`、`cury-ThinkBook-14-G4-ARA` → `<hostname>`（11+3 处）
+- `CLAUDE.md` 加入 `.gitignore`（含本机代理/路径，不公开）
+- 删除根目录遗留 `Design Specification.txt` / `Electron Architecture Plan.txt`（内容已被 docs/ 替代）
+- `.gitignore` 已覆盖 `.npmrc`（代理配置）——无 API key 泄露
+
+**验证全绿**：`npm run build` 三入口 + 双 typecheck 零错误 ✅；构建产物含 `platform`/`titleBarStyle`/`darwin` 注入 ✅；隔离实例实测 WM_CLASS = `session-buddy` ✅；用户实例重启 health ok + 托盘 tooltip = SessionBuddy ✅；审批 hook 冒烟（Bash allow + Glob 快速通道）✅
+
+**收尾三件套**：① commit 1ccc3fe（17 文件 +193/−47）+ approve.sh 显示名轮 ✅ ② 无孤儿（用户实例 18456 pid 1210660 健康在听；WM 测试实例已清）✅ ③ 本日志 ✅
+**遗留**：macOS 打包（`npm run dist:mac`）与运行需在真机验证；用户实例运行旧构建，重启后载 macOS 适配 + 新 WM_CLASS
