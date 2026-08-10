@@ -1,6 +1,15 @@
 import { execSync, spawnSync } from 'node:child_process'
-import { closeSync, existsSync, openSync, readFileSync, readlinkSync, readSync, readdirSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readlinkSync,
+  readSync,
+  readdirSync,
+  statSync
+} from 'node:fs'
+import { homedir, hostname, userInfo } from 'node:os'
 import { basename, join } from 'node:path'
 
 import { contextForModel } from './vendor-registry'
@@ -17,11 +26,12 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *   - sessions 目录的 .json 文件 → session 元数据（pid / sessionId / cwd / startedAt）
  *   - projects/<proj>/<sessionId>.jsonl → transcript（ctxPct 估算真源，§6.8.2e；亦为显示名来源 ①）
  *
- * 显示名（name）优先级链：
- *   ① transcript 首条可读用户消息文本（头部限读 64KB，绝不全文读；跳过 system-reminder 整段包裹 / 纯 tool_result 记录）
- *   ② session json 的 name 字段（Claude Code 自带）
- *   ③ basename(cwd)  ④ 'unknown'
- *   （旧版恒取 basename(cwd)，但所有会话 cwd 均为 /home/cury → 全部显示 "cury"，无区分度，故改）
+ * 显示名（name）＝ 终端窗口标题推导值（与 ~/.bashrc 的 `\e]0;\u@\h: \w\a` 规则逐字同源）：
+ *   `user@host: cwd`（如 `cury@cury-ThinkBook-14-G4-ARA: /home/cury/harness-monitor`）。
+ *   Wayland 下应用无法直读真实终端窗口标题（GNOME Shell Introspect 拒绝 / xdotool 只对
+ *   X11 可见，见 2026-08-08 调研），故按终端同一标题规则用会话真实 cwd 推导。
+ *   cwd 取 transcript 尾读 lastCwd → session json cwd 降级；无 cwd → 仅 `user@host: `。
+ *   （旧命名链：transcript 首条用户消息 → json name → basename(cwd)，2026-08-08 应需求移除）
  *
  * 状态判定（v3.2 简化）：`fs.existsSync(/proc/{pid})` 存活 → busy；不存在 → idle + memory=0。
  * 不做 CPU 阈值 / 进程树遍历。
@@ -73,6 +83,28 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *   开新窗口，cwd 落会话真实项目路径（F2 transcript 尾读真值）——Wayland 下这是主路径。
  *   xdotool 为**可选依赖**：不随项目安装，运行时 `command -v` 检测，缺失即降级，不报错。
  */
+
+// ─── 终端标题推导（显示名，2026-08-08） ───
+// 与 ~/.bashrc 的 `\e]0;\u@\h: \w\a` 规则逐字同源：`user@host: cwd`。
+// 宿主标识进程内不变，取一次缓存（userInfo 失败回退 process.env.USER，hostname 失败回退 'host'）。
+const TERMINAL_TITLE_USER: string = (() => {
+  try {
+    const u = userInfo().username
+    if (u) return u
+  } catch {
+    /* 回退 */
+  }
+  return process.env.USER || 'user'
+})()
+const TERMINAL_TITLE_HOST: string = (() => {
+  try {
+    const h = hostname()
+    if (h) return h
+  } catch {
+    /* 回退 */
+  }
+  return 'host'
+})()
 
 // ─── 系统页大小（/proc stat rss 以页为单位，缓存一次） ───
 
@@ -298,40 +330,9 @@ function scanTailFacts(lines: string[]): TailFacts {
   return facts
 }
 
-// ─── 会话显示名（transcript 首条用户消息 → json name → cwd basename） ───
+// ─── lastActivity / content 提取（F2，session-detail.ts 复用） ───
 
-/** 头部读取窗口：64KB。首条用户消息总在文件头部几 KB 内；窗口内找不到就放弃，绝不全文读 */
-const HEAD_BYTES = 65536
-
-/** 标题最大长度，超出截断 + "…"（卡片 CSS 已有 ellipsis，此截断为控 IPC 载荷与 tooltip 可读性） */
-const TITLE_MAX = 60
-
-/**
- * 标题化清洗 + 截断（命名链 ① 与 ② 共用）。清洗后为空返回 null（调用方继续下一候选）。
- *
- * ① 整段剥除 `<system-reminder>...</system-reminder>` 与 `<local-command-caveat>...</local-command-caveat>`
- *    （两者均为 harness 追加的样板噪音、非用户内容，可跨行；蓝图勘误：实测发现 caveat 标签
- *    不在原始 4 标签剥除清单内，整条记录被其占据 → 与 system-reminder 同列整段剥除）
- * ② 剥除斜杠命令标签 `<command-name>` / `<command-message>` / `<command-args>` /
- *    `<local-command-stdout>`（开闭标签均剥，保留内部文本，如 `<command-name>/loop</command-name>` → "/loop"）
- * ③ trim → 取第一个非空行 → 连续空白折叠为单空格
- * ④ 超 TITLE_MAX 字符 → 截断 + "…"
- */
-function toTitle(text: unknown): string | null {
-  if (typeof text !== 'string') return null
-  let t = text.replace(
-    /<(?:system-reminder|local-command-caveat)>[\s\S]*?<\/(?:system-reminder|local-command-caveat)>/g,
-    ''
-  )
-  t = t.replace(/<\/?(?:command-name|command-message|command-args|local-command-stdout)>/g, '')
-  for (const line of t.split('\n')) {
-    const collapsed = line.replace(/\s+/g, ' ').trim()
-    if (collapsed) return collapsed.length > TITLE_MAX ? `${collapsed.slice(0, TITLE_MAX)}…` : collapsed
-  }
-  return null
-}
-
-/** lastActivity 截断长度（较 toTitle 的 60 更宽，保留更长上下文供卡片单行预览） */
+/** lastActivity 截断长度（F2，保留更长上下文供卡片单行预览） */
 const ACTIVITY_MAX = 120
 
 /**
@@ -356,7 +357,7 @@ export function toActivity(text: unknown): string | null {
 }
 
 /**
- * 从 message.content 提取可读文本（F2 lastActivity 与 firstUserText 共用取块逻辑）：
+ * 从 message.content 提取可读文本（F2 lastActivity 取块逻辑）：
  *   content 为 string → 直接返回；为 block 数组 → 取第一个 type==="text" 块的 text；
  *   tool_result 等无 text 块的记录 → null（调用方跳过该记录）。
  * 导出供 session-detail.ts 复用（M16 B1）。
@@ -371,70 +372,6 @@ export function extractContentText(content: unknown): string | null {
         return block['text']
       }
     }
-  }
-  return null
-}
-
-/**
- * 提取 transcript 头部第一条可读用户消息，返回标题化结果（命名链 ① 真源）。
- *
- * 只读头部 64KB（openSync+readSync 限窗，与 usedTokens 尾读同款手法；transcript 可达
- * 数十 MB，🚫 绝不可 readFileSync 全文读）。逐行 JSON.parse，找第一个 type==="user"
- * 且经 toTitle 清洗后非空的记录：
- *   - content 为 string → 直接用
- *   - content 为 block 数组 → 取第一个 type==="text" 块的 text
- *   - 纯 tool_result 回传（type 亦为 "user"，但 content 无 text 块）→ 跳过该记录继续扫
- *   - 清洗后为空（如整段 system-reminder 包装）→ 跳过该记录继续扫
- */
-function firstUserText(transcriptPath: string): string | null {
-  let content: string
-  try {
-    const fd = openSync(transcriptPath, 'r')
-    try {
-      const buf = Buffer.allocUnsafe(HEAD_BYTES)
-      const n = readSync(fd, buf, 0, HEAD_BYTES, 0)
-      content = buf.toString('utf8', 0, n)
-    } finally {
-      closeSync(fd)
-    }
-  } catch {
-    return null
-  }
-
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    let obj: unknown
-    try {
-      obj = JSON.parse(trimmed)
-    } catch {
-      continue // 窗口边界可能截断末行 → 非法 JSON，跳过
-    }
-    if (typeof obj !== 'object' || obj === null) continue
-    const record = obj as Record<string, unknown>
-    if (record['type'] !== 'user') continue
-
-    const msg = record['message']
-    if (typeof msg !== 'object' || msg === null) continue
-    const c = (msg as Record<string, unknown>)['content']
-
-    let text: string | null = null
-    if (typeof c === 'string') {
-      text = c
-    } else if (Array.isArray(c)) {
-      for (const b of c) {
-        if (typeof b !== 'object' || b === null) continue
-        const block = b as Record<string, unknown>
-        if (block['type'] === 'text' && typeof block['text'] === 'string') {
-          text = block['text']
-          break
-        }
-      }
-    }
-    if (text === null) continue // tool_result 回传或无 text 块 → 跳过该记录
-
-    const title = toTitle(text)
-    if (title) return title // 清洗后为空（如整段 system-reminder / local-command-caveat 包装）→ 继续扫下一条
   }
   return null
 }
@@ -863,7 +800,7 @@ export class ClaudeCodeSessionScanner {
       typeof raw.startedAt === 'number' && Number.isFinite(raw.startedAt) && raw.startedAt > 0
         ? raw.startedAt
         : 0
-    // transcript 只定位一次：显示名头读（firstUserText）与尾读三事（tailFacts）共用路径，避免重复目录扫描
+    // transcript 只定位一次：尾读三事（tailFacts）真源（显示名所需 cwd 亦出自尾读 lastCwd）
     const transcript = sessionId ? findTranscript(this.projectsDirs, sessionId) : null
     // F2：尾窗一次读提取三事（usedTokens / lastCwd / lastModel，见文件头与 tailFacts 注释）
     const tail = transcript ? tailFacts(transcript) : ZERO_TAIL
@@ -885,16 +822,14 @@ export class ClaudeCodeSessionScanner {
     // 显示 cwd（F2）：transcript 尾读的最后一条 cwd（Claude Code 随实际工作目录动态更新，
     // 是"当前真实项目路径"真源）→ jsonCwd（启动目录）降级；两者统一 4096 截断
     const cwd = (tail.lastCwd !== null ? tail.lastCwd : jsonCwd).slice(0, 4096)
+    // 审批匹配仍兼容 basename(cwd) 旧语义（approve.sh 主路径发 sessionId，name 不再参与）
     const cwdName = cwd ? basename(cwd) : null
 
-    // 显示名优先级链（见文件头 doc）：
-    //   ① transcript 首条可读用户消息（头部限读 64KB——transcript 可达数十 MB，全文读会同步阻塞
-    //      主进程事件循环；首条用户消息总在文件头部几 KB 内，窗口内找不到就放弃）
-    //   ② session json 的 name 字段（非空 string 才用，走同一 toTitle 清洗/截断）
-    //   ③ basename(cwd)  ④ 'unknown'
-    const jsonName = typeof raw.name === 'string' ? toTitle(raw.name) : null
-    const name =
-      (transcript ? firstUserText(transcript) : null) || jsonName || cwdName || 'unknown'
+    // 显示名（name）= 终端窗口标题推导值（2026-08-08 应需求，见文件头 doc）：
+    //   与 ~/.bashrc 的 `\e]0;\u@\h: \w\a` 规则逐字同源 —— `user@host: cwd`。
+    //   cwd 为空（后台会话无真实目录）→ 仅 `user@host: ` 兜底。
+    //   宿主标识取一次（进程内不变），避免每轮扫描重复 syscall。
+    const name = `${TERMINAL_TITLE_USER}@${TERMINAL_TITLE_HOST}: ${cwd}`
 
     // 状态判定（v3.2 简化）：进程存活 → busy，否则 idle + memory=0
     const alive = existsSync(`/proc/${pid}`)
@@ -931,8 +866,10 @@ export class ClaudeCodeSessionScanner {
       uptimeSec = sec >= 0 ? sec : 0
     }
 
-    // 合并审批状态：匹配 name（会话主题）/ cwdName（旧版项目名语义的兼容保险）/ sessionId 三者任一
-    // （approve.sh 主路径发 session_id；name 改为会话主题后仍保留 basename 匹配，为旧语义超集）
+    // 合并审批状态：匹配 name（现为终端标题 user@host: cwd，实为兜底冗余）/
+    // cwdName（旧版项目名语义的兼容保险）/ sessionId 三者任一。
+    // approve.sh 主路径发 session_id → sessionId 命中即判定；name/cwdName 仅兼容
+    // 老脚本按项目名/session 名发请求的路径。
     const hasPendingApproval = pending.some(
       (a) =>
         a.session === name ||

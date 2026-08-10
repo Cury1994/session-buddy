@@ -417,7 +417,7 @@
 }
 
 /* ============================================================
- * M9 — Sessions 视图（SessionCard / ApprovalBlock / ApprovalHistory）
+ * M9 — Sessions 视图（SessionCard / ApprovalBlock）
  * 色值以 TASKS §10 视觉规范为准（与 :root 语义色刻意区分）：
  *   busy 绿 #00e676 / idle 灰 rgba(0,0,0,0.3) / ctx cyan #00bcd4
  *   审批紧急红统一走 var(--danger-red)（= #ff3b30，§2.5；P3-2 整改：原 #ff5252
@@ -789,25 +789,7 @@
     justify-content: center;
   }
 
-  /* ── 审批历史 ── */
-  .history-card {
-    padding: 0;
-  }
-  .history-toggle {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 12px;
-    border: none;
-    background: none;
-    font-family: inherit;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-main);
-    cursor: default;
-    text-align: left;
-  }
+  /* ── 折叠开关 chevron（审批历史已移除，2026-08-08；模型上下文长度表整表折叠复用） ── */
   .chevron {
     font-size: 10px;
     color: var(--text-muted);
@@ -815,97 +797,6 @@
   }
   .chevron.open {
     transform: rotate(90deg);
-  }
-  .history-count {
-    margin-left: auto;
-    font-size: 10px;
-    font-weight: 500;
-    color: rgba(0, 0, 0, 0.4);
-  }
-  .history-body {
-    padding: 0 12px 12px 12px;
-  }
-  .history-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .history-row {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 6px 0;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
-    font-size: 11px;
-    cursor: help;
-  }
-  .history-main {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-  .history-mark {
-    flex-shrink: 0;
-    font-weight: 700;
-  }
-  .history-mark.ok {
-    color: #00a854;
-  }
-  .history-mark.deny {
-    color: #ff5252;
-  }
-  .history-cmd {
-    flex: 1;
-    min-width: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 10px;
-    color: var(--text-main);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .history-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    min-width: 0;
-    font-size: 10px;
-    color: var(--text-muted);
-  }
-  .history-session {
-    min-width: 0;
-    max-width: 200px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .history-time {
-    flex-shrink: 0;
-    color: rgba(0, 0, 0, 0.4);
-  }
-  /* 审批历史 hover 浮层：fixed 定位不被滚动容器裁剪，pre 保留命令换行/等宽 */
-  .history-tooltip {
-    position: fixed;
-    z-index: 1000;
-    max-width: 320px;
-    max-height: 240px;
-    overflow: auto;
-    background: rgba(30, 30, 30, 0.96);
-    color: #e0e0e0;
-    border-radius: 6px;
-    padding: 8px 10px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    pointer-events: none;
-  }
-  .history-tooltip pre {
-    margin: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-all;
   }
 
   /* ── F3 自动审批开关区（会话级 / 重启复位 / 两步确认） ── */
@@ -1540,5 +1431,66 @@
   .ctx-input:focus {
     outline: none;
     border-color: var(--accent-blue);
+  }
+
+  /* ── M17.2 整表折叠头（复用 chevron；仿原审批历史 toggle 排版） ── */
+  .ctx-card {
+    padding: 12px;
+  }
+  .ctx-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-main);
+    cursor: default;
+    text-align: left;
+    margin-bottom: 4px;
+  }
+
+  /* ── M17.2 单位选择（K/M 分段切换） ── */
+  .ctx-unit {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .ctx-unit-btn {
+    border: none;
+    background: transparent;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: default;
+  }
+  .ctx-unit-btn.on {
+    background: #fff;
+    color: var(--text-main);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+
+  /* ── M17.2 registry 只读行：带单位展示（如 "1M"），等宽右对齐对齐输入框宽度 ── */
+  .ctx-value {
+    flex: 0 0 auto;
+    min-width: 74px;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    padding: 3px 6px;
   }
 }

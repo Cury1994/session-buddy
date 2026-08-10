@@ -846,18 +846,42 @@
 
 ---
 
-### 2026-08-10 08:54 ｜ 归档后修订 ｜ M18 四项 UI 需求轮 回滚（commit 47dbd01）
+### 2026-08-10 00:42 ｜ 归档后修订 ｜ 四项 UI 需求轮 完成（commit b535a18）
 
-**背景**：用户要求「回滚到上一版本」。M18 提交 b535a18（删审批历史 / session 名称对齐终端标题 / 上下文表 registry 只读 + M-K 单位 + 整表折叠，2026-08-10 00:42 完成并已重启验证生效）被整体撤销。
+**背景**：用户 2026-08-08 提出 4 项改动——① 去掉审批历史 ② session 名称与终端窗口标题一致 ③ 上下文长度表：100% 有把握的（registry）行不支持编辑，需用户确认的才支持编辑，且支持选单位 M/K，字段值带单位展示 ④ 所有展示的模型支持折叠/展开。
 
-**处置**：`git revert --no-edit b535a18` → commit **47dbd01**（11 文件，+483/−318），工作树恢复到 M17 状态：
-- `ApprovalHistory.tsx` 恢复、`history:get` IPC / `getApprovalHistory` / `db.getRecentApprovals` / `ApprovalRecord` 类型复原
-- session 名称恢复旧命名链（transcript 首条用户消息 → json name → cwd basename）
-- 上下文长度表恢复原样（registry 可编辑、无单位选择、无折叠头）；`ContextEntry.unit` 字段撤销
-- PROGRESS.md 的 M18 日志段随 revert 一并撤销（本条为补记）
+**需求澄清（AskUserQuestion 用户拍板）**：
+- ② 名称格式 = **完整终端标题** `user@host: dir`（如 `cury@cury-ThinkBook-14-G4-ARA: /home/cury/harness-monitor`）
+- ④ 折叠语义 = **整表折叠**（像原审批历史那样整体 toggle，默认展开）
 
-**验证**：npm run build + 双 typecheck 零错误；实例重启（pid 1037759，真实 HOME，18456 健康）后 `/api/sessions` 名称恢复旧链（`'你看下运行本地的hermes…'` / `'/clear'`），构建产物含 history 代码——回滚生效。
+**技术边界（关键）**：本机 Wayland 下应用**无法直读真实终端窗口标题**——GNOME Shell `Introspect.GetWindows` 被 AccessDenied 拒绝（08-08 实测），xdotool 只对 X11 可见。故按用户 `.bashrc` 的终端标题规则 `\e]0;\u@\h: \w\a`（即 `user@host: 目录`）**推导**：用会话真实 cwd（transcript 尾读 lastCwd → json cwd 降级）+ os 宿主标识。
 
-**保留**：M18 提交 b535a18 留在历史（未强删），日后可 `git revert 47dbd01` 恢复。
+**实现（主对话直接开发，S~M 档不单开 review agent；4 项全部 CDP 实测）**：
+1. **删审批历史**：ApprovalHistory.tsx 删除；SessionsView 引用移除；history:get IPC、getApprovalHistory（preload/d.ts）、db.getRecentApprovals + SELECT_RECENT/ALL + toApprovalRecord + RawApprovalRow + 两条 prepared 语句全删；shared/types.ts ApprovalRecord 类型删除。**保留 recordApproval 唯一落库点 + approval_history 表**（审批镜像不变量 A 不受影响）。globals.css history-* 类删除（.chevron 保留供 ④ 复用）。
+2. **session 名称**：claude-sessions.ts 显示名改 `user@host: cwd`；宿主标识（userInfo().username + hostname()）模块级缓存一次，失败回退 process.env.USER/'host'。**删除命名链死代码**：firstUserText/toTitle/HEAD_BYTES/TITLE_MAX 全删（openSync/readSync/closeSync import 保留——tailFacts 尾读仍用）。cwdName（basename 匹配）保留仅供审批匹配旧语义兼容。
+3. **上下文长度表**：`ContextEntry` 增可选 `unit?: ContextUnit`（'M'|'K'，len 恒存原始 token 数）。SettingsView：**registry 行只读**（无单位选择器、无输入框，右对齐展示 `formatLen` 带单位文本如 "1M"，title 提示完整 tokens）；manual/heuristic 行可编辑 + K/M 单位分段切换（`changeCtxUnit` 仅换算展示值、len 不变、立即落盘持久化单位偏好）。`commitCtxLen` 改按所选单位换算回原始 token 落盘；编辑仍强制 source='manual'。
+4. **整表折叠**：ctx 卡片加 `.ctx-toggle` 折叠头（复用 .chevron，默认展开 `ctxOpen=true`），折叠态隐藏副说明与全部行。
 
-**收尾三件套**：① commit 47dbd01 ✅ ② 实例 = 回滚后构建（1037759 健康在听 18456，无孤儿）✅ ③ 本日志补记 ✅
+**验收（隔离实例 HOME=/tmp/hm-m18-home + port 18650 + CDP 9388，用户实例 18456 未触碰）**：
+- 合成会话（真实 pid + 隔离 cwd）→ `/api/sessions` 显示名 = `cury@cury-ThinkBook-14-G4-ARA: /home/cury/isolate-demo` ✓（需求②）
+- CDP 读 DOM：ctx 表 2 行（registry `deepseek-v4-flash` 只读显示 "1M" 无单位选择器 / heuristic `some-unknown-model` 可编辑 + 单位 K 激活 + 输入 200）✓（需求③④）
+- 折叠 toggle：rows 2→0→2，aria-expanded true→false→true ✓（需求④）
+- 单位切换 K→M：value 200→0.2，config.yaml 落盘 `unit: M` ✓（需求③）
+- 真实键盘事件编辑（0.8 + Enter）：反馈"已保存 ✓"，config.yaml `len: 800000, source: manual, unit: M` —— **编辑强制 source=manual 验证** ✓（需求③）
+- 构建 + 双 typecheck 零错误；构建产物 CSS 无 history- 类残留、新 ctx 类全在 ✓
+
+**清理**：隔离实例 1016928 精确 kill（非 pkill -f），18650/9388 释放，/tmp/hm-m18-home + cdp 脚本 + 截图删除；用户实例 18456 全程未触碰 health OK。
+
+**收尾三件套**：① commit b535a18 ✅ ② 无新起实例、无孤儿 ✅ ③ 本日志 ✅
+**遗留**：用户实例重启后载新构建生效（名称/上下文表/折叠均为渲染端 + 主进程改动，需重启）；DESIGN.md 待同步（§6.8.2a 命名链、§6.12 SessionInfo.name / ContextEntry.unit、§6.11 history:get 通道）
+
+### 2026-08-10 08:54 ｜ 归档后修订 ｜ M18 回滚 → 恢复 全过程记录（commit 47dbd01 → 再恢复）
+
+**时间线（三次操作，日志随 revert 波动，本条统一记录终态）**：
+- **00:42** M18 完成（b535a18，见上条），重启验证生效
+- **08:50** 用户要求「回滚到上一版本」→ `git revert --no-edit b535a18`（47dbd01，11 文件恢复 M17），实例重启验证生效
+- **08:56** 用户「还是恢复那四项改动吧」→ `git revert --no-edit 47dbd01`（本次，代码文件干净恢复 M18；仅 docs/PROGRESS.md 因补记的回滚日志与恢复内容重叠产生冲突，本段即冲突解决结果）
+
+**冲突解决**：保留 M18 完成日志（上条）为主体；本条记录回滚→恢复的全过程。**保留 M18 提交 b535a18 与回滚提交 47dbd01 于历史**（未强删任何提交）。
+
+**恢复后状态**：代码 = M18 四项改动（删审批历史 / session 名称对齐终端标题 / 上下文表 registry 只读 + M-K 单位 + 整表折叠）；实例待重启加载新构建（见收尾）。

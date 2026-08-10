@@ -3,14 +3,14 @@
  * M17.1 — Sessions 迭代 v2（基准原型 prototype-sessions-v2.html）：
  *   - 全局 AutoApproveBar 移除，自动审批下沉为每张卡片头部的 ⚡ 开关（SessionCard）
  *   - 「查看更多详情」下沉二级页：selectedSessionId 非空时以 SessionDetailPage
- *     替换整个列表（卡片/orphan/ApprovalHistory），SegmentedControl 在 App.tsx 常驻
+ *     替换整个列表（卡片/orphan），SegmentedControl 在 App.tsx 常驻
+ * 2026-08-08 — 审批历史组件移除（应需求，见 PROGRESS）
  *
  * 组装（列表态）：
  *   - 每个 session 一张 SessionCard（命中 pending 审批时卡片内含红边 ApprovalBlock）
  *   - orphan 审批卡：未匹配到任何当前 session 的审批（如 curl 用 session="test"、
  *     或对应 session 已结束）独立成卡，确保审批永不丢失（scanner 按 name/sessionId
  *     匹配，test 不命中任何真实项目名，故必须由本视图兜底渲染）
- *   - 底部 ApprovalHistory（默认折叠）
  *   - EmptyState：无活跃 session 且无待审批时友好提示
  */
 
@@ -22,7 +22,6 @@ import {
 } from '../../hooks/useSessionsData'
 import type { ApprovalViewItem } from '../../hooks/useSessionsData'
 import ApprovalBlock from './ApprovalBlock'
-import ApprovalHistory from './ApprovalHistory'
 import SessionCard from './SessionCard'
 import SessionDetailPage from './SessionDetailPage'
 
@@ -68,7 +67,7 @@ function SessionsView(): React.JSX.Element {
     return approvals.filter((a) => !matchedIds.has(a.data.id))
   }, [sessions, approvals])
 
-  // 详情态：整页替换（列表/orphan/ApprovalHistory 均不渲染；SegmentedControl 在 App.tsx 常驻）
+  // 详情态：整页替换（列表/orphan 均不渲染；SegmentedControl 在 App.tsx 常驻）
   if (selectedSessionId !== null) {
     const selectedName = sessions.find((s) => s.sessionId === selectedSessionId)?.name ?? ''
     return (
@@ -120,8 +119,6 @@ function SessionsView(): React.JSX.Element {
       {orphans.map((a) => (
         <OrphanApprovalCard key={`orphan-${a.data.id}`} item={a} />
       ))}
-
-      <ApprovalHistory />
     </>
   )
 }
