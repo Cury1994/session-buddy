@@ -1032,3 +1032,24 @@
 
 **收尾三件套**：① commit 7cbca30 ✅ ② 无孤儿（用户实例 18456 pid 1163657 健康在听，全程未触碰）✅ ③ 本日志 ✅
 **遗留**：用户实例重启后载新构建生效（渲染端 + 主进程改动）；DESIGN.md 待同步（§6.11 invoke 通道表去两行、§6.13/§6.14 hook 描述、§7 preload、REQUIREMENTS FR-2.7/FR-2.8 需求移除或标记）——注意 FR-2.7/2.8 原为 M11 验收项，去掉入口后这两条需求实质失效，是否从 REQUIREMENTS 降级为延后需用户定夺
+
+### 2026-08-10 14:55:03 ｜ 归档后修订 ｜ 应用显示名 Harness Monitor → SessionBuddy（commit 1a3d51b）
+
+**用户诉求**：项目名/挂件名从「harness-monitor / Harness Monitor」改为 **SessionBuddy**，工具界面名称同步。
+
+**范围（AskUserQuestion 用户拍板「只改显示名」）**：只改用户可见显示名；`~/.config/harness-monitor/` 配置目录、`monitor.db` 路径、config.yaml `harnesses` 技术字段、代码 harness 概念名**一律不动**（现有配置/审批历史原样保留）。
+
+**改动（5 文件，+10/−10）**：
+- `WidgetHeader.tsx`（+2/−2）：挂件顶部标题 "Harness Monitor" → "SessionBuddy"（含文件头注释）
+- `tray.ts`（+4/−4）：托盘 tooltip、菜单标题项、Quit 项 → SessionBuddy（含菜单结构注释）
+- `SettingsView.tsx`（+2/−2）：Quit 按钮文案 + 结构注释
+- `index.html`（+1/−1）：`<title>harness-monitor</title>` → `<title>SessionBuddy</title>`（窗口无显式 title，默认取此）
+- `server.ts`（+1/−1）：端口占用桌面通知标题 → SessionBuddy
+
+**验证全绿**：npm run build 三入口 + 双 typecheck 零错误 ✅；产物 grep 无 "Harness Monitor" 残留 ✅
+**隔离实例 GUI E2E**（HOME=/tmp/hm-sb-test-home + port 18777 + CDP 9333）：
+- ① CDP 读挂件 `.widget-title` = "SessionBuddy"、`document.title` = "SessionBuddy" ✓
+- ② D-Bus SNI（:1.2316，pid 1183363）托盘 tooltip = "SessionBuddy"；菜单 GetLayout 逐项 `SessionBuddy / Show Dashboard / Hide Dashboard / Active Agents / (none) / Quit SessionBuddy` ✓
+
+**收尾三件套**：① commit 1a3d51b（5 文件 +10/−10）✅ ② 隔离实例精确 pid 清理、/tmp/hm-sb-test-home 全删、用户实例 18456 健康在听（未触碰）✅ ③ 本日志 ✅
+**遗留**：用户实例重启后载新构建生效（渲染端 + 主进程改动）；docs/ 原型 html 与 CLAUDE.md 内的历史显示名属快照/文档，未批量替换（保持历史可溯）
