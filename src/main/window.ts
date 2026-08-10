@@ -32,12 +32,14 @@ export interface ManagedWindow {
 }
 
 export function createMainWindow(config: AppConfig): ManagedWindow {
+  const isMac = process.platform === 'darwin'
   const win = new BrowserWindow({
     width: config.window.width, // 默认 340（config.yaml window.width）
     height: config.window.height, // 默认 650（config.yaml window.height）
-    frame: false, // 无边框，红绿灯由渲染端 TrafficLights.tsx 自绘（M7，§2.10）
+    // macOS：原生红绿灯 + hidden titleBar（复用系统窗口控件）；Linux：无边框，红绿灯由渲染端自绘
+    ...(isMac ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 12, y: 14 } } : { frame: false }),
     resizable: true,
-    skipTaskbar: false, // 正常显示在任务栏（§2.9）
+    skipTaskbar: false, // 正常显示在任务栏（§2.9）；macOS 下显示在 Dock
     show: false, // 初始隐藏，托盘左键唤起（§6.4）
     // 任务栏图标：应用自带绿色圆点（与托盘同款），替换 Electron 默认图标
     icon: nativeImage.createFromBuffer(buildAppIconPng()),

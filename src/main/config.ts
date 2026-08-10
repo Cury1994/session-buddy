@@ -24,7 +24,19 @@ export type { DeepPartial }
 
 // ─── 路径 ───
 
-const USER_DIR_PRIMARY = join(homedir(), '.config', 'harness-monitor')
+/**
+ * 用户配置目录（跨平台）：
+ *   - Linux：XDG `~/.config/harness-monitor`（保留历史路径，避免重命名打断本地数据）
+ *   - macOS：`~/Library/Application Support/session-buddy`（实验性，未经 macOS 实测）
+ */
+function userConfigDir(): string {
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'session-buddy')
+  }
+  return join(homedir(), '.config', 'harness-monitor')
+}
+
+const USER_DIR_PRIMARY = userConfigDir()
 const USER_FILE_PRIMARY = join(USER_DIR_PRIMARY, 'config.yaml')
 const USER_FILE_COMPAT = join(homedir(), '.config', 'claude-monitor', 'config.yaml')
 

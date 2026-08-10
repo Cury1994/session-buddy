@@ -98,6 +98,9 @@ const api = {
   /** 退出应用（app:quit → app.quit()，经 will-quit 清理链，FR-6.5） */
   quitApp: (): Promise<void> => ipcRenderer.invoke('app:quit'),
 
+  /** 运行平台（process.platform，macOS 红绿灯判断用；渲染端无需做 IPC 往返） */
+  platform: process.platform,
+
   // ── 窗口控制子集（M4 建立，§7 未列；TrafficLights.tsx 红绿灯调用） ──
 
   /** 隐藏窗口（红绿灯 Close 同语义：hide 不 quit） */

@@ -262,7 +262,7 @@
   - 【蓝图级】/proc/{pid}/stat rss 为第 **24** 字段（DESIGN §6.8.2c 原写 22=starttime，实测荒谬值后查证 proc(5) 更正）；page_size 用 getconf PAGE_SIZE
   - refreshTrayColor 实为 server.ts 内部闭包，M6 复用导出的 computeTrayColor 纯函数 + setIconColor（两链路收敛同一优先级函数，意图一致）
   - DeepSeekBalanceResponse 类型置于 deepseek.ts 本地（§6.12 列在 shared；仅本模块线格式使用，交 review 裁定）
-- 遗留：~/.config/harness-monitor/monitor.db 有 mock 测试数据（¥50 余额 + 2 条测试审批），真实运行后覆盖；transcript 全读 O(size) v1 可接受（已注释）；3 个真实会话 cwd 均 /home/cury → name 都显示 cury（basename 按 §6.8.2a，非会话标题）
+- 遗留：~/.config/harness-monitor/monitor.db 有 mock 测试数据（¥50 余额 + 2 条测试审批），真实运行后覆盖；transcript 全读 O(size) v1 可接受（已注释）；3 个真实会话 cwd 均 ~ → name 都显示 cury（basename 按 §6.8.2a，非会话标题）
 
 ### 2026-07-28 ｜ 后端批量 Code Review ｜ 派发（M4+M5+M6）
 - 审查方：独立 subagent（sonnet 交叉验证，高速模式两轮审之一）
@@ -434,7 +434,7 @@
 - **对话保留**：全过程对话不删除，留作知识资产（工作流第五阶段要求）
 
 ### 2026-07-31 10:25:19 ｜ 归档后修订 ｜ session 显示名修复 完成（commit 3b0693e）
-- 背景：用户反馈"sessions 里的会话名称不能全是 cury，得以实际为主"。根因：claude-sessions.ts `name = basename(cwd)`，本机会话 cwd 全为 /home/cury → 全显 "cury"（M6 完成日志已记录该现象，当时按 §6.8.2a 字面实现）
+- 背景：用户反馈"sessions 里的会话名称不能全是 cury，得以实际为主"。根因：claude-sessions.ts `name = basename(cwd)`，本机会话 cwd 全为 ~ → 全显 "cury"（M6 完成日志已记录该现象，当时按 §6.8.2a 字面实现）
 - 数据源调查（主对话实测）：① transcript JSONL 首条 user 记录即会话真实主题（string 或 text block 数组；tool_result 回传 type 亦为 "user" 但无 text 块须跳过；首条常被 `<system-reminder>` 追加包装）② session json 自带 name 字段（interactive 会话为 "cury-49" 类派生名，区分度有限，作回退）
 - 实现（开发+测试合并 subagent，S 档不单开 review，主对话 diff 复核）：
   - 命名优先级链：**transcript 首条可读用户消息 → json name → basename(cwd) → 'unknown'**
@@ -442,7 +442,7 @@
   - `toTitle()` 共用清洗：整段剥除 `<system-reminder>` 与 `<local-command-caveat>`、剥斜杠命令 4 标签留内部文本（`<command-name>/loop</command-name>` → "/loop"）、取首个非空行、空白折叠、超 60 字符截断 + "…"
   - parseSessionFile 重构：findTranscript 一次定位，头读（取名）与尾读（ctxPct）共用路径
   - 审批匹配改 name / basename(cwd) / sessionId 三者任一（旧语义超集，approve.sh 主路径仍走 session_id）
-- 验收全绿：build 三入口 + 双 typecheck 零错误；裸 node 真实数据——3 会话名互不相同（"/home/cury/harness-monitor"（本会话首条消息）/ "当前开了全局代理，浏览器访问网址出问题" / "/clear"），全唯一、≤61 字符；**主对话独立复跑确认 + ctxPct 8/5/27 非零（尾读链路重构无回归）**；7 组边界用例 PASS（tool_result 跳过 / reminder 剥后空跳过 / 截断 / 双级回退 / 多行取首行 / json name 截断 / 三路审批匹配）
+- 验收全绿：build 三入口 + 双 typecheck 零错误；裸 node 真实数据——3 会话名互不相同（"~/harness-monitor"（本会话首条消息）/ "当前开了全局代理，浏览器访问网址出问题" / "/clear"），全唯一、≤61 字符；**主对话独立复跑确认 + ctxPct 8/5/27 非零（尾读链路重构无回归）**；7 组边界用例 PASS（tool_result 跳过 / reminder 剥后空跳过 / 截断 / 双级回退 / 多行取首行 / json name 截断 / 三路审批匹配）
 - 蓝图勘误（已回写 DESIGN）：§6.8.2a name 字段规则改为命名链；§6.12 SessionInfo.name 注释同步。**实现期新发现**：`<local-command-caveat>` 整段占据首条 user 记录（原始调查 4 标签清单未覆盖），与 system-reminder 同列整段剥除
 - 约束遵守：用户常驻实例（pid 427464，18456）全程未触碰，验收仅走裸 node；GUI 肉眼确认待用户重启实例
 - 收尾三件套：① commit 3b0693e ✅ ② 无新起实例、无孤儿 ✅ ③ 本日志 ✅
@@ -451,7 +451,7 @@
 - 背景：用户实测反馈 6 项——① /clear 会话常驻需去除 + 会话路径未按实际展示 ② glm-5.2 API 不对 ③ Tool 应只有 claude-code 出卡 ④ 关闭按钮应关终端窗口而非杀对话 ⑤ 打开终端应跳转已有窗口而非新开 ⑥ 终端出现 command 审批时工具未同步
 - 主对话只读调查定根因（关键发现）：
   - /clear 会话 = `kind:"bg"` 后台任务会话（带 jobId，长期驻留 sessions 目录）
-  - session json 的 cwd 恒为启动目录（/home/cury），但 **transcript 每条记录自带 cwd 字段且随实际工作目录动态更新**——尾读真值即 /home/cury/harness-monitor
+  - session json 的 cwd 恒为启动目录（~），但 **transcript 每条记录自带 cwd 字段且随实际工作目录动态更新**——尾读真值即 ~/harness-monitor
   - 本机经本地代理 **cc-switch**（127.0.0.1:15721）转发，transcript 末条 `message.model` = **qwen3.8-max-preview**（API 实际返回）；settings 的 `ANTHROPIC_DEFAULT_SONNET_MODEL_NAME=glm-5.2` 是陈旧代理别名（旧实现真源）
   - **#6 根因：~/.claude/settings.json 从无 hooks 配置**——approve.sh（d4264c6）只入库未注册，审批提示从未到达应用
   - 终端环境：gnome-terminal **原生 Wayland**（X11 侧不可见），系统无公开 API 聚焦指定窗口；xdotool/wmctrl 未装
@@ -461,7 +461,7 @@
   - **#3** tool 徽章固定值 `'Bash'` → `'Claude Code'`（harness 身份；前端仅徽章一处引用，审批匹配不依赖）
   - **#4** session:terminate 语义重做：`closeTerminalOfPid`（/proc/<pid>/fd/0 → /dev/pts/N → rdev → 枚举同 tty_nr 进程集 → SIGTERM 集合中 ppid 不在集内的根 shell → 模拟器关窗/标签 → claude 随 pty hangup 退出）；守卫 pid<=0/自身/init；无控制终端 → false + UI 行内"无终端窗口"；IPC 返回 boolean
   - **#5**（用户裁决方案 A：X11 精确聚焦 + Wayland 开窗到项目路径）`focusExistingTerminal`：command -v 检测 xdotool（**可选依赖不强装**）→ ppid 上行找终端祖先（TERMINAL_COMMS 白名单）→ search --pid 取窗（多窗口按标题含 basename(cwd) 筛选）→ windowactivate；失败降级既有 spawn 链（F2 后 cwd 已是真实项目路径）；IPC 签名 (cwd, pid?)
-- 验收全绿（两 subagent + 主对话复跑）：build 三入口 + 双 typecheck 零错误；裸 node 真实数据——**仅剩 1 卡**（bg 被滤）、cwd=/home/cury/harness-monitor、apiProvider=qwen3.8-max-preview、tool=Claude Code、ctxPct 14 无回归；closeTerminalOfPid script 假终端 5/5（true+2s 全组消失 / 无 tty false / 守卫 false）；findTerminalAncestor(本会话 pid)→gnome-terminal- + shim 假 xdotool 8 组断言（多窗口标题筛选命中 222 / 单窗 / 全不匹配取首 / search 空 false / 无 xdotool false）
+- 验收全绿（两 subagent + 主对话复跑）：build 三入口 + 双 typecheck 零错误；裸 node 真实数据——**仅剩 1 卡**（bg 被滤）、cwd=~/harness-monitor、apiProvider=qwen3.8-max-preview、tool=Claude Code、ctxPct 14 无回归；closeTerminalOfPid script 假终端 5/5（true+2s 全组消失 / 无 tty false / 守卫 false）；findTerminalAncestor(本会话 pid)→gnome-terminal- + shim 假 xdotool 8 组断言（多窗口标题筛选命中 222 / 单窗 / 全不匹配取首 / search 空 false / 无 xdotool false）
 - **实现期新发现（均已代码注释 + 蓝图回写）**：
   - Linux comm 受 TASK_COMM_LEN 限 **15 字符**——gnome-terminal-server 在 /proc stat 中为截断形 `gnome-terminal-`，TERMINAL_COMMS 须含截断形（否则祖先查找必 null）
   - `statSync().rdev` 与 stat field 7 `tty_nr` 同为 old_encode_dev 编码（pts/1 实测同值 34817），可直接 === 比较
@@ -471,7 +471,7 @@
 - 遗留：#6 hook 注册 + 端到端 / 用户实例重启载新构建（10:27 实例为修复前构建）——随下条日志收口
 
 ### 2026-07-31 13:31:16 ｜ 归档后修订 ｜ #6 hook 注册 + 审批全链路闭环
-- 注册：~/.claude/settings.json 增 `hooks.PreToolUse`（matcher Bash → `/home/cury/harness-monitor/resources/hooks/approve.sh`，**timeout 70000**）；原 settings.json 备份为 `settings.json.bak-20260731`
+- 注册：~/.claude/settings.json 增 `hooks.PreToolUse`（matcher Bash → `~/harness-monitor/resources/hooks/approve.sh`，**timeout 70000**）；原 settings.json 备份为 `settings.json.bak-20260731`
 - **排障实录（两个叠加坑，均已入蓝图）**：
   - 坑 1：timeout 写 `70` → hook 被 70ms 即杀、报 "hook error: No stderr output"——**2.1.207 的 hook timeout 单位为毫秒**（二进制日志串 `with timeout ${c}ms` 实锤）→ 改 70000
   - 坑 2：改对后仍"报错"——实为 **exit 2 拦截被 Claude Code 显示成 "hook error: No stderr output"**（60s 无人审批 → auto-deny → exit 2 → stderr 空 → 展示文案误导）。诊断包装器（/tmp 临时，记 PATH/stdin/exit）证实脚本 exit=2 完全正常；直测端点 `time curl POST /approve` = **real 1m0.011s + allowed:false**，server 行为完全正确
@@ -538,7 +538,7 @@
 - **背景**：01:22 的 heredoc 单块切分修复（43cb535）属假设先行、未实测终端。用户澄清需求「严格执行：终端是唯一真源，先实测终端行为再定」后，启动隔离实测。
 - **实测方法**：临时剥离 settings.json hooks（备份+异 diff 复原，字节一致），`claude -p --model haiku-4-5` 隔离子进程逐条运行命令，报告 RAN（无审批）/ BLOCK（需审批）。两次独立测量 + claude-code-guide 权威文档交叉印证。
 - **实测结果（2.1.207 环境，12 条命令）**：
-  - 终端**不弹**（RAN）：`echo hi`、`pwd`、`which ls`、`du -sh /home/cury`
+  - 终端**不弹**（RAN）：`echo hi`、`pwd`、`which ls`、`du -sh ~`
   - 终端**弹**（BLOCK）：`ls -la`、`cat`、`head`、`grep`、`cd && pwd`、`wc`、`diff`、`stat`、`python3 - <<'EOF'` heredoc、`sudo rm`
 - **关键结论**：
   1. **heredoc 终端会弹询**（实测 + guide 推断双向印证：body 按换行切分、每段须各自被 allow，`Bash(python3 *)` 单条盖不住）→ **43cb535 的"静默 heredoc"是漏审回归**，回滚（f0f3c02），工具对 heredoc 恢复弹卡，与终端一致。
@@ -764,7 +764,7 @@
 - **清理**：隔离实例 SIGTERM、/tmp/hm-m16-home+fake+cdp 脚本+日志全删、18599/9334 释放。
 
 ### ⚠ 本会话事故记录（必须整改）
-- **pkill -f 误杀用户常驻实例**：隔离实例与用户实例都从 /home/cury/harness-monitor 启动，`pkill -f 'harness[-]monitor'` 同时匹配两者 → 用户 18456 实例被误杀。已用真实 HOME 重启恢复（health 200，现跑含 M16 的新构建）。**教训：清理验证实例必须用精确 pid 或隔离标识（如 HOME 环境变量路径特征），严禁裸 `pkill -f` 该项目名**（PROGRESS 既有 pkill 自匹配陷阱①②亦未预防此横向误杀）。真实 monitor.db 未受影响（隔离实例走 /tmp HOME，651KB 完好）。
+- **pkill -f 误杀用户常驻实例**：隔离实例与用户实例都从 ~/harness-monitor 启动，`pkill -f 'harness[-]monitor'` 同时匹配两者 → 用户 18456 实例被误杀。已用真实 HOME 重启恢复（health 200，现跑含 M16 的新构建）。**教训：清理验证实例必须用精确 pid 或隔离标识（如 HOME 环境变量路径特征），严禁裸 `pkill -f` 该项目名**（PROGRESS 既有 pkill 自匹配陷阱①②亦未预防此横向误杀）。真实 monitor.db 未受影响（隔离实例走 /tmp HOME，651KB 完好）。
 - **B2 subagent 网关报错**：`reasoning_effort` 参数被 400 拒绝，3 次（SendMessage 续接 2 次仍复现）→ 主对话接管验证。非代码问题；高速档纪律"SendMessage 续接"在此失效于网关层，改为主对话接管，未另起炉灶。
 
 - 收尾三件套：① commit 4e65d4f（C1）+ dd2f51f（B1/B2/E2E）✅ ② 无孤儿（用户实例 18456 health OK，隔离实例已清）③ 本日志 ✅
@@ -851,7 +851,7 @@
 **背景**：用户 2026-08-08 提出 4 项改动——① 去掉审批历史 ② session 名称与终端窗口标题一致 ③ 上下文长度表：100% 有把握的（registry）行不支持编辑，需用户确认的才支持编辑，且支持选单位 M/K，字段值带单位展示 ④ 所有展示的模型支持折叠/展开。
 
 **需求澄清（AskUserQuestion 用户拍板）**：
-- ② 名称格式 = **完整终端标题** `user@host: dir`（如 `cury@cury-ThinkBook-14-G4-ARA: /home/cury/harness-monitor`）
+- ② 名称格式 = **完整终端标题** `user@host: dir`（如 `cury@<hostname>: ~/harness-monitor`）
 - ④ 折叠语义 = **整表折叠**（像原审批历史那样整体 toggle，默认展开）
 
 **技术边界（关键）**：本机 Wayland 下应用**无法直读真实终端窗口标题**——GNOME Shell `Introspect.GetWindows` 被 AccessDenied 拒绝（08-08 实测），xdotool 只对 X11 可见。故按用户 `.bashrc` 的终端标题规则 `\e]0;\u@\h: \w\a`（即 `user@host: 目录`）**推导**：用会话真实 cwd（transcript 尾读 lastCwd → json cwd 降级）+ os 宿主标识。
@@ -863,7 +863,7 @@
 4. **整表折叠**：ctx 卡片加 `.ctx-toggle` 折叠头（复用 .chevron，默认展开 `ctxOpen=true`），折叠态隐藏副说明与全部行。
 
 **验收（隔离实例 HOME=/tmp/hm-m18-home + port 18650 + CDP 9388，用户实例 18456 未触碰）**：
-- 合成会话（真实 pid + 隔离 cwd）→ `/api/sessions` 显示名 = `cury@cury-ThinkBook-14-G4-ARA: /home/cury/isolate-demo` ✓（需求②）
+- 合成会话（真实 pid + 隔离 cwd）→ `/api/sessions` 显示名 = `cury@<hostname>: ~/isolate-demo` ✓（需求②）
 - CDP 读 DOM：ctx 表 2 行（registry `deepseek-v4-flash` 只读显示 "1M" 无单位选择器 / heuristic `some-unknown-model` 可编辑 + 单位 K 激活 + 输入 200）✓（需求③④）
 - 折叠 toggle：rows 2→0→2，aria-expanded true→false→true ✓（需求④）
 - 单位切换 K→M：value 200→0.2，config.yaml 落盘 `unit: M` ✓（需求③）
@@ -938,7 +938,7 @@
 
 **第一性原理调研（先验证可行性）**：
 - Wayland + GNOME 下读真实窗口标题**全部通道实测均不可行**：gnome-terminal 是 Wayland 原生（X11 xwininfo 不可见）、GNOME Shell `Introspect.GetWindows` AccessDenied、gnome-terminal DBus 只暴露 Exec/ChildExited 无标题属性、AT-SPI 无服务。用户看到的 `*API usage...` 是终端标签页标题（`*`=手动改标签标记），只存于合成器，应用不可读
-- 但 transcript 里的**真实用户文本消息**（message.content 为 string）天然反映任务内容：`/home/cury` 会话显示"你看下运行本地的hermes…"、本会话显示"界面上sessions的名称…"——**这就是"判断在跑什么任务"的可读真源**
+- 但 transcript 里的**真实用户文本消息**（message.content 为 string）天然反映任务内容：`~` 会话显示"你看下运行本地的hermes…"、本会话显示"界面上sessions的名称…"——**这就是"判断在跑什么任务"的可读真源**
 
 **实现（S~M 档，主对话直接开发 + 真实数据验收，零 token 本地方案）**：
 - `TailFacts` 增第五事 `lastUserText`（scanTailFacts 逆扫 ⑤）：取最近一条**真实用户文本消息**——判别 `message.role==='user' && typeof message.content === 'string'`（tool_result 的 content 是 block 数组，天然排除；历史 firstUserText 用 `record.type==='user'` 过滤会误吞 tool_result，本次用 content 类型判别更正确）

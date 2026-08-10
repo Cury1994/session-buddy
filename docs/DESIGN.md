@@ -1016,8 +1016,8 @@ Claude Code 触发 PreToolUse hook 时，向脚本 **stdin** 写入如下 JSON�
 ```json
 {
   "session_id": "9f8a...c2",
-  "transcript_path": "/home/cury/.claude/projects/-home-cury-app/9f8a.jsonl",
-  "cwd": "/home/cury/app",
+  "transcript_path": "~/.claude/projects/-home-cury-app/9f8a.jsonl",
+  "cwd": "~/app",
   "hook_event_name": "PreToolUse",
   "tool_name": "Bash",
   "tool_input": {
@@ -1158,7 +1158,7 @@ fi
 > 写 `70` 会被 70ms 即杀（实测 hook error 无 stderr，极易误判为脚本故障）。取
 > **70000**（70s）＞ curl -m 65 ＞ server 60s auto-deny，确保正常情况下 server 先
 > 返回 `allowed:false` 而非 hook 先超时。本机实际注册路径为
-> `/home/cury/harness-monitor/resources/hooks/approve.sh`（D1 打包后改为安装路径）。
+> `~/harness-monitor/resources/hooks/approve.sh`（D1 打包后改为安装路径）。
 > **matcher 空串 = 匹配所有工具**（审批镜像轮起；永不询问工具由脚本快速通道过滤，§6.13.2）。
 
 ---

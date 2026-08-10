@@ -33,7 +33,8 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *   （先例：M18 曾用 `user@host: cwd` 推导终端窗口标题，但 Wayland 读不到真实标题、
  *    且无法反映任务内容，2026-08-10 应需求改回消息标题）
  *
- * 状态判定（v3.2 简化）：`fs.existsSync(/proc/{pid})` 存活 → busy；不存在 → idle + memory=0。
+ * 状态判定（v3.2 简化）：进程存活 → busy；不存在 → idle + memory=0。
+ *   存活判定跨平台：Linux `existsSync(/proc/{pid})`，macOS `process.kill(pid, 0)`。
  * 不做 CPU 阈值 / 进程树遍历。
  *
  * ctxPct 与用户 `~/.claude/statusline.py` **逐字同源**：
@@ -81,10 +82,17 @@ let cachedPageSize: number | null = null
 function pageSize(): number {
   if (cachedPageSize !== null) return cachedPageSize
   try {
-    // 注意：是 `PAGE_SIZE` 而非 `PAGESZ`（后者在 GNU getconf 不可识别）
-    const out = execSync('getconf PAGE_SIZE', { encoding: 'utf8', timeout: 2000 }).trim()
-    const n = parseInt(out, 10)
-    cachedPageSize = Number.isFinite(n) && n > 0 ? n : 4096
+    if (process.platform === 'darwin') {
+      // macOS 无 GNU getconf；sysctl 取 hw.pagesize（Apple Silicon 常见 16384，Intel 4096）
+      const out = execSync('sysctl -n hw.pagesize', { encoding: 'utf8', timeout: 2000 }).trim()
+      const n = parseInt(out, 10)
+      cachedPageSize = Number.isFinite(n) && n > 0 ? n : 16384
+    } else {
+      // 注意：是 `PAGE_SIZE` 而非 `PAGESZ`（后者在 GNU getconf 不可识别）
+      const out = execSync('getconf PAGE_SIZE', { encoding: 'utf8', timeout: 2000 }).trim()
+      const n = parseInt(out, 10)
+      cachedPageSize = Number.isFinite(n) && n > 0 ? n : 4096
+    }
   } catch {
     cachedPageSize = 4096
   }
@@ -514,6 +522,12 @@ function resolveModel(settingsPath: string): ModelInfo {
 
 function readMemoryMB(pid: number): number {
   try {
+    if (process.platform === 'darwin') {
+      // macOS 无 /proc：ps -o rss 输出 RSS（KB），换算 MB。实验性（未经 macOS 实测）。
+      const out = execSync(`ps -o rss= -p ${pid}`, { encoding: 'utf8', timeout: 2000 }).trim()
+      const rssKb = parseInt(out, 10)
+      return Number.isFinite(rssKb) && rssKb > 0 ? Math.round(rssKb / 1024) : 0
+    }
     const raw = readFileSync(`/proc/${pid}/stat`, 'utf8')
     // comm（field 2）可能含空格/括号，必须以最后一个 ')' 为界切分
     const closeParen = raw.lastIndexOf(')')
@@ -526,6 +540,20 @@ function readMemoryMB(pid: number): number {
   } catch {
     return 0
   }
+}
+
+// ─── 进程存活（Linux /proc 目录，macOS kill(pid,0) 探测） ───
+
+function isPidAlive(pid: number): boolean {
+  if (process.platform === 'darwin') {
+    try {
+      process.kill(pid, 0) // 信号 0：仅探测存在性，不发信号
+      return true
+    } catch {
+      return false
+    }
+  }
+  return existsSync(`/proc/${pid}`)
 }
 
 // ─── transcript 定位（§6.8.2e，glob projects/*/<id>.jsonl，不引入 glob 库） ───
@@ -693,7 +721,7 @@ export class ClaudeCodeSessionScanner {
     const name = tail.lastUserText !== null ? tail.lastUserText : cwdName ?? ''
 
     // 状态判定（v3.2 简化）：进程存活 → busy，否则 idle + memory=0
-    const alive = existsSync(`/proc/${pid}`)
+    const alive = isPidAlive(pid)
     const status: SessionStatus = alive ? 'busy' : 'idle'
     const memoryMB = alive ? readMemoryMB(pid) : 0
 

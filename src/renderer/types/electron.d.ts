@@ -44,6 +44,8 @@ export interface ElectronAPI {
   togglePin(pinned: boolean): Promise<void>
   /** 退出应用（M10 Settings Quit，app:quit → will-quit 清理链） */
   quitApp(): Promise<void>
+  /** 运行平台（process.platform，macOS 红绿灯判断） */
+  platform: NodeJS.Platform
 
   // ── 窗口控制子集（M4 建立，§7 未列；TrafficLights 红绿灯调用） ──
   windowHide(): Promise<void>

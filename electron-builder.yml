@@ -1,6 +1,6 @@
 # electron-builder 打包配置（M1 占位，M15「打包 + 开机自启」完善）
-appId: com.cury.harness-monitor
-productName: harness-monitor
+appId: com.cury.session-buddy
+productName: SessionBuddy
 directories:
   output: dist
   buildResources: resources
@@ -13,3 +13,9 @@ linux:
     - deb
     - AppImage
   category: Utility
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.utilities
+  icon: resources/icon.png

@@ -5,7 +5,7 @@ import TrafficLights from './TrafficLights'
  *
  * 44px 高，整体 -webkit-app-region: drag（electron-drag-region），
  * 内部可点元素（红绿灯 / Pin）显式 no-drag。
- *   左：TrafficLights 红绿灯
+ *   左：TrafficLights 红绿灯（macOS 用原生红绿灯，隐藏自绘）
  *   中：应用图标 + "SessionBuddy"（13px semibold，§2.3）
  *   右：PinIcon — 切换 alwaysOnTop（app:toggle-pin），激活态 accent-blue
  */
@@ -24,7 +24,8 @@ function WidgetHeader({ pinned, onPinChange }: WidgetHeaderProps): React.JSX.Ele
 
   return (
     <header className="widget-header electron-drag-region">
-      <TrafficLights />
+      {/* macOS：原生红绿灯由 titleBarStyle:hidden 提供，跳过自绘（避免双套窗口控件） */}
+      {window.electronAPI.platform !== 'darwin' && <TrafficLights />}
 
       <div className="widget-title">
         {/* 应用名（无图标） */}
