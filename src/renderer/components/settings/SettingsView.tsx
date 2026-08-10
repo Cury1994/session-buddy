@@ -16,7 +16,7 @@ import type {
  *   ├── 模型上下文长度（M17.1）context_lengths 表（模型名 + 来源标签 + 可编辑长度）
  *   ├── General        Always on Top（app:toggle-pin，不持久化）/ Desktop Notifications
  *   ├── Limits & Alerts Balance Warning ¥ / 审批超时 60s 仅展示 / 查询间隔分钟
- *   └── [Quit Harness Monitor] 红色全宽按钮
+ *   └── [Quit SessionBuddy] 红色全宽按钮
  *
  * 模型上下文长度（M17.1 + M17.2 契约，AppConfig.context_lengths）：
  *   - 每行：模型名 + 来源标签（manual/registry/heuristic 三色徽章）+ 单位选择 + 长度输入
@@ -464,7 +464,7 @@ function SettingsView({
           onClick={onQuit}
           className="electron-no-drag w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white/60 border border-black/10 rounded-lg text-xs font-medium cursor-pointer text-danger hover:bg-white transition-colors"
         >
-          Quit Harness Monitor
+          Quit SessionBuddy
         </button>
       </div>
     </div>

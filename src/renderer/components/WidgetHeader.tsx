@@ -6,7 +6,7 @@ import TrafficLights from './TrafficLights'
  * 44px 高，整体 -webkit-app-region: drag（electron-drag-region），
  * 内部可点元素（红绿灯 / Pin）显式 no-drag。
  *   左：TrafficLights 红绿灯
- *   中：应用图标 + "Harness Monitor"（13px semibold，§2.3）
+ *   中：应用图标 + "SessionBuddy"（13px semibold，§2.3）
  *   右：PinIcon — 切换 alwaysOnTop（app:toggle-pin），激活态 accent-blue
  */
 
@@ -28,7 +28,7 @@ function WidgetHeader({ pinned, onPinChange }: WidgetHeaderProps): React.JSX.Ele
 
       <div className="widget-title">
         {/* 应用名（无图标） */}
-        Harness Monitor
+        SessionBuddy
       </div>
 
       <button

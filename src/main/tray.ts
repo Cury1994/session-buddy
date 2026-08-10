@@ -179,11 +179,11 @@ export function createTray(_config: AppConfig, win: BrowserWindow): ManagedTray 
   const tray = new Tray(nativeImage.createFromBuffer(buildIconPng(currentColor)))
 
   // appindicator 下 tooltip 可能降级不显示（§2.10），调用无害，保留。
-  tray.setToolTip('Harness Monitor')
+  tray.setToolTip('SessionBuddy')
 
   /**
    * 按 §6.3 结构构建右键菜单：
-   *   Harness Monitor (label) / Show / Hide Dashboard / ── /
+   *   SessionBuddy (label) / Show / Hide Dashboard / ── /
    *   Active Agents (动态列表，四态彩色圆点 + 状态名 + 工具 + 模型 + 会话名) / ── / Quit
    */
   function buildContextMenu(): Menu {
@@ -200,7 +200,7 @@ export function createTray(_config: AppConfig, win: BrowserWindow): ManagedTray 
           })
 
     return Menu.buildFromTemplate([
-      { label: 'Harness Monitor', enabled: false },
+      { label: 'SessionBuddy', enabled: false },
       {
         label: 'Show Dashboard',
         accelerator: 'CommandOrControl+O',
@@ -220,7 +220,7 @@ export function createTray(_config: AppConfig, win: BrowserWindow): ManagedTray 
       { type: 'separator' },
       {
         // 原生菜单无法将 label 标红（danger 样式为设计稿语义，平台限制降级）
-        label: 'Quit Harness Monitor',
+        label: 'Quit SessionBuddy',
         accelerator: 'CommandOrControl+Q',
         click: (): void => app.quit()
       }

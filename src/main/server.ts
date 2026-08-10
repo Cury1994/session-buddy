@@ -344,7 +344,7 @@ export function createServer(deps: ServerDeps): ManagedServer {
     const msg = `端口 ${port} 被占用，请关闭占用程序后重启`
     console.error(`[server] ${msg}`)
     if (Notification.isSupported()) {
-      new Notification({ title: 'Harness Monitor', body: msg }).show()
+      new Notification({ title: 'SessionBuddy', body: msg }).show()
     }
     // 给桌面通知一点显示时间再退出（日志已即时输出）。退出码 1 + 走清理链。
     setTimeout(() => {
