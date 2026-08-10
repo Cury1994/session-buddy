@@ -309,6 +309,9 @@ export function startSessionScanner(deps: SessionScannerDeps): ScheduledTask {
         for (const s of sessions) {
           const modelId = s.lastModel
           if (!modelId) continue
+          // 防御：跳过 "<synthetic>" 占位符（Claude Code API 失败/无响应的非真实模型，尖括号特征）。
+          // 主过滤在 claude-sessions.scanTailFacts（lastModel 捕获处），此处兜底防漏网
+          if (modelId.includes('<') || modelId.includes('>')) continue
           const existing = known[modelId]
           if (existing?.source === 'manual') continue // 手动行永不自动覆盖
           if (newEntries[modelId] !== undefined) continue

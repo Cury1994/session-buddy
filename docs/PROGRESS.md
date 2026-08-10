@@ -885,3 +885,49 @@
 **冲突解决**：保留 M18 完成日志（上条）为主体；本条记录回滚→恢复的全过程。**保留 M18 提交 b535a18 与回滚提交 47dbd01 于历史**（未强删任何提交）。
 
 **恢复后状态**：代码 = M18 四项改动（删审批历史 / session 名称对齐终端标题 / 上下文表 registry 只读 + M-K 单位 + 整表折叠）；实例待重启加载新构建（见收尾）。
+
+### 2026-08-10 11:22:29 ｜ 归档后修订 ｜ API Usage 空白根因定位 + 带 key 重启恢复 完成
+
+**用户反馈**："API Usage 是空的，请恢复"。
+
+**根因定位（第一性原理排查，未动任何代码）**：
+- 运行实例（今早 10:41 由 systemd --user 后台拉起，pid 1069136/1069143）启动时**无 DEEPSEEK_API_KEY 环境变量**——父进程链到 `/usr/lib/systemd/systemd --user`（2202，7-22 起），非交互 shell 不加载 ~/.bashrc
+- 无 env → buildSourceCard（services.ts:108）判 missing-credential → M17.7 过滤（services.ts:220）隐藏 → API Usage 空。**这是 M17 需求⑤"只展示免配置卡"与后台无 key 启动叠加的结果**，非代码回归
+- 证据链：`/api/usage` 最新快照停在 08-09 01:32（实例从未成功写库）／ 日志仅 server 监听行无任何 quota 报错（缺 env 静默早退特征）／ 带 key 实测 `readQuota` 返回 ¥4.30、curl 余额端点 200
+
+**恢复（用户拍板：重启实例加载 key）**：
+- 精确 SIGTERM pid 1069136（will-quit 清理链），端口 18456 释放、无残留进程
+- key 从 ~/.bashrc:136 显式提取（`.bashrc` 头部 `case $- in *i*) ;; *) return;;` —— 非交互 `source` 会直接 return，不能依赖 source；命令文本不含 key 明文、env 不暴露于 ps）
+- setsid 脱离 + nohup + `electron . --disable-gpu --in-process-gpu` 重启，日志 /tmp/harness-monitor.log
+
+**验证全绿**：health 200 ／ `/api/usage` 返回 11:22:03 新快照 ¥4.17（DeepSeek 卡 ok 落库）／ sessions 端点 200 ／ 新实例 pid 1086203 健康在听 18456
+
+**收尾三件套**：① 本次仅运维操作，无代码改动、无 commit ② 无孤儿（新实例健康在听）③ 本日志 ✅
+**遗留/经验**：后台拉起实例必须显式注入 env（或写 systemd unit 的 Environment=）；M17.7 过滤把"缺 key 的余量源"静默隐藏，用户端表现为"空白"而非提示——是否给 missing-credential 出提示卡，延后评估
+
+### 2026-08-10 11:28:25 ｜ 归档后修订 ｜ <synthetic> 占位模型回填上下文表根因定位 + 修复 完成（commit 待补）
+
+**用户反馈**：模型上下文长度表里出现一个 `<synthetic>`（拼作 "sybthetic"）。
+
+**第一性原理根因链（实测证据，未假设）**：
+1. `<synthetic>` 是 **Claude Code 写入 transcript 的合成占位模型 id**（非真实模型），出现在两类记录：
+   - API 调用失败：`isApiErrorMessage:true` + `apiErrorStatus:400`（实测 08-06 传入不存在模型 `deepseek-v4-flash-0731` 被拒 400，5 条）
+   - 无响应请求：`isApiErrorMessage:false` + content "No response requested."（6 条）
+   - 全仓 transcript 共 32 条 `<synthetic>`，是唯一占位符形式（尖括号包裹 vs 真实模型字母数字/点/连字符）
+2. **scanTailFacts 无差别捕获**（claude-sessions.ts:309-314）：`message.model` 非空 string 即设为 lastModel，不识别占位符 → 会话尾部恰是失败记录时 lastModel="<synthetic>"
+3. **sessionScanner 自动回填**（services.ts:309-323）：contextForModel("<synthetic>") 不命中 → 启发式 200000 → 落盘 `context_lengths["<synthetic>"]={len:200000, source:'heuristic'}`
+4. 设置页把它当模型名渲染 → 用户看到 `<synthetic> | heuristic | 200000` 行
+
+**修复（两层，均实测）**：
+- **第一层（数据源，根治）**：scanTailFacts 捕获 lastModel 时**跳过尖括号占位符**（`!m.includes('<') && !m.includes('>')`），继续逆扫找更早真实模型；找不到 → null → 调用方降级 settings modelId（ctxPct 分母 / apiProvider 两消费链均有 `?? model.*` 降级，验证安全）
+- **第二层（防御）**：services.ts 自动回填前过滤尖括号占位符，防漏网
+- 尖括号特征而非硬编码 "<synthetic>"——天然覆盖未来其它占位符形式
+
+**验证全绿**：
+- build 三入口 + 双 typecheck 零错误
+- 裸 node 模拟修复后解析：5 个污染会话（尾部恰为 synthetic）逆扫跳过占位符，1 个找回真实模型 `deepseek-v4-flash`，5 个正确降级 null
+- 清理脏数据：`~/.config/harness-monitor/config.yaml` 删除 `<synthetic>` 条目
+- 重启实例（新 pid 1092738）：10s 后 config.yaml 无 synthetic 回填（0 clean）／ `/api/sessions` 两会话 lastModel 均 `deepseek-v4-flash` 无占位符 ／ ctxPct 13%/14% 正常 ／ usage+sessions 端点 200
+
+**收尾三件套**：① commit（claude-sessions.ts + services.ts + 本日志，见 git log）② 无孤儿（新实例健康在听 18456）③ 本日志 ✅
+**遗留**：历史 transcript 中的 `<synthetic>` 记录是数据源原始产物（Claude Code 行为），不清理；harness-monitor 不再捕获回填即可

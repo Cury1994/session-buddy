@@ -59,8 +59,11 @@ import type { AppConfig, SessionInfo, SessionStatus } from '../shared/types'
  *     ① usedTokens —— 末条 usage 三项和（ctxPct 计算源，语义与原 usedTokens 逐字一致）
  *     ② lastCwd —— 最后一条含 cwd 记录的 cwd（Claude Code 随实际工作目录动态更新，
  *        是"当前真实项目路径"真源；session json 的 cwd 恒为启动目录，仅作降级）
- *     ③ lastModel —— 最后一条 message.model（API 实际返回的模型 id 真源；本机经代理
- *        cc-switch 转发后 settings 的 *_MODEL_NAME 是陈旧别名，故 transcript 优先）
+ *     ③ lastModel —— 最后一条**真实** message.model（API 实际返回的模型 id 真源；本机经代理
+ *        cc-switch 转发后 settings 的 *_MODEL_NAME 是陈旧别名，故 transcript 优先）。
+ *        跳过 "<synthetic>" 占位符（Claude Code 在 API 失败/无响应时写入的非真实模型，
+ *        尖括号特征识别）——若会话尾部恰是失败记录，继续逆扫找更早的真实模型，找不到则 null
+ *        降级到 settings 解析
  *   接线：显示 cwd = lastCwd → json cwd 降级；apiProvider = lastModel → settings 解析降级。
  *   ctxPct 分母 = **实际后端模型的上限**：优先用 transcript 末条 message.model（代理改写
  *     后的真实模型名），经 contextWindowForModel 分层解析（config.context_lengths 前缀匹配 →
@@ -306,11 +309,16 @@ function scanTailFacts(lines: string[]): TailFacts {
     }
 
     // ③ message.model（assistant 记录的 API 实际返回模型）
+    //   跳过占位符：Claude Code 在 API 失败 / 无响应请求时把 model 写成 "<synthetic>"，
+    //   非真实模型（实测 08-06 400 错误与 "No response requested" 记录均如此）。
+    //   尖括号形式即占位符特征，不绑死字符串；跳过 → 继续逆扫找更早的真实 model。
     if (facts.lastModel === null) {
       const msg = record['message']
       if (typeof msg === 'object' && msg !== null) {
         const m = (msg as Record<string, unknown>)['model']
-        if (typeof m === 'string' && m !== '') facts.lastModel = m
+        if (typeof m === 'string' && m !== '' && !m.includes('<') && !m.includes('>')) {
+          facts.lastModel = m
+        }
       }
     }
 
