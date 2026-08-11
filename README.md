@@ -136,15 +136,33 @@ SessionBuddy 是一个常驻系统托盘的桌面应用，**一个界面管住�
 | Linux | ✅ 生产可用 | 主力平台，日常实测                                              |
 | macOS | ⚗️ 实验性 | 已完成代码适配，**未经 macOS 真机实测**；需额外执行 `brew install jq curl` |
 
-### 从源码运行
+### 前置依赖
+
+- **Node.js ≥ 18** + npm
+- **系统构建工具** —— `better-sqlite3` 是 native 模块，prebuild 不可用时会本地编译：
+  ```bash
+  sudo apt install build-essential python3   # Debian / Ubuntu
+  ```
+- **Linux 托盘** —— GNOME 桌面需 appindicator 扩展，否则托盘图标不显示：
+  ```bash
+  sudo apt install gnome-shell-extension-appindicator   # Ubuntu
+  ```
+
+### 从源码运行（推荐）
 
 ```bash
 git clone https://github.com/Cury1994/session-buddy.git
 cd session-buddy
-npm install        # 装依赖
+npm install        # 自动重建 better-sqlite3 为 Electron ABI（postinstall）
 npm run dev        # 开发模式（electron-vite dev）
 ```
 
+> 国内网络下载 Electron 二进制可能超时（`ETIMEDOUT`），改用镜像源再装：
+>
+> ```bash
+> ELECTRON_MIRROR="https://registry.npmmirror.com/-/binary/electron/" npm install
+> ```
+>
 > 本机 Electron dev GPU 可能有兼容问题（AMD 集成显卡），如遇崩溃改用构建产物：
 >
 > ```bash
@@ -152,14 +170,14 @@ npm run dev        # 开发模式（electron-vite dev）
 > ./node_modules/.bin/electron . --disable-gpu --in-process-gpu
 > ```
 
-### 打包分发
+### 打包分发（可选）
 
 ```bash
 npm run dist:linux   # deb / AppImage
 npm run dist:mac     # dmg / zip（实验性）
 ```
 
-打包产物输出到 `dist/` 目录。
+产物在 `dist/` 目录。**当前未提供官方预编译 Release**（未接 CI 自动构建），需要安装包的朋友可自行打包。
 
 ---
 

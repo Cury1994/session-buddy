@@ -15,6 +15,7 @@
   },
   "homepage": "https://github.com/Cury1994/session-buddy#readme",
   "scripts": {
+    "postinstall": "electron-builder install-app-deps",
     "dev": "electron-vite dev",
     "build": "electron-vite build && npm run typecheck",
     "build:only": "electron-vite build",
