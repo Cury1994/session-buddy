@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="420" viewBox="0 0 1200 420"
+     role="img" aria-labelledby="title desc">
+  <title id="title">SessionBuddy — 托盘里的 Claude Code 驾驶舱</title>
+  <desc id="desc">SessionBuddy 把多个 Claude Code 会话、Bash 命令审批和 API 余量收进一个系统托盘面板：审批弹卡高亮危险命令 sudo，会话卡显示上下文消耗 ctx%，余量卡画 30 天趋势折线，托盘图标用绿橙红灰四色表示状态。</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0e11"/>
+      <stop offset="1" stop-color="#050607"/>
+    </linearGradient>
+    <linearGradient id="cardline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#bg)"/>
+
+  <!-- 细网格背景（低透明度，只做结构提示） -->
+  <g stroke="#ffffff" stroke-opacity="0.03">
+    <path d="M0 70 H1200"/><path d="M0 140 H1200"/><path d="M0 210 H1200"/>
+    <path d="M0 280 H1200"/><path d="M0 350 H1200"/>
+    <path d="M70 0 V420"/><path d="M140 0 V420"/><path d="M210 0 V420"/>
+    <path d="M280 0 V420"/><path d="M350 0 V420"/><path d="M420 0 V420"/>
+  </g>
+
+  <!-- ============ 左侧：标题区 ============ -->
+  <g transform="translate(56 44)">
+    <!-- 类别眉标 -->
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#8a9199">
+      <circle cx="0" cy="6" r="4" fill="#37c837"/>
+      <rect x="12" y="1" width="2" height="10" fill="#ffffff" fill-opacity="0.25"/>
+      <text x="22" y="10">ELECTRON · TRAY COCKPIT · 127.0.0.1:18456</text>
+    </g>
+
+    <!-- 主标题 -->
+    <text x="0" y="72" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="60" font-weight="700" fill="#f2f4f6">SessionBuddy</text>
+
+    <!-- 一句话价值 -->
+    <text x="0" y="118" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#c8cdd3">所有 Claude Code 会话，收进一个托盘面板</text>
+    <text x="0" y="154" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#c8cdd3">审批集中 · 自动放行 · 余量先红为敬</text>
+
+    <!-- 能力点清单 -->
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#8a9199">
+      <g transform="translate(0 186)">
+        <circle cx="4" cy="8" r="3" fill="#ffffff" fill-opacity="0.3"/>
+        <text x="16" y="12">多会话监控</text>
+      </g>
+      <g transform="translate(0 222)">
+        <circle cx="4" cy="8" r="3" fill="#ffffff" fill-opacity="0.3"/>
+        <text x="16" y="12">Bash 命令集中审批</text>
+      </g>
+      <g transform="translate(0 258)">
+        <circle cx="4" cy="8" r="3" fill="#ffffff" fill-opacity="0.3"/>
+        <text x="16" y="12">多卡 API 余量追踪</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============ 右侧：驾驶舱面板示意图 ============ -->
+  <g transform="translate(660 44)">
+    <!-- 悬浮面板窗口 -->
+    <rect x="0" y="0" width="524" height="262" rx="18" fill="#0d1014" stroke="url(#cardline)" stroke-width="1.2"/>
+    <!-- 窗口标题栏 -->
+    <g>
+      <rect x="0" y="0" width="524" height="40" rx="18" fill="#12161b"/>
+      <rect x="0" y="20" width="524" height="20" fill="#12161b"/>
+      <circle cx="20" cy="20" r="5" fill="#e05252"/>
+      <circle cx="38" cy="20" r="5" fill="#e0a052"/>
+      <circle cx="56" cy="20" r="5" fill="#52b360"/>
+      <text x="76" y="25" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#8a9199">session-buddy · 面板</text>
+    </g>
+
+    <!-- 会话卡 1（带背景叠层，暗示多个会话） -->
+    <g transform="translate(24 58)">
+      <rect x="6" y="-6" width="250" height="88" rx="12" fill="#ffffff" fill-opacity="0.02"/>
+      <rect x="0" y="0" width="250" height="88" rx="12" fill="#0a0d10" stroke="#ffffff" stroke-opacity="0.09"/>
+      <circle cx="16" cy="18" r="5" fill="#37c837"/>
+      <text x="28" y="23" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#e6e9ec">dev-server</text>
+      <text x="226" y="23" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#8a9199">42m</text>
+      <!-- ctx 弧线进度 -->
+      <path d="M 16 60 A 11 11 0 0 1 38 60" fill="none" stroke="#f0b429" stroke-width="3" stroke-linecap="round"/>
+      <text x="48" y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#c8cdd3">ctx 58% · 还在跑</text>
+    </g>
+
+    <!-- 审批弹卡 -->
+    <g transform="translate(290 58)">
+      <rect x="0" y="0" width="210" height="88" rx="12" fill="#101317" stroke="#ffffff" stroke-opacity="0.12"/>
+      <rect x="0" y="0" width="210" height="34" rx="12" fill="#1a1e24"/>
+      <rect x="0" y="17" width="210" height="17" fill="#1a1e24"/>
+      <text x="12" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#e6e9ec">Bash 审批</text>
+      <text x="12" y="58" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="700" fill="#e05252">sudo</text>
+      <text x="46" y="58" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#c8cdd3">docker compose up</text>
+      <rect x="12" y="68" width="52" height="18" rx="9" fill="#2b6e3b"/>
+      <text x="38" y="81" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="12" font-weight="600" fill="#9fe8b2">允许</text>
+      <rect x="72" y="68" width="52" height="18" rx="9" fill="#3a2a2a"/>
+      <text x="98" y="81" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="12" font-weight="600" fill="#d98f8f">拒绝</text>
+    </g>
+
+    <!-- 会话卡 2 -->
+    <g transform="translate(24 158)">
+      <rect x="0" y="0" width="250" height="88" rx="12" fill="#0a0d10" stroke="#ffffff" stroke-opacity="0.09"/>
+      <circle cx="16" cy="18" r="5" fill="#37c837"/>
+      <text x="28" y="23" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#e6e9ec">refactor-branch</text>
+      <text x="226" y="23" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#8a9199">2h</text>
+      <!-- 子 Agent 协作 -->
+      <g transform="translate(16 58)">
+        <circle cx="0" cy="0" r="5" fill="#f0b429"/>
+        <line x1="0" y1="0" x2="24" y2="-10" stroke="#8a9199" stroke-width="1"/>
+        <line x1="0" y1="0" x2="24" y2="10" stroke="#8a9199" stroke-width="1"/>
+        <circle cx="30" cy="-12" r="4" fill="#e6e9ec" fill-opacity="0.5"/>
+        <circle cx="30" cy="12" r="4" fill="#e6e9ec" fill-opacity="0.5"/>
+      </g>
+      <text x="66" y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#c8cdd3">3 个子 Agent 并行</text>
+    </g>
+
+    <!-- 余量趋势卡 -->
+    <g transform="translate(290 158)">
+      <rect x="0" y="0" width="210" height="88" rx="12" fill="#0a0d10" stroke="#ffffff" stroke-opacity="0.09"/>
+      <text x="12" y="20" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#8a9199">余量趋势 · 30 天</text>
+      <text x="12" y="46" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="700" fill="#e6e9ec">¥ 128.40</text>
+      <polyline points="14,80 40,72 66,76 92,64 118,68 144,56 196,50"
+                fill="none" stroke="#37c837" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="14,80 40,72 66,76 92,64 118,68 144,56 196,50"
+                fill="none" stroke="#37c837" stroke-opacity="0.08" stroke-width="6"/>
+    </g>
+  </g>
+
+  <!-- ============ 底部：托盘四色状态机 ============ -->
+  <g transform="translate(56 328)">
+    <line x1="0" y1="0" x2="1088" y2="0" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="0" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#8a9199">托盘状态机</text>
+    <g transform="translate(132 10)">
+      <circle cx="5" cy="9" r="5" fill="#37c837"/>
+      <text x="18" y="14" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#8a9199">绿 · 正常</text>
+    </g>
+    <g transform="translate(270 10)">
+      <circle cx="5" cy="9" r="5" fill="#f0b429"/>
+      <text x="18" y="14" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#8a9199">橙 · 待审批</text>
+    </g>
+    <g transform="translate(408 10)">
+      <circle cx="5" cy="9" r="5" fill="#e05252"/>
+      <text x="18" y="14" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#8a9199">红 · 余额见底</text>
+    </g>
+    <g transform="translate(546 10)">
+      <circle cx="5" cy="9" r="5" fill="#8a9199"/>
+      <text x="18" y="14" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#8a9199">灰 · 服务未起</text>
+    </g>
+  </g>
+</svg>

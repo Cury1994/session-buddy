@@ -1,10 +1,12 @@
 # SessionBuddy
 
-> "Tired of opening a browser just to check your balance?"
+> Run four or five `claude code` terminal tasks at once — no more toggling between approval prompts.
 
-If you juggle three API cards and five or six `claude` sessions, each quietly burning tokens, that thought crosses your mind every twenty minutes or so.
+SessionBuddy is the answer: a small system-tray desktop tool. All Claude Code sessions fold into one floating panel, and Bash command approvals move out of the terminal into a pop-up card, auto-approving what it can.
 
-SessionBuddy is a system-tray desktop app that **manages every Claude Code session from one panel and funnels command approvals into a single pop-up card that auto-approves when it can** — no more being interrupted by permission prompts in the terminal, and your eyes stay on the code.
+<p align="center">
+  <img src="assets/readme/hero.svg" width="100%" alt="SessionBuddy: a cockpit for Claude Code in your tray — multi-session monitoring, centralized Bash approval, multi-card API balance tracking, with a green/orange/red/gray tray icon for status">
+</p>
 
 [![status](https://img.shields.io/badge/status-production--ready-green)](#roadmap)
 [![Linux](https://img.shields.io/badge/Linux-ready-brightgreen)](#platform-support)
@@ -30,62 +32,62 @@ SessionBuddy is a system-tray desktop app that **manages every Claude Code sessi
 
 This tool grew out of three recurring annoyances:
 
-1. **Balances are checked by eye.** When you use Claude Code with third-party APIs, balances live in a handful of cloud dashboards. Each card has its own site, its own login, its own UI — a single check takes a minute or more. Worse, **nobody warns you before you run out**; `Insufficient Balance` pops up mid-run and kills the session on the spot.
+1. **Multiple sessions fly blind.** Running four or five `claude` sessions at once is normal, but the terminal offers no at-a-glance state: which is running, which is stuck, how much context is left, how many subagents are in flight — you're guessing. To-do lists live in your head and get forgotten.
 
-2. **Multiple sessions fly blind.** Running four or five `claude` sessions at once is normal, but the terminal offers no at-a-glance state: which is running, which is stuck, how much context is left, how many subagents are in flight — you're guessing. To-do lists live in your head and get forgotten.
+2. **Balances are checked by eye.** When you use Claude Code with third-party APIs, balances live in a handful of cloud dashboards. Each card has its own site, its own login, and a single check takes a minute or more. Worse, nobody warns you before you run out; `Insufficient Balance` pops up mid-run and kills the session on the spot.
 
-3. **Command approvals break your flow.** Every command the agent runs triggers a permission prompt. When you're working in another window, the ten-second timeout leaves the session waiting on you; but if you blindly hit enter, commands like `sudo rm -rf` make your stomach drop.
+3. **Command approvals break your flow.** Every command the agent runs triggers a permission prompt. When you're away from the terminal, the ten-second timeout leaves the session waiting on you; but if you blindly hit enter, commands like `sudo rm -rf` are hard to feel good about.
 
-**SessionBuddy folds all of this into a small panel in the tray**: balance at a glance, every session as a card, approvals funneled into one pop-up. What can be auto-approved, is. It doesn't change your existing Claude Code workflow — it just turns the invisible into the visible.
+SessionBuddy folds all of this into a small panel in the tray: balance at a glance, every session as a card, approvals funneled into one pop-up. What can be auto-approved, is.
 
 ---
 
 ## What it does
 
-### 1. Centralized approval, automatic approval
+### 1. Centralized approval
 
-**This is what SessionBuddy does best**: moving all Bash command approvals out of the terminal and into the tray, auto-approving what can be.
+Moving all Bash command approvals out of the terminal and into the tray, auto-approving what it can.
 
-`PreToolUse` hook → `approve.sh` → **tray card**:
+`PreToolUse` hook → `approve.sh` → tray card:
 
-- ⚡ **Auto-approval switch** — flip it on for a session you trust; its routine commands pass through directly, **no more repeated interruptions**
-- 🛡️ **Dangerous commands still confirm** — `sudo` / `rm` / `chmod` / `dd` still pop a highlighted card; you read it before allowing. **Block what's dangerous, pass what's safe**
-- 🔇 **Mirror filtering** — commands that would never prompt in the terminal (silently approved by the proxy) are recorded here too, so no blind spots
-- 🔔 **Desktop notifications + timeout fallback** — a three-layer hook timeout chain `70000ms > curl -m 65 > server 60s auto-deny`; nothing ever hangs undecided
-- 🗄️ **Persistent approval history** — what you approved and when is stored in SQLite for later review
+- **Auto-approval switch** — flip it on for a session you trust; its routine commands pass through directly, no more repeated interruptions
+- **Dangerous commands still confirm** — `sudo` / `rm` / `chmod` / `dd` still pop a highlighted card; read it before allowing
+- **Mirror filtering** — commands that would never prompt in the terminal (silently approved by the proxy) are recorded here too, so no blind spots
+- **Desktop notifications + timeout fallback** — a three-layer hook timeout chain `70000ms > curl -m 65 > server 60s auto-deny`; nothing hangs undecided
+- **Persistent approval history** — what you approved and when is stored in SQLite for later review
 
-> **Fewer prompts = time back to the people doing the work.** With auto-approval on, the agent runs, and you read code, answer messages, do something else — no longer sitting at the terminal clicking "Allow" over and over. It only calls you back for genuinely dangerous commands.
+With auto-approval on, the agent runs, and you read code, answer messages, do something else — no longer sitting at the terminal clicking "Allow" over and over. It only calls you back for genuinely dangerous commands.
 
-> The agent wants to run `sudo docker compose up`. The card pops up, the red `sudo` is right there. You look at it for three seconds, confirm it's fine, click "Allow", and the session continues — instead of blindly hitting enter in the terminal.
+Say the agent wants to run `sudo docker compose up`. The card pops up, the red `sudo` is right there. You look at it, confirm it's fine, click "Allow", and the session continues — instead of blindly hitting enter in the terminal.
 
 ### 2. One panel, every session
 
-The real pain of running multiple `claude` sessions is not seeing what's happening. SessionBuddy scans `~/.claude/sessions/` every 3 seconds and **shows every session in one floating panel, one card each**:
+The real pain of running multiple `claude` sessions is not seeing what's happening. SessionBuddy scans `~/.claude/sessions/` every 3 seconds and shows every session in one floating panel, one card each:
 
-- 💓 **Pulse status light** — alive or hung, at a glance
-- 🏷️ **Session name + uptime + API provider** — which model each session is running, visible directly
-- 🧠 **Context usage `ctx%`** — read from the last usage entry in the transcript, the same source as the terminal's bottom indicator; the progress bar tells you how much longer the session can talk
-- 🧮 **Memory + working directory** — how much memory it uses, which project it's working in
-- 🤝 **Subagent collaboration structure** — how many lanes run in parallel and what each is doing, no more flying blind
-- ✅ **Task list + live messages** — current task progress and recent message flow, synced in real time
-- ⚡ **Per-card auto-approval switch** — approve policy decided per session
+- **Pulse status light** — alive or hung, at a glance
+- **Session name + uptime + API provider** — which model each session is running, visible directly
+- **Context usage `ctx%`** — read from the last usage entry in the transcript, the same source as the terminal's bottom indicator; the progress bar tells you how much longer the session can talk
+- **Memory + working directory** — how much memory it uses, which project it's working in
+- **Subagent collaboration structure** — how many lanes run in parallel and what each is doing, no more flying blind
+- **Task list + live messages** — current task progress and recent message flow, synced in real time
+- **Per-card auto-approval switch** — approve policy decided per session
 
-> Four sessions left running before you leave work; you glance at the panel when you're back. Which finished, which is stuck, which is running low on context — you know in ten seconds without flipping through terminal windows.
+Four sessions left running before you leave work; you glance at the panel when you're back. Which finished, which is stuck, which is running low on context — you know in ten seconds without flipping through terminal windows.
 
-### 3. While you're at it: low balance turns the tray red
+### 3. Low balance turns the tray red
 
-After approvals, SessionBuddy keeps an eye on your API balance too. A four-color tray state machine, one look tells you the situation:
+After approvals, SessionBuddy keeps an eye on your API balance too. The tray icon uses colors to show the state:
 
 | Color | Meaning |
 |-------|---------|
-| 🟢 Green | All good |
-| 🟠 Orange | Commands awaiting approval |
-| 🔴 Red | An API card is running low |
-| ⚪ Gray | Backend service isn't up |
+| Green | All good |
+| Orange | Commands awaiting approval |
+| Red | An API card is running low |
+| Gray | Backend service isn't up |
 
-- 📊 Multi-card balance tracking: DeepSeek and Alibaba Cloud Bailian built in, `usage_sources` is pluggable
-- 📈 **30-day balance trend line** — native SVG, hover for values; steady decline or a cliff drop, the curve tells the story
-- ⚡ Low-balance alerts: set a threshold; it notifies when the tray goes red, so you don't have to watch
+- Multi-card balance tracking: DeepSeek and Alibaba Cloud Bailian built in, `usage_sources` is pluggable
+- **30-day balance trend line** — native SVG, hover for values; steady decline or a cliff drop, the curve tells the story
+- Low-balance alerts: set a threshold; it notifies when the tray goes red
 
 ---
 
@@ -93,7 +95,7 @@ After approvals, SessionBuddy keeps an eye on your API balance too. A four-color
 
 | Scenario | Without SessionBuddy | With SessionBuddy |
 |----------|----------------------|--------------------|
-| Approving Bash commands | A line of small text in the terminal; blind enter, heartbreak on timeout | Card pops up + dangerous commands highlighted; read before allowing |
+| Approving Bash commands | A line of small text in the terminal; blind enter, miss the timeout | Card pops up + dangerous commands highlighted, read before allowing |
 | Frequent approvals | Every command interrupts you; glued to the terminal | Auto-approval per session; safe commands don't bother you, work in parallel |
 | Watching multiple sessions | Flipping between six or seven terminal windows, guessing the state | One panel lists all: status light, ctx%, memory, task list |
 | Low-balance warning | Found out when it's burnt; `Insufficient Balance` suddenly errors | Tray turns red + desktop notification, warned early |
@@ -103,21 +105,21 @@ After approvals, SessionBuddy keeps an eye on your API balance too. A four-color
 
 ## Supported API providers
 
-Two cards are built in: **DeepSeek** (pay-as-you-go balance) and **Alibaba Cloud Bailian** (subscription plan). Balance sources are **pluggable** — configure one JSON block in `usage_sources` to add a new provider, no code changes needed.
+Two cards are built in: **DeepSeek** (pay-as-you-go balance) and **Alibaba Cloud Bailian** (subscription plan). Balance sources are pluggable — configure one JSON block in `usage_sources` to add a new provider, no code changes needed.
 
 ---
 
 ## Roadmap
 
-- ✅ Claude Code session monitoring + centralized approval (production-ready)
-- 🔜 **Codex session support (planned)** — the current version focuses on Claude Code; Codex CLI session monitoring is on the roadmap
-- ⚗️ macOS packaging (code adapted, awaiting real-device verification)
+- Claude Code session monitoring + centralized approval (production-ready)
+- Codex session support (planned): the current version focuses on Claude Code; Codex CLI session monitoring is on the roadmap
+- macOS packaging (code adapted, awaiting real-device verification)
 
 ---
 
 ## Screenshots
 
-> Screenshots pending — the project has no official UI screenshots yet. The following are placeholders; you'll know what it looks like once you run it 😉
+> Screenshots pending — the project has no official UI screenshots yet. The following are placeholders; you'll know what it looks like once you run it.
 
 ![Session monitoring screenshot](docs/screenshots/sessions.png "pending")
 
@@ -251,10 +253,10 @@ curl http://127.0.0.1:18456/health   # 200 = alive
 
 An app that monitors a Bash approval stream has to hold up to scrutiny itself:
 
-- 🔒 The local HTTP service **listens only on `127.0.0.1`**, not exposed on any port
-- 📦 **No data leaves your machine** — balances, sessions, approval records all stay in local SQLite
-- 🧱 Electron's renderer uses `contextBridge` + `contextIsolation`, with **`nodeIntegration` disabled**
-- 🔑 Keys exist only in environment variables; zero residue in code or config
+- The local HTTP service **listens only on `127.0.0.1`**, not exposed on any port
+- **No data leaves your machine** — balances, sessions, approval records all stay in local SQLite
+- Electron's renderer uses `contextBridge` + `contextIsolation`, with **`nodeIntegration` disabled**
+- Keys exist only in environment variables; zero residue in code or config
 
 ---
 
@@ -267,10 +269,6 @@ Electron 32 · electron-vite 2 · React 19 · TypeScript 5.9 · Tailwind 3.4 · 
 ## Credits
 
 Thanks to every programmer in the Claude Code ecosystem who treats the terminal as home. This project is written for them (and for us).
-
----
-
-> From now on, let someone else say, "Tired of opening a browser just to check your balance?"
 
 ---
 
