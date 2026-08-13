@@ -8,6 +8,7 @@ SessionBuddy就是那个最优解，它是一个常驻系统托盘的桌面小�
 <p align="center">
   <img src="assets/readme/hero.svg" width="100%" alt="SessionBuddy：托盘里的 Claude Code 驾驶舱——多会话监控、Bash 命令集中审批、多卡 API 余量追踪，托盘图标用绿橙红灰四色表示状态">
 </p>
+
 [![status](https://img.shields.io/badge/status-production--ready-green)](#roadmap)
 [![Linux](https://img.shields.io/badge/Linux-ready-brightgreen)](#platform-support)
 [![macOS](https://img.shields.io/badge/macOS-experimental-orange)](#platform-support)
