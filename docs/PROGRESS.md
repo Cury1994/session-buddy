@@ -1082,3 +1082,10 @@
 
 **收尾三件套**：① commit 1ccc3fe（17 文件 +193/−47）+ approve.sh 显示名轮 ✅ ② 无孤儿（用户实例 18456 pid 1210660 健康在听；WM 测试实例已清）✅ ③ 本日志 ✅
 **遗留**：macOS 打包（`npm run dist:mac`）与运行需在真机验证；用户实例运行旧构建，重启后载 macOS 适配 + 新 WM_CLASS
+
+### 2026-08-13 10:31:04 ｜ 归档后修订 ｜ README 截图区替换为真实 UI 截图 完成（commit d18f95b）
+- 背景：用户通过 Obsidian 粘贴 5 张真实 UI 截图到 README 截图区（Obsidian `![[Pasted image...]]` 语法 + 无空格文件名），需整理为 GitHub Markdown
+- 识别（tesseract OCR chi_sim+eng + 像素分析）：五张均为 521×897 真实窗口截图——① 会话列表（3 卡）② 会话详情二级页（动态消息/任务/子 Agent）③ 设置页（上下文长度表）④ 审批卡+会话列表同框（"Wait Approval (54s)"）⑤ 审批卡特写（"Bash: ls /home/cury/harness-monitor..."）
+- 处置：5 张移入 `docs/screenshots/` 并改名（sessions / session-detail / settings / sessions-approval / approval，无空格路径）；README.md 截图区删「截图待补」注记，改 2×2 表格 + 末行居中（中英文版同步）
+- 验证：skill audit_readme.py 通过（6 个本地图片引用全有效）；git 工作树无残留 Pasted/待补引用
+- 收尾三件套：① commit d18f95b ✅ ② 无新起实例、无孤儿（用户实例 18456 未触碰）✅ ③ 本日志 ✅
