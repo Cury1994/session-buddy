@@ -119,13 +119,13 @@ Two cards are built in: **DeepSeek** (pay-as-you-go balance) and **Alibaba Cloud
 
 ## Screenshots
 
-> Screenshots pending — the project has no official UI screenshots yet. The following are placeholders; you'll know what it looks like once you run it.
+Window is 420×650, from left to right: session list / detail page / approval card / settings page.
 
-![Session monitoring screenshot](docs/screenshots/sessions.png "pending")
-
-![Bash approval card screenshot](docs/screenshots/approval.png "pending")
-
-![Balance card screenshot](docs/screenshots/usage.png "pending")
+| | |
+|:---:|:---:|
+| Session list (status dot + ctx% + per-session auto-approve)<br>![Sessions](docs/screenshots/sessions.png) | Session detail (activity feed + task progress + sub-agents)<br>![Session detail](docs/screenshots/session-detail.png) |
+| Approval card (highlighted Bash command + timeout countdown)<br>![Approval card](docs/screenshots/approval.png) | Settings page (context length table + alert thresholds)<br>![Settings](docs/screenshots/settings.png) |
+| Approval card alongside the session list (a real session awaiting approval)<br>![Approval with session list](docs/screenshots/sessions-approval.png) | |
 
 ---
 

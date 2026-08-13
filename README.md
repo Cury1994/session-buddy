@@ -117,13 +117,13 @@ SessionBuddy 把这些收进一个悬浮在托盘的小面板：余额看一眼�
 
 ## 截图
 
-> 截图待补。项目还没有正式 UI 截图，以下为占位，装上之后自己看一眼就知道什么样。
+窗口 420×650，从左到右：会话列表 / 详情页 / 审批弹卡 / 设置页。
 
-![Session 监控截图](docs/screenshots/sessions.png "待补")
-
-![Bash 审批卡片截图](docs/screenshots/approval.png "待补")
-
-![余量卡片截图](docs/screenshots/usage.png "待补")
+| | |
+|:---:|:---:|
+| 会话列表（状态灯 + ctx% + 自动审批开关）<br>![Sessions](docs/screenshots/sessions.png) | 会话详情（动态消息 + 任务进度 + 子 Agent）<br>![会话详情](docs/screenshots/session-detail.png) |
+| 审批弹卡（Bash 高亮 + 超时倒计时）<br>![审批弹卡](docs/screenshots/approval.png) | 设置页（模型上下文长度表 + 阈值）<br>![设置页](docs/screenshots/settings.png) |
+| 审批卡与会话列表同框（等待审批中的真实会话）<br>![审批与会话列表](docs/screenshots/sessions-approval.png) | |
 
 ---
 
