@@ -8,27 +8,27 @@ SessionBuddy就是那个最优解，它是一个常驻系统托盘的桌面小�
 <p align="center">
   <img src="assets/readme/hero.svg" width="100%" alt="SessionBuddy：托盘里的 Claude Code 驾驶舱——多会话监控、Bash 命令集中审批、多卡 API 余量追踪，托盘图标用绿橙红灰四色表示状态">
 </p>
-[![status](https://img.shields.io/badge/status-production--ready-green)](#路线图)
-[![Linux](https://img.shields.io/badge/Linux-ready-brightgreen)](#平台支持)
-[![macOS](https://img.shields.io/badge/macOS-experimental-orange)](#平台支持)
-[![License](https://img.shields.io/badge/license-ISC-blue)](#许可)
+[![status](https://img.shields.io/badge/status-production--ready-green)](#roadmap)
+[![Linux](https://img.shields.io/badge/Linux-ready-brightgreen)](#platform-support)
+[![macOS](https://img.shields.io/badge/macOS-experimental-orange)](#platform-support)
+[![License](https://img.shields.io/badge/license-ISC-blue)](#license)
 
 ## 目录
 
-- [为什么做 SessionBuddy](#为什么做-sessionbuddy)
-- [它能做什么](#它能做什么)
-- [没有它 vs 有它](#没有它-vs-有它)
-- [支持查询余量的 API 厂商](#支持查询余量的-api-厂商)
-- [路线图](#路线图)
-- [安装](#安装)
-- [配置](#配置)
-- [安全设计](#安全设计)
-- [技术栈](#技术栈)
-- [许可](#许可)
+- [为什么做 SessionBuddy](#why)
+- [它能做什么](#features)
+- [没有它 vs 有它](#comparison)
+- [支持查询余量的 API 厂商](#providers)
+- [路线图](#roadmap)
+- [安装](#installation)
+- [配置](#configuration)
+- [安全设计](#security)
+- [技术栈](#tech-stack)
+- [许可](#license)
 
 ---
 
-## 为什么做 SessionBuddy
+## <a id="why"></a>为什么做 SessionBuddy
 
 做这套工具，是因为三个反复出现的麻烦：
 
@@ -42,7 +42,7 @@ SessionBuddy 把这些收进一个悬浮在托盘的小面板：余额看一眼�
 
 ---
 
-## 它能做什么
+## <a id="features"></a>它能做什么
 
 ### 1. 集中审批
 
@@ -91,7 +91,7 @@ SessionBuddy 把这些收进一个悬浮在托盘的小面板：余额看一眼�
 
 ---
 
-## 没有它 vs 有它
+## <a id="comparison"></a>没有它 vs 有它
 
 | 场景 | 没有 SessionBuddy | 有 SessionBuddy |
 |------|-------------------|------------------|
@@ -103,13 +103,13 @@ SessionBuddy 把这些收进一个悬浮在托盘的小面板：余额看一眼�
 
 ---
 
-## 支持查询余量的 API 厂商
+## <a id="providers"></a>支持查询余量的 API 厂商
 
 已内置 DeepSeek（按量余额）、阿里云百炼（订阅套餐）两张卡。余量源可插拔，在 `usage_sources` 里配一个 JSON 块就能接新的厂商，无需改代码。
 
 ---
 
-## 路线图
+## <a id="roadmap"></a>路线图
 
 - Claude Code 会话监控 + 集中审批（生产可用）
 - Codex 会话支持（规划中）：当前版本聚焦 Claude Code，Codex CLI 的会话监控已列入后续计划
@@ -129,9 +129,9 @@ SessionBuddy 把这些收进一个悬浮在托盘的小面板：余额看一眼�
 
 ---
 
-## 安装
+## <a id="installation"></a>安装
 
-### 平台支持
+### <a id="platform-support"></a>平台支持
 
 | 平台    | 状态     | 说明                                                     |
 | ----- | ------ | ------------------------------------------------------ |
@@ -183,7 +183,7 @@ npm run dist:mac     # dmg / zip（实验性）
 
 ---
 
-## 配置
+## <a id="configuration"></a>配置
 
 ### 配置文件位置
 
@@ -249,7 +249,7 @@ curl http://127.0.0.1:18456/health   # 200 = 活着
 
 ---
 
-## 安全设计
+## <a id="security"></a>安全设计
 
 一个监控 Bash 审批流的应用，安全上不能有侥幸：
 
@@ -260,18 +260,18 @@ curl http://127.0.0.1:18456/health   # 200 = 活着
 
 ---
 
-## 技术栈
+## <a id="tech-stack"></a>技术栈
 
 Electron 32 · electron-vite 2 · React 19 · TypeScript 5.9 · Tailwind 3.4 · better-sqlite3 11 · Express 4 · yaml
 
 ---
 
-## 致谢
+## <a id="acknowledgements"></a>致谢
 
 感谢 Claude Code 生态里每一个把终端当家的程序员。这个项目就是为你们（和我们）写的。
 
 ---
 
-## 许可
+## <a id="license"></a>许可
 
 ISC — 见 [LICENSE](LICENSE) · [GitHub 仓库](https://github.com/Cury1994/session-buddy)
