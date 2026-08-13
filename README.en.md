@@ -142,7 +142,7 @@ Window is 420×650, from left to right: session list / detail page / approval ca
 
 ### Prerequisites
 
-- **Node.js ≥ 18** + npm
+- **Node.js 18 / 20 / 22 (LTS)** + npm (Node 19 is not supported)
 - **System build tools** — `better-sqlite3` is a native module and compiles locally when no prebuild is available:
   ```bash
   sudo apt install build-essential python3   # Debian / Ubuntu
@@ -150,6 +150,11 @@ Window is 420×650, from left to right: session list / detail page / approval ca
 - **Linux tray** — GNOME desktops need the appindicator extension, otherwise the tray icon won't show:
   ```bash
   sudo apt install gnome-shell-extension-appindicator   # Ubuntu
+  ```
+- **chrome-sandbox SUID** — if running Electron as a normal user for the first time fails with `The SUID sandbox helper binary was found, but is not configured correctly`, run:
+  ```bash
+  sudo chown root:root node_modules/electron/dist/chrome-sandbox
+  sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
   ```
 
 ### Run from source (recommended)
@@ -160,6 +165,14 @@ cd session-buddy
 npm install        # auto-rebuilds better-sqlite3 to the Electron ABI (postinstall)
 npm run dev        # dev mode (electron-vite dev)
 ```
+
+> 💡 **Let an agent install it** — if you use an AI coding assistant (Claude Code, Cursor, Codex, etc.), just point it at this repo and it will clone, install dependencies, and run it for you:
+>
+> ```
+> Please clone and install https://github.com/Cury1994/session-buddy, then start it
+> ```
+>
+> The agent will handle dependency installation and any network mirror issues.
 
 > In regions where downloading the Electron binary times out (`ETIMEDOUT`), install via a mirror instead:
 >

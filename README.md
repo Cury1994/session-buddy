@@ -141,7 +141,7 @@ SessionBuddy 把这些收进一个悬浮在托盘的小面板：余额看一眼�
 
 ### 前置依赖
 
-- **Node.js ≥ 18** + npm
+- **Node.js 18 / 20 / 22（LTS）** + npm（Node 19 不支持）
 - **系统构建工具** —— `better-sqlite3` 是 native 模块，prebuild 不可用时会本地编译：
   ```bash
   sudo apt install build-essential python3   # Debian / Ubuntu
@@ -149,6 +149,11 @@ SessionBuddy 把这些收进一个悬浮在托盘的小面板：余额看一眼�
 - **Linux 托盘** —— GNOME 桌面需 appindicator 扩展，否则托盘图标不显示：
   ```bash
   sudo apt install gnome-shell-extension-appindicator   # Ubuntu
+  ```
+- **chrome-sandbox SUID** —— 首次以普通用户运行 Electron 时，若报 `The SUID sandbox helper binary was found, but is not configured correctly`，执行：
+  ```bash
+  sudo chown root:root node_modules/electron/dist/chrome-sandbox
+  sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
   ```
 
 ### 从源码运行（推荐）
@@ -159,6 +164,14 @@ cd session-buddy
 npm install        # 自动重建 better-sqlite3 为 Electron ABI（postinstall）
 npm run dev        # 开发模式（electron-vite dev）
 ```
+
+> 💡 **让 agent 直接装** —— 如果你在用 Claude Code / Cursor / Codex 等 AI 编程助手，直接把它指向这个仓库即可自动完成克隆、装依赖、跑起来：
+>
+> ```
+> 请克隆并安装 https://github.com/Cury1994/session-buddy 这个项目，然后启动它
+> ```
+>
+> agent 会自己处理依赖安装和可能的网络镜像问题。
 
 > 国内网络下载 Electron 二进制可能超时（`ETIMEDOUT`），改用镜像源再装：
 >
