@@ -1,5 +1,7 @@
 # SessionBuddy
 
+[中文](README.md) · [English](README.en.md)
+
 >  一次性跑4、5个claude code终端任务，不必切来切去审批请求了
 
 SessionBuddy就是那个最优解，它是一个常驻系统托盘的桌面小工具，所有 Claude Code 会话收进一个悬浮面板，Bash 命令审批从终端挪到弹卡集中处理，能自动放行的就自动放行。

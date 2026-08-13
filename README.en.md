@@ -1,5 +1,7 @@
 # SessionBuddy
 
+[English](README.en.md) · [中文](README.md)
+
 > Run four or five `claude code` terminal tasks at once — no more toggling between approval prompts.
 
 SessionBuddy is the answer: a small system-tray desktop tool. All Claude Code sessions fold into one floating panel, and Bash command approvals move out of the terminal into a pop-up card, auto-approving what it can.
